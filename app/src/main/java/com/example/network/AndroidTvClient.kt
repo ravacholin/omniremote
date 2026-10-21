@@ -8,6 +8,11 @@ import com.example.data.model.TvAppShortcut
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -91,15 +96,19 @@ class AndroidTvClient(
     private var remoteInput: InputStream? = null
     private var remoteReaderJob: Job? = null
 
+    private val remoteConnectMutex = Mutex()
+
     // Pending pairing session
     @Volatile
     private var pairingSocket: SSLSocket? = null
+    private var pairingIp: String = ""
     @Volatile
     private var serverCertForPairing: X509Certificate? = null
 
     suspend fun connect(ipAddress: String, port: Int = 6466): Boolean = withContext(Dispatchers.IO) {
         val cleanIp = ipAddress.trim()
         activeIp = cleanIp
+        isPaired = tokenStore?.isAndroidTvPaired(cleanIp) ?: false
 
         Log.d(tag, "Probing Android TV connectivity at $cleanIp (preferred port: $port)...")
 
@@ -126,11 +135,12 @@ class AndroidTvClient(
             }.awaitAll()
         }
 
+        currentCoroutineContext().ensureActive()
         val openPorts = results.filter { it.second }.map { it.first }
         Log.d(tag, "Open ports detected on Android TV ($cleanIp): $openPorts")
 
-        // Reachability is true if any port is open or if we can establish a quick socket
-        val reachable = openPorts.isNotEmpty() || testReachability(cleanIp)
+        // A pingable host is not enough: a TV service must actually be listening.
+        val reachable = openPorts.isNotEmpty()
 
         if (reachable) {
             supportsRemoteV2 = openPorts.contains(6466) || openPorts.contains(6467)
@@ -148,42 +158,16 @@ class AndroidTvClient(
                 else -> port
             }
 
-            isConnected = true
-            isPaired = tokenStore?.isAndroidTvPaired(cleanIp) ?: false
-
-            Log.d(tag, "Connected to Android TV ($cleanIp:$activePort) [RemoteV2=$supportsRemoteV2, ADB=$supportsAdb, Cast=$supportsCast, Paired=$isPaired]")
-            onConnectionChanged?.invoke(true, null)
-
-            // If Remote v2 is supported, attempt to establish persistent SSL control channel
             if (supportsRemoteV2) {
-                scope.launch {
-                    initRemoteV2Connection(cleanIp)
-                }
+                return@withContext initRemoteV2Connection(cleanIp)
             }
-
+            isConnected = true
+            onConnectionChanged?.invoke(true, null)
             true
         } else {
-            // Even if immediate port probe timed out (TV in light standby or firewall), mark optimistic state
-            isConnected = true
-            activePort = if (port > 0) port else 6466
-            Log.d(tag, "Optimistic connection active for $cleanIp:$activePort (Will broadcast on keypress)")
-            onConnectionChanged?.invoke(true, null)
-            true
-        }
-    }
-
-    private fun testReachability(ip: String): Boolean {
-        return try {
-            Socket().use { s ->
-                s.connect(InetSocketAddress(ip, 8008), 1500)
-                true
-            }
-        } catch (_: Exception) {
-            try {
-                InetAddress.getByName(ip).isReachable(1500)
-            } catch (_: Exception) {
-                false
-            }
+            isConnected = false
+            onConnectionChanged?.invoke(false, "La TV no responde en $cleanIp. Puedes intentar encenderla con Wake-on-LAN.")
+            false
         }
     }
 
@@ -214,57 +198,76 @@ class AndroidTvClient(
      * Connects persistent SSL control session on port 6466 for Google TV Remote v2.
      */
     private suspend fun initRemoteV2Connection(ip: String): Boolean = withContext(Dispatchers.IO) {
-        try {
+        remoteConnectMutex.withLock {
+            if (remoteSocket?.isClosed == false && remoteOutput != null && ip == activeIp) {
+                return@withLock true
+            }
             closeRemoteSocket()
-            val sslContext = AndroidTvCertificateManager.getOrCreateSslContext(context)
-            val socket = sslContext.socketFactory.createSocket() as SSLSocket
-            socket.tcpNoDelay = true
-            socket.soTimeout = 0 // Keep-alive
-            socket.connect(InetSocketAddress(ip, 6466), 3000)
-            socket.startHandshake()
+            var candidate: SSLSocket? = null
+            try {
+                val sslContext = AndroidTvCertificateManager.getOrCreateSslContext(context)
+                val socket = (sslContext.socketFactory.createSocket() as SSLSocket).also { candidate = it }
+                socket.tcpNoDelay = true
+                socket.soTimeout = 5000 // Bounds both TLS and protocol negotiation.
+                socket.connect(InetSocketAddress(ip, 6466), 3000)
+                socket.startHandshake()
+                val out = socket.getOutputStream()
+                val input = socket.getInputStream()
 
-            val out = socket.getOutputStream()
-            val inStream = socket.getInputStream()
+                // The TV initiates configure, set-active, then remote-start.
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    check(ip == activeIp) { "Device changed during connection" }
+                    check(System.nanoTime() < deadline) { "Remote negotiation timed out" }
+                    val packet = AndroidTvProtocol.readPacket(input)
+                    AndroidTvProtocol.buildRemoteResponse(packet)?.let { AndroidTvProtocol.writePacket(out, it) }
+                    if (AndroidTvProtocol.hasField(packet, 40)) break
+                }
+                currentCoroutineContext().ensureActive()
+                socket.soTimeout = 0
+                remoteSocket = socket
+                remoteOutput = out
+                remoteInput = input
+                candidate = null
+                isConnected = true
+                isPaired = true
+                tokenStore?.setAndroidTvPaired(ip, true)
+                onConnectionChanged?.invoke(true, null)
 
-            remoteSocket = socket
-            remoteOutput = out
-            remoteInput = inStream
-
-            // Send RemoteConfigure
-            val configMsg = AndroidTvProtocol.buildRemoteConfigure()
-            AndroidTvProtocol.writePacket(out, configMsg)
-
-            // Send RemoteSetActive(1)
-            val activeMsg = AndroidTvProtocol.buildRemoteSetActive()
-            AndroidTvProtocol.writePacket(out, activeMsg)
-
-            Log.d(tag, "Google TV Remote v2 TLS channel successfully established with $ip:6466")
-            isPaired = true
-            tokenStore?.setAndroidTvPaired(ip, true)
-
-            // Start background reader loop to maintain keepalive and detect disconnects
-            remoteReaderJob?.cancel()
-            remoteReaderJob = scope.launch {
-                try {
-                    while (remoteSocket?.isConnected == true) {
-                        val packet = AndroidTvProtocol.readPacket(inStream)
-                        if (packet.isNotEmpty()) {
-                            Log.d(tag, "Received RemoteMessage from TV (${packet.size} bytes)")
+                remoteReaderJob = scope.launch {
+                    try {
+                        while (remoteSocket === socket && !socket.isClosed) {
+                            val packet = AndroidTvProtocol.readPacket(input)
+                            AndroidTvProtocol.buildRemoteResponse(packet)?.let {
+                                AndroidTvProtocol.writePacket(out, it)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // An old reader must never clear a newer connection.
+                        if (remoteSocket === socket) {
+                            socket.close()
+                            remoteSocket = null
+                            remoteInput = null
+                            remoteOutput = null
+                            isConnected = false
+                            onConnectionChanged?.invoke(false, "Se perdió la conexión con la TV. La vinculación está guardada.")
                         }
                     }
-                } catch (e: Exception) {
-                    Log.d(tag, "Remote v2 socket stream closed: ${e.message}")
                 }
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                isConnected = false
+                Log.w(tag, "Remote v2 connection failed: ${e.message}")
+                onConnectionChanged?.invoke(false, "No se pudo abrir la sesión de control con $ip: ${e.message}")
+                // A temporary timeout is not evidence that saved pairing was lost.
+                if (e is javax.net.ssl.SSLHandshakeException) onPairingPromptNeeded?.invoke(ip)
+                false
+            } finally {
+                try { candidate?.close() } catch (_: Exception) {}
             }
-
-            true
-        } catch (e: Exception) {
-            Log.w(tag, "Remote v2 direct connection failed on port 6466: ${e.message}")
-            // Check if device needs pairing on port 6467
-            if (isPortOpen(ip, 6467, 1500)) {
-                onPairingPromptNeeded?.invoke(ip)
-            }
-            false
         }
     }
 
@@ -286,14 +289,21 @@ class AndroidTvClient(
         }
         Log.d(tag, "Initiating Google TV Remote pairing handshake on $targetIp:6467...")
 
+        var sessionSocket: SSLSocket? = null
         try {
             closePairingSocket()
             val sslContext = AndroidTvCertificateManager.getOrCreateSslContext(context)
             val socket = sslContext.socketFactory.createSocket() as SSLSocket
             socket.tcpNoDelay = true
             socket.soTimeout = 12000
+            currentCoroutineContext().ensureActive()
+            sessionSocket = socket
+            pairingSocket = socket
+            pairingIp = targetIp
             socket.connect(InetSocketAddress(targetIp, 6467), 6000)
             socket.startHandshake()
+            currentCoroutineContext().ensureActive()
+            check(pairingSocket === socket) { "Pairing session replaced" }
 
             pairingSocket = socket
             val peerCerts = socket.session.peerCertificates
@@ -314,6 +324,9 @@ class AndroidTvClient(
 
             // 2. Read PairingRequestAck
             val reqAck = AndroidTvProtocol.readPacket(inStream)
+            currentCoroutineContext().ensureActive()
+            check(pairingSocket === socket) { "Pairing session replaced" }
+            check(AndroidTvProtocol.isSuccessfulPairingReply(reqAck, AndroidTvProtocol.FIELD_PAIRING_REQUEST_ACK)) { "Respuesta de vinculación inválida: reqAck" }
             Log.d(tag, "Received PairingRequestAck (${reqAck.size} bytes)")
 
             // 3. Send Options
@@ -323,6 +336,9 @@ class AndroidTvClient(
 
             // 4. Read Options from TV
             val tvOptions = AndroidTvProtocol.readPacket(inStream)
+            currentCoroutineContext().ensureActive()
+            check(pairingSocket === socket) { "Pairing session replaced" }
+            check(AndroidTvProtocol.isSuccessfulPairingReply(tvOptions, AndroidTvProtocol.FIELD_OPTIONS)) { "Respuesta de vinculación inválida: tvOptions" }
             Log.d(tag, "Received TV Options (${tvOptions.size} bytes)")
 
             // 5. Send Configuration
@@ -332,15 +348,21 @@ class AndroidTvClient(
 
             // 6. Read ConfigurationAck
             val configAck = AndroidTvProtocol.readPacket(inStream)
+            currentCoroutineContext().ensureActive()
+            check(pairingSocket === socket) { "Pairing session replaced" }
+            check(AndroidTvProtocol.isSuccessfulPairingReply(configAck, AndroidTvProtocol.FIELD_CONFIGURATION_ACK)) { "Respuesta de vinculación inválida: configAck" }
             Log.d(tag, "Received ConfigurationAck (${configAck.size} bytes) -> TV displaying code on screen now!")
 
             // Handshake reached PIN prompt stage! TV is now displaying the 6-character code
             withContext(Dispatchers.Main) {
                 onShowPinPrompt()
             }
+        } catch (e: CancellationException) {
+            closePairingSocket(sessionSocket)
+            throw e
         } catch (e: Exception) {
             Log.e(tag, "Pairing handshake failed on port 6467: ${e.message}", e)
-            closePairingSocket()
+            closePairingSocket(sessionSocket)
             withContext(Dispatchers.Main) {
                 val userMsg = when {
                     e.message?.contains("Connection refused") == true ->
@@ -365,6 +387,7 @@ class AndroidTvClient(
             Log.e(tag, "No active pairing socket")
             return@withContext false
         }
+        val pairedIp = pairingIp
         val serverCert = serverCertForPairing ?: run {
             Log.e(tag, "No server certificate captured for pairing")
             return@withContext false
@@ -384,25 +407,26 @@ class AndroidTvClient(
 
             // Read PairingSecretAck
             val secretAck = AndroidTvProtocol.readPacket(inStream)
-            val status = AndroidTvProtocol.getFieldVarint(secretAck, AndroidTvProtocol.FIELD_STATUS) ?: 200
+            val status = AndroidTvProtocol.getFieldVarint(secretAck, AndroidTvProtocol.FIELD_STATUS)
             Log.d(tag, "Received PairingSecretAck (${secretAck.size} bytes, status=$status)")
 
-            if (status != AndroidTvProtocol.STATUS_OK) {
+            if (!AndroidTvProtocol.isSuccessfulPairingReply(secretAck, AndroidTvProtocol.FIELD_SECRET_ACK)) {
                 Log.e(tag, "Pairing secret rejected by TV with status $status")
-                closePairingSocket()
+                closePairingSocket(socket)
                 return@withContext false
             }
 
-            closePairingSocket()
+            if (pairingSocket !== socket) return@withContext false
+            closePairingSocket(socket)
             isPaired = true
-            tokenStore?.setAndroidTvPaired(activeIp, true)
+            tokenStore?.setAndroidTvPaired(pairedIp, true)
 
-            // Immediately establish persistent port 6466 Remote connection
-            initRemoteV2Connection(activeIp)
+            // Pairing remains saved even if the control service is temporarily unavailable.
+            if (activeIp == pairedIp) initRemoteV2Connection(pairedIp)
             true
         } catch (e: Exception) {
             Log.e(tag, "Error submitting pairing secret: ${e.message}", e)
-            closePairingSocket()
+            closePairingSocket(socket)
             false
         }
     }
@@ -410,18 +434,21 @@ class AndroidTvClient(
     private fun closeRemoteSocket() {
         remoteReaderJob?.cancel()
         remoteReaderJob = null
-        try { remoteOutput?.close() } catch (_: Exception) {}
-        try { remoteInput?.close() } catch (_: Exception) {}
-        try { remoteSocket?.close() } catch (_: Exception) {}
+        val socket = remoteSocket
+        remoteSocket = null
         remoteOutput = null
         remoteInput = null
-        remoteSocket = null
+        try { socket?.close() } catch (_: Exception) {}
     }
 
-    private fun closePairingSocket() {
-        try { pairingSocket?.close() } catch (_: Exception) {}
+    @Synchronized
+    private fun closePairingSocket(expected: SSLSocket? = pairingSocket) {
+        if (pairingSocket !== expected) return
+        val socket = pairingSocket
         pairingSocket = null
+        pairingIp = ""
         serverCertForPairing = null
+        try { socket?.close() } catch (_: Exception) {}
     }
 
     fun disconnect() {

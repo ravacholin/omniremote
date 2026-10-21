@@ -95,6 +95,11 @@ class TvPowerTileService : TileService() {
             }
 
             val result = WakeOnLan.powerOnTv(defaultTv, context = applicationContext)
+            result.resolvedMac?.let { mac ->
+                if (WakeOnLan.formatMacAddress(defaultTv.macAddress) == null) {
+                    db.tvDeviceDao().updateMacAddress(defaultTv.id, mac)
+                }
+            }
 
             withContext(Dispatchers.Main) {
                 Toast.makeText(
@@ -104,7 +109,11 @@ class TvPowerTileService : TileService() {
                 ).show()
 
                 qsTile?.apply {
-                    subtitle = if (result.success) "Señal enviada" else "Falta MAC"
+                    subtitle = when {
+                        result.success -> "Señal enviada"
+                        result.resolvedMac == null -> "Falta MAC"
+                        else -> "Error de red"
+                    }
                     updateTile()
                 }
             }

@@ -375,7 +375,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (!result.success) {
                 // TV cannot wake because MAC address is missing: open prompt immediately!
                 _powerOnStatusMessage.value = result.message
-                openMacConfigDialog(device)
+                if (com.example.network.WakeOnLan.formatMacAddress(device.macAddress) == null) {
+                    openMacConfigDialog(device)
+                }
                 return@launch
             }
 
@@ -384,11 +386,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Polling loop to auto-connect once TV hardware powers up network interfaces
             repeat(10) {
                 delay(1500)
-                if (controller.connectionState.value is ConnectionState.Connected) {
-                    _powerOnStatusMessage.value = null
-                    return@launch
+                if (_activeDevice.value?.id != device.id) return@launch
+                when (controller.connectionState.value) {
+                    is ConnectionState.Connected -> {
+                        _powerOnStatusMessage.value = null
+                        return@launch
+                    }
+                    is ConnectionState.Connecting -> Unit
+                    else -> controller.reconnect()
                 }
-                controller.reconnect()
             }
             delay(1500)
             _powerOnStatusMessage.value = null
@@ -406,12 +412,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateDeviceMac(device: TvDeviceEntity, newMac: String, andPowerOn: Boolean = true) {
-        val cleanMac = com.example.network.WakeOnLan.formatMacAddress(newMac) ?: newMac.trim().uppercase()
+        val cleanMac = com.example.network.WakeOnLan.formatMacAddress(newMac) ?: return
         viewModelScope.launch(Dispatchers.IO) {
             repository.updateDeviceMac(device.id, cleanMac)
             val updated = device.copy(macAddress = cleanMac)
             if (_activeDevice.value?.id == device.id) {
                 _activeDevice.value = updated
+                controller.setActiveDevice(updated)
             }
             closeMacConfigDialog()
             if (andPowerOn) {
@@ -517,13 +524,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val updatedDevice = repository.getDeviceById(id)
             if (updatedDevice != null) {
                 selectDevice(updatedDevice)
-                // If it's a newly added Google TV / Android TV that is not yet paired, prompt pairing immediately
-                if (updatedDevice.deviceType == DeviceType.ANDROID_TV && !tokenStore.isAndroidTvPaired(updatedDevice.ipAddress)) {
-                    delay(500)
-                    withContext(Dispatchers.Main) {
-                        startAndroidTvPairing()
-                    }
-                }
+                // The saved TLS identity is tried first; a changed DHCP IP does not
+                // mean the TV needs pairing again. The connection reports auth errors.
             }
         }
     }

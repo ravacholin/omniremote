@@ -142,3 +142,8 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+// Robolectric's Android TLS provider reflects into InetAddress on JDK 21.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+  jvmArgs("--add-opens=java.base/java.net=ALL-UNNAMED")
+}

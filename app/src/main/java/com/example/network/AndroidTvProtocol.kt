@@ -73,7 +73,7 @@ object AndroidTvProtocol {
     /**
      * Writes a varint-framed packet to the SSL output stream.
      */
-    fun writePacket(output: OutputStream, payload: ByteArray) {
+    fun writePacket(output: OutputStream, payload: ByteArray) = synchronized(output) {
         val header = ByteArrayOutputStream()
         writeVarint(header, payload.size)
         output.write(header.toByteArray())
@@ -277,17 +277,19 @@ object AndroidTvProtocol {
      *   field 1 (remote_configure):
      *     field 1 (code1): 622
      *     field 2 (device_info):
-     *       field 1 (unknown1): 1
-     *       field 2 (unknown2): "1"
-     *       field 3 (package_name): "atvremote"
-     *       field 4 (app_version): "1.0.0"
+     *       fields 1/2 (model/vendor): "OmniRemote"
+     *       fields 3/4: 1 / "1"
+     *       field 5 (package_name): "atvremote"
+     *       field 6 (app_version): "1.0.0"
      */
     fun buildRemoteConfigure(): ByteArray {
         val devInfo = ByteArrayOutputStream()
-        writeFieldVarint(devInfo, 1, 1)
-        writeFieldString(devInfo, 2, "1")
-        writeFieldString(devInfo, 3, "atvremote")
-        writeFieldString(devInfo, 4, "1.0.0")
+        writeFieldString(devInfo, 1, "OmniRemote")
+        writeFieldString(devInfo, 2, "OmniRemote")
+        writeFieldVarint(devInfo, 3, 1)
+        writeFieldString(devInfo, 4, "1")
+        writeFieldString(devInfo, 5, "atvremote")
+        writeFieldString(devInfo, 6, "1.0.0")
 
         val config = ByteArrayOutputStream()
         writeFieldVarint(config, 1, 622)
@@ -340,6 +342,36 @@ object AndroidTvProtocol {
         val remoteMsg = ByteArrayOutputStream()
         writeFieldBytes(remoteMsg, 9, ping.toByteArray()) // field 9 = remote_ping_response
         return remoteMsg.toByteArray()
+    }
+
+    // The server drives negotiation and periodically requires an echoed ping.
+    fun buildRemoteResponse(packet: ByteArray): ByteArray? = when {
+        hasField(packet, 1) -> buildRemoteConfigure()
+        hasField(packet, 2) -> buildRemoteSetActive()
+        hasField(packet, 8) -> getFieldBytes(packet, 8)?.let { ping ->
+            buildRemotePingResponse(getFieldVarint(ping, 1) ?: 0)
+        }
+        else -> null
+    }
+
+    fun isSuccessfulPairingReply(packet: ByteArray, expectedField: Int): Boolean =
+        getFieldVarint(packet, FIELD_STATUS) == STATUS_OK && hasField(packet, expectedField)
+
+    fun getFieldBytes(data: ByteArray, targetFieldNumber: Int): ByteArray? {
+        var offset = 0
+        while (offset < data.size) {
+            val (tag, next) = decodeVarint(data, offset)
+            offset = next
+            if ((tag ushr 3) == targetFieldNumber && (tag and 7) == 2) {
+                val (length, start) = decodeVarint(data, offset)
+                require(length >= 0 && length <= data.size - start) { "Invalid protobuf field length" }
+                return data.copyOfRange(start, start + length)
+            }
+            val end = skipField(data, offset, tag and 7)
+            require(end > offset && end <= data.size) { "Invalid protobuf field" }
+            offset = end
+        }
+        return null
     }
 
     // --- Message Parsing Helpers ---
