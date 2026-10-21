@@ -7,12 +7,15 @@ import com.example.data.model.RemoteKey
 import com.example.data.model.TvAppShortcut
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -21,31 +24,24 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.InputStream
 import java.io.OutputStream
-import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLSocket
 
-/**
- * Enterprise-grade Android TV & Google TV Client.
- *
- * Implements Google TV Remote Protocol v2 (ports 6466 & 6467 with mutual TLS authentication),
- * as well as multi-protocol fallback execution:
- * 1. Google TV Remote Protocol v2 (Port 6466 & 6467 - standard across Android 9, 10, 11, 12, 13, 14 Google TVs)
- * 2. ADB Protocol (Port 5555 - direct keyevent execution when developer options / network debugging enabled)
- * 3. Google Cast / DIAL Protocol (Port 8008 & 8009 - standard across 100% of Android TVs)
- * 4. Sony BRAVIA IRCC-IP Protocol (Port 80 / 8000 / 20060 - standard across Sony Android TVs)
- * 5. Philips JointSPACE Protocol (Port 1925 & 1926)
- * 6. Xiaomi & REST companion endpoints (Port 9080 & 8080)
- */
+/** Android TV Remote Service v2 client with mutual TLS pairing and a persistent control channel. */
 class AndroidTvClient(
     private val context: Context? = null,
     private val tokenStore: TvTokenStore? = null,
     private val onConnectionChanged: ((Boolean, String?) -> Unit)? = null,
-    private val onPairingPromptNeeded: ((String) -> Unit)? = null
+    private val onPairingPromptNeeded: ((String) -> Unit)? = null,
+    private val remotePort: Int = AndroidTvProtocol.PORT_REMOTE,
+    private val pairingPort: Int = AndroidTvProtocol.PORT_PAIRING
 ) {
+    private val remoteConnectMutex = Mutex()
+    private val writeLock = Any()
+    private var pairingIp: String = ""
     private val tag = "AndroidTvClient"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -65,21 +61,14 @@ class AndroidTvClient(
         private set
     var activePort: Int = 6466
         private set
+    @Volatile
     var isConnected: Boolean = false
         private set
+    @Volatile
     var isPaired: Boolean = false
         private set
 
-    // Detected capabilities for active device
-    var isSonyBravia: Boolean = false
-        private set
-    var isPhilipsJointSpace: Boolean = false
-        private set
-    var supportsCast: Boolean = false
-        private set
     var supportsRemoteV2: Boolean = false
-        private set
-    var supportsAdb: Boolean = false
         private set
 
     // Active Remote v2 SSL Socket connection on port 6466
@@ -98,93 +87,26 @@ class AndroidTvClient(
     private var serverCertForPairing: X509Certificate? = null
 
     suspend fun connect(ipAddress: String, port: Int = 6466): Boolean = withContext(Dispatchers.IO) {
-        val cleanIp = ipAddress.trim()
-        activeIp = cleanIp
-
-        Log.d(tag, "Probing Android TV connectivity at $cleanIp (preferred port: $port)...")
-
-        // Parallel probe across standard Android TV ports with generous timeout
-        val probePorts = listOf(
-            port,
-            6466, // Android TV Remote v2 (Control service)
-            6467, // Android TV Remote v2 (Pairing service)
-            8008, // Google Cast / DIAL HTTP
-            8009, // Google Cast TLS
-            5555, // ADB Network Debugging
-            80,   // Sony BRAVIA REST / Web
-            8000, // Sony BRAVIA IRCC / Companion
-            1925, // Philips JointSPACE
-            1926, // Philips JointSPACE v6
-            9080  // Xiaomi Mi TV
-        ).distinct()
-
-        val results = coroutineScope {
-            probePorts.map { p ->
-                async {
-                    Pair(p, isPortOpen(cleanIp, p, 2000))
-                }
-            }.awaitAll()
+        disconnect()
+        activeIp = ipAddress.trim()
+        if (activeIp.isBlank()) return@withContext false
+        activePort = remotePort
+        val ports = coroutineScope {
+            listOf(remotePort, pairingPort).map { p -> async { p to isPortOpen(activeIp, p, 2000) } }.awaitAll()
+        }.filter { it.second }.map { it.first }
+        currentCoroutineContext().ensureActive()
+        supportsRemoteV2 = ports.isNotEmpty()
+        isPaired = tokenStore?.isAndroidTvPaired(activeIp) ?: false
+        if (!supportsRemoteV2) {
+            onConnectionChanged?.invoke(false,
+                "No se encontró Android TV Remote Service en $activeIp. En el FlowBox, comprueba que esté encendido y conectado a la misma red, y que Android TV Remote Service esté habilitado y actualizado.")
+            return@withContext false
         }
-
-        val openPorts = results.filter { it.second }.map { it.first }
-        Log.d(tag, "Open ports detected on Android TV ($cleanIp): $openPorts")
-
-        // Reachability is true if any port is open or if we can establish a quick socket
-        val reachable = openPorts.isNotEmpty() || testReachability(cleanIp)
-
-        if (reachable) {
-            supportsRemoteV2 = openPorts.contains(6466) || openPorts.contains(6467)
-            supportsCast = openPorts.contains(8008) || openPorts.contains(8009)
-            supportsAdb = openPorts.contains(5555)
-            isSonyBravia = openPorts.contains(80) || openPorts.contains(8000) || probeSonyBravia(cleanIp)
-            isPhilipsJointSpace = openPorts.contains(1925) || openPorts.contains(1926)
-
-            activePort = when {
-                supportsRemoteV2 -> 6466
-                supportsAdb -> 5555
-                supportsCast -> 8008
-                isSonyBravia -> if (openPorts.contains(80)) 80 else 8000
-                openPorts.isNotEmpty() -> openPorts.first()
-                else -> port
-            }
-
-            isConnected = true
-            isPaired = tokenStore?.isAndroidTvPaired(cleanIp) ?: false
-
-            Log.d(tag, "Connected to Android TV ($cleanIp:$activePort) [RemoteV2=$supportsRemoteV2, ADB=$supportsAdb, Cast=$supportsCast, Paired=$isPaired]")
-            onConnectionChanged?.invoke(true, null)
-
-            // If Remote v2 is supported, attempt to establish persistent SSL control channel
-            if (supportsRemoteV2) {
-                scope.launch {
-                    initRemoteV2Connection(cleanIp)
-                }
-            }
-
-            true
-        } else {
-            // Even if immediate port probe timed out (TV in light standby or firewall), mark optimistic state
-            isConnected = true
-            activePort = if (port > 0) port else 6466
-            Log.d(tag, "Optimistic connection active for $cleanIp:$activePort (Will broadcast on keypress)")
-            onConnectionChanged?.invoke(true, null)
-            true
+        if (!isPaired) {
+            onPairingPromptNeeded?.invoke(activeIp)
+            return@withContext false
         }
-    }
-
-    private fun testReachability(ip: String): Boolean {
-        return try {
-            Socket().use { s ->
-                s.connect(InetSocketAddress(ip, 8008), 1500)
-                true
-            }
-        } catch (_: Exception) {
-            try {
-                InetAddress.getByName(ip).isReachable(1500)
-            } catch (_: Exception) {
-                false
-            }
-        }
+        initRemoteV2Connection(activeIp)
     }
 
     private fun isPortOpen(ip: String, port: Int, timeoutMs: Int): Boolean {
@@ -198,74 +120,79 @@ class AndroidTvClient(
         }
     }
 
-    private fun probeSonyBravia(ip: String): Boolean {
-        return try {
-            val req = Request.Builder()
-                .url("http://$ip/sony/system")
-                .post("{\"method\":\"getSystemInformation\",\"params\":[],\"id\":1,\"version\":\"1.0\"}".toRequestBody("application/json".toMediaType()))
-                .build()
-            unsafeOkHttpClient.newCall(req).execute().use { it.isSuccessful }
-        } catch (_: Exception) {
-            false
-        }
-    }
-
     /**
      * Connects persistent SSL control session on port 6466 for Google TV Remote v2.
      */
-    private suspend fun initRemoteV2Connection(ip: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            closeRemoteSocket()
-            val sslContext = AndroidTvCertificateManager.getOrCreateSslContext(context)
-            val socket = sslContext.socketFactory.createSocket() as SSLSocket
-            socket.tcpNoDelay = true
-            socket.soTimeout = 0 // Keep-alive
-            socket.connect(InetSocketAddress(ip, 6466), 3000)
-            socket.startHandshake()
-
-            val out = socket.getOutputStream()
-            val inStream = socket.getInputStream()
-
-            remoteSocket = socket
-            remoteOutput = out
-            remoteInput = inStream
-
-            // Send RemoteConfigure
-            val configMsg = AndroidTvProtocol.buildRemoteConfigure()
-            AndroidTvProtocol.writePacket(out, configMsg)
-
-            // Send RemoteSetActive(1)
-            val activeMsg = AndroidTvProtocol.buildRemoteSetActive()
-            AndroidTvProtocol.writePacket(out, activeMsg)
-
-            Log.d(tag, "Google TV Remote v2 TLS channel successfully established with $ip:6466")
-            isPaired = true
-            tokenStore?.setAndroidTvPaired(ip, true)
-
-            // Start background reader loop to maintain keepalive and detect disconnects
-            remoteReaderJob?.cancel()
-            remoteReaderJob = scope.launch {
-                try {
-                    while (remoteSocket?.isConnected == true) {
-                        val packet = AndroidTvProtocol.readPacket(inStream)
-                        if (packet.isNotEmpty()) {
-                            Log.d(tag, "Received RemoteMessage from TV (${packet.size} bytes)")
+    private suspend fun initRemoteV2Connection(ip: String): Boolean = remoteConnectMutex.withLock {
+        withContext(Dispatchers.IO) {
+            try {
+                currentCoroutineContext().ensureActive()
+                closeRemoteSocket()
+                val sslContext = AndroidTvCertificateManager.getOrCreateSslContext(context)
+                val socket = sslContext.socketFactory.createSocket() as SSLSocket
+                remoteSocket = socket // Also close sockets whose TLS handshake is still pending.
+                socket.tcpNoDelay = true
+                socket.soTimeout = 8000
+                socket.connect(InetSocketAddress(ip, remotePort), 3000)
+                socket.startHandshake()
+                val out = socket.getOutputStream()
+                val input = socket.getInputStream()
+                remoteOutput = out
+                remoteInput = input
+                var features = AndroidTvProtocol.REMOTE_FEATURES
+                fun handle(packet: ByteArray) {
+                    AndroidTvProtocol.getFieldBytes(packet, 1)?.let { configure ->
+                        features = (AndroidTvProtocol.getFieldVarint(configure, 1) ?: 0) and AndroidTvProtocol.REMOTE_FEATURES
+                        require(features and 2 != 0) { "La TV no permite enviar teclas." }
+                        writeRemotePacket(out, AndroidTvProtocol.buildRemoteConfigure(features))
+                    }
+                    if (AndroidTvProtocol.hasField(packet, 2)) {
+                        writeRemotePacket(out, AndroidTvProtocol.buildRemoteSetActive(features))
+                    }
+                    AndroidTvProtocol.getFieldBytes(packet, 8)?.let { ping ->
+                        writeRemotePacket(out, AndroidTvProtocol.buildRemotePingResponse(AndroidTvProtocol.getFieldVarint(ping, 1) ?: 0))
+                    }
+                    require(!AndroidTvProtocol.hasField(packet, 3)) { "La TV rechazó el canal de control." }
+                }
+                // The TV initiates configure -> active -> start. TLS alone is not readiness.
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(12)
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    require(System.nanoTime() < deadline) { "La TV no inició el control remoto." }
+                    val packet = AndroidTvProtocol.readPacket(input)
+                    handle(packet)
+                    if (AndroidTvProtocol.hasField(packet, 40)) break
+                }
+                socket.soTimeout = 0
+                currentCoroutineContext().ensureActive()
+                isPaired = true
+                isConnected = true
+                tokenStore?.setAndroidTvPaired(ip, true)
+                onConnectionChanged?.invoke(true, null)
+                remoteReaderJob = scope.launch {
+                    try {
+                        while (remoteSocket === socket) handle(AndroidTvProtocol.readPacket(input))
+                    } catch (e: Exception) {
+                        if (remoteSocket === socket) {
+                            closeRemoteSocket()
+                            onConnectionChanged?.invoke(false, "Se perdió la conexión con la TV. Vuelve a conectar.")
                         }
                     }
-                } catch (e: Exception) {
-                    Log.d(tag, "Remote v2 socket stream closed: ${e.message}")
                 }
+                true
+            } catch (e: Exception) {
+                closeRemoteSocket()
+                currentCoroutineContext().ensureActive()
+                Log.w(tag, "Remote v2 connection failed: ${e.message}")
+                onConnectionChanged?.invoke(false, "No se pudo iniciar el control remoto: ${e.message}")
+                if (isPortOpen(ip, pairingPort, 1500)) onPairingPromptNeeded?.invoke(ip)
+                false
             }
-
-            true
-        } catch (e: Exception) {
-            Log.w(tag, "Remote v2 direct connection failed on port 6466: ${e.message}")
-            // Check if device needs pairing on port 6467
-            if (isPortOpen(ip, 6467, 1500)) {
-                onPairingPromptNeeded?.invoke(ip)
-            }
-            false
         }
+    }
+
+    private fun writeRemotePacket(out: OutputStream, payload: ByteArray) = synchronized(writeLock) {
+        AndroidTvProtocol.writePacket(out, payload)
     }
 
     /**
@@ -288,11 +215,18 @@ class AndroidTvClient(
 
         try {
             closePairingSocket()
+            closeRemoteSocket()
+            isPaired = false
+            tokenStore?.setAndroidTvPaired(targetIp, false)
+            activeIp = targetIp
+            pairingIp = targetIp
+            supportsRemoteV2 = true
             val sslContext = AndroidTvCertificateManager.getOrCreateSslContext(context)
             val socket = sslContext.socketFactory.createSocket() as SSLSocket
             socket.tcpNoDelay = true
             socket.soTimeout = 12000
-            socket.connect(InetSocketAddress(targetIp, 6467), 6000)
+            pairingSocket = socket
+            socket.connect(InetSocketAddress(targetIp, pairingPort), 6000)
             socket.startHandshake()
 
             pairingSocket = socket
@@ -314,6 +248,7 @@ class AndroidTvClient(
 
             // 2. Read PairingRequestAck
             val reqAck = AndroidTvProtocol.readPacket(inStream)
+            AndroidTvProtocol.validatePairingResponse(reqAck, AndroidTvProtocol.FIELD_PAIRING_REQUEST_ACK)
             Log.d(tag, "Received PairingRequestAck (${reqAck.size} bytes)")
 
             // 3. Send Options
@@ -323,6 +258,7 @@ class AndroidTvClient(
 
             // 4. Read Options from TV
             val tvOptions = AndroidTvProtocol.readPacket(inStream)
+            AndroidTvProtocol.validatePairingResponse(tvOptions, AndroidTvProtocol.FIELD_OPTIONS)
             Log.d(tag, "Received TV Options (${tvOptions.size} bytes)")
 
             // 5. Send Configuration
@@ -332,6 +268,7 @@ class AndroidTvClient(
 
             // 6. Read ConfigurationAck
             val configAck = AndroidTvProtocol.readPacket(inStream)
+            AndroidTvProtocol.validatePairingResponse(configAck, AndroidTvProtocol.FIELD_CONFIGURATION_ACK)
             Log.d(tag, "Received ConfigurationAck (${configAck.size} bytes) -> TV displaying code on screen now!")
 
             // Handshake reached PIN prompt stage! TV is now displaying the 6-character code
@@ -341,6 +278,7 @@ class AndroidTvClient(
         } catch (e: Exception) {
             Log.e(tag, "Pairing handshake failed on port 6467: ${e.message}", e)
             closePairingSocket()
+            currentCoroutineContext().ensureActive()
             withContext(Dispatchers.Main) {
                 val userMsg = when {
                     e.message?.contains("Connection refused") == true ->
@@ -382,300 +320,67 @@ class AndroidTvClient(
             AndroidTvProtocol.writePacket(out, secretMsg)
             Log.d(tag, "Sent PairingSecret (${secretMsg.size} bytes)")
 
-            // Read PairingSecretAck
             val secretAck = AndroidTvProtocol.readPacket(inStream)
-            val status = AndroidTvProtocol.getFieldVarint(secretAck, AndroidTvProtocol.FIELD_STATUS) ?: 200
-            Log.d(tag, "Received PairingSecretAck (${secretAck.size} bytes, status=$status)")
-
-            if (status != AndroidTvProtocol.STATUS_OK) {
-                Log.e(tag, "Pairing secret rejected by TV with status $status")
-                closePairingSocket()
-                return@withContext false
-            }
-
+            AndroidTvProtocol.validatePairingResponse(secretAck, AndroidTvProtocol.FIELD_SECRET_ACK)
+            val targetIp = pairingIp
             closePairingSocket()
             isPaired = true
-            tokenStore?.setAndroidTvPaired(activeIp, true)
-
-            // Immediately establish persistent port 6466 Remote connection
-            initRemoteV2Connection(activeIp)
-            true
+            tokenStore?.setAndroidTvPaired(targetIp, true)
+            // Report success only after the paired TV has started accepting remote commands.
+            initRemoteV2Connection(targetIp)
         } catch (e: Exception) {
             Log.e(tag, "Error submitting pairing secret: ${e.message}", e)
             closePairingSocket()
+            currentCoroutineContext().ensureActive()
             false
         }
     }
 
     private fun closeRemoteSocket() {
-        remoteReaderJob?.cancel()
-        remoteReaderJob = null
-        try { remoteOutput?.close() } catch (_: Exception) {}
-        try { remoteInput?.close() } catch (_: Exception) {}
-        try { remoteSocket?.close() } catch (_: Exception) {}
+        // Detach before closing: the reader must not publish a stale disconnect on replacement.
+        val socket = remoteSocket
+        remoteSocket = null
         remoteOutput = null
         remoteInput = null
-        remoteSocket = null
+        isConnected = false
+        remoteReaderJob?.cancel()
+        remoteReaderJob = null
+        try { socket?.close() } catch (_: Exception) {}
     }
 
     private fun closePairingSocket() {
         try { pairingSocket?.close() } catch (_: Exception) {}
         pairingSocket = null
         serverCertForPairing = null
+        pairingIp = ""
     }
+
+    fun cancelPairing() = closePairingSocket()
 
     fun disconnect() {
         closeRemoteSocket()
         closePairingSocket()
         isConnected = false
+        isPaired = false
         onConnectionChanged?.invoke(false, null)
     }
 
     /**
-     * Dispatches a keypress to Android TV using multi-protocol resilient pipeline.
+     * Dispatches a short keypress over the authenticated Remote v2 session.
      */
     suspend fun sendKey(key: RemoteKey): Boolean = withContext(Dispatchers.IO) {
-        val targetIp = activeIp.trim()
-        if (targetIp.isBlank()) return@withContext false
-        var success = false
-
-        // 1. Primary: Google TV Remote v2 Protocol (Port 6466)
-        if (remoteSocket?.isConnected == true && remoteOutput != null) {
-            try {
-                val out = remoteOutput!!
-                // Key DOWN
-                val downMsg = AndroidTvProtocol.buildRemoteKeyInject(key.androidKeyCode, AndroidTvProtocol.KEY_DIRECTION_START)
-                AndroidTvProtocol.writePacket(out, downMsg)
-                delay(40)
-                // Key UP
-                val upMsg = AndroidTvProtocol.buildRemoteKeyInject(key.androidKeyCode, AndroidTvProtocol.KEY_DIRECTION_END)
-                AndroidTvProtocol.writePacket(out, upMsg)
-                success = true
-                Log.d(tag, "Dispatched ${key.name} via active Google TV Remote v2 socket")
-            } catch (e: Exception) {
-                Log.w(tag, "Remote v2 socket write error, reconnecting: ${e.message}")
-                closeRemoteSocket()
-            }
-        }
-
-        // Try reconnecting Remote v2 if not yet connected
-        if (!success && supportsRemoteV2) {
-            if (initRemoteV2Connection(targetIp)) {
-                remoteOutput?.let { out ->
-                    try {
-                        val downMsg = AndroidTvProtocol.buildRemoteKeyInject(key.androidKeyCode, AndroidTvProtocol.KEY_DIRECTION_START)
-                        AndroidTvProtocol.writePacket(out, downMsg)
-                        delay(40)
-                        val upMsg = AndroidTvProtocol.buildRemoteKeyInject(key.androidKeyCode, AndroidTvProtocol.KEY_DIRECTION_END)
-                        AndroidTvProtocol.writePacket(out, upMsg)
-                        success = true
-                    } catch (_: Exception) {}
-                }
-            }
-        }
-
-        // 2. High-Performance Fallback: ADB Protocol (Port 5555)
-        if (!success && (supportsAdb || activePort == 5555 || isPortOpen(targetIp, 5555, 300))) {
-            success = sendAdbKey(targetIp, key.androidKeyCode)
-            if (success) {
-                supportsAdb = true
-                Log.d(tag, "Dispatched ${key.name} via ADB shell (Port 5555)")
-            }
-        }
-
-        // 3. Sony BRAVIA IRCC-IP execution (if Sony TV or ports 80/8000)
-        if (!success && (isSonyBravia || activePort == 80 || activePort == 8000)) {
-            success = sendSonyIrccKey(targetIp, key)
-            if (success) {
-                isSonyBravia = true
-                Log.d(tag, "Dispatched ${key.name} via Sony BRAVIA IRCC")
-            }
-        }
-
-        // 4. Philips JointSPACE execution
-        if (!success && isPhilipsJointSpace) {
-            success = sendPhilipsKey(targetIp, key)
-            if (success) Log.d(tag, "Dispatched ${key.name} via Philips JointSPACE")
-        }
-
-        // 5. Google Cast MediaSession control (Play, Pause, Volume, Stop)
-        if (!success && (supportsCast || key == RemoteKey.PLAY_PAUSE || key == RemoteKey.PLAY || key == RemoteKey.PAUSE)) {
-            success = sendCastCommand(targetIp, key)
-            if (success) Log.d(tag, "Dispatched ${key.name} via Google Cast DIAL")
-        }
-
-        // 6. Generic companion REST fallback & Xiaomi
-        if (!success) {
-            success = sendRestFallback(targetIp, key.androidKeyCode)
-        }
-
-        // 7. Resilient transmission confirmation
-        if (!success) {
-            // Broad probe tries ADB & companion without failing silently
-            success = sendAdbKey(targetIp, key.androidKeyCode) ||
-                    sendSonyIrccKey(targetIp, key) ||
-                    sendPhilipsKey(targetIp, key) ||
-                    true
-        }
-
-        success
-    }
-
-    private fun sendAdbKey(ip: String, keyCode: Int): Boolean {
-        return try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(ip, 5555), 1500)
-                val out: OutputStream = socket.getOutputStream()
-                val cmd = "input keyevent $keyCode\n"
-                out.write(cmd.toByteArray())
-                out.flush()
-                true
-            }
-        } catch (_: Exception) {
+        if (activeIp.isBlank() || !isPaired) return@withContext false
+        if (!isConnected && !initRemoteV2Connection(activeIp)) return@withContext false
+        try {
+            val out = remoteOutput ?: return@withContext false
+            // A short press is one atomic frame; concurrent taps cannot interleave packets.
+            writeRemotePacket(out, AndroidTvProtocol.buildRemoteKeyInject(key.androidKeyCode))
+            true
+        } catch (e: Exception) {
+            closeRemoteSocket()
+            onConnectionChanged?.invoke(false, "No se pudo enviar la tecla. Vuelve a conectar la TV.")
             false
         }
-    }
-
-    private fun sendSonyIrccKey(ip: String, key: RemoteKey): Boolean {
-        val irccCode = getSonyIrccCode(key) ?: return false
-        val soapBody = """
-            <?xml version="1.0"?>
-            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-                <s:Body>
-                    <u:X_SendIRCC xmlns:u="urn:schemas-sony-com:service:IRCC:1">
-                        <IRCCCode>$irccCode</IRCCCode>
-                    </u:X_SendIRCC>
-                </s:Body>
-            </s:Envelope>
-        """.trimIndent()
-
-        val endpoints = listOf("http://$ip/sony/IRCC", "http://$ip:80/sony/IRCC", "http://$ip:8000/sony/IRCC")
-        for (url in endpoints) {
-            try {
-                val req = Request.Builder()
-                    .url(url)
-                    .addHeader("SOAPACTION", "\"urn:schemas-sony-com:service:IRCC:1#X_SendIRCC\"")
-                    .addHeader("X-Auth-PSK", "0000")
-                    .post(soapBody.toRequestBody("text/xml; charset=UTF-8".toMediaType()))
-                    .build()
-                unsafeOkHttpClient.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) return true
-                }
-            } catch (_: Exception) {}
-        }
-        return false
-    }
-
-    private fun getSonyIrccCode(key: RemoteKey): String? = when (key) {
-        RemoteKey.POWER -> "AAAAAQAAAAEAAAAVAw=="
-        RemoteKey.UP -> "AAAAAQAAAAEAAAB0Aw=="
-        RemoteKey.DOWN -> "AAAAAQAAAAEAAAB1Aw=="
-        RemoteKey.LEFT -> "AAAAAQAAAAEAAAB2Aw=="
-        RemoteKey.RIGHT -> "AAAAAQAAAAEAAAB3Aw=="
-        RemoteKey.ENTER -> "AAAAAQAAAAEAAABlAw=="
-        RemoteKey.BACK -> "AAAAAgAAAJcAAAAjAw=="
-        RemoteKey.HOME -> "AAAAAQAAAAEAAABgAw=="
-        RemoteKey.MENU -> "AAAAAgAAAMQAAAAyAw=="
-        RemoteKey.VOL_UP -> "AAAAAQAAAAEAAAASAw=="
-        RemoteKey.VOL_DOWN -> "AAAAAQAAAAEAAAATAw=="
-        RemoteKey.MUTE -> "AAAAAQAAAAEAAAAUAw=="
-        RemoteKey.PLAY -> "AAAAAgAAAJcAAAAaAw=="
-        RemoteKey.PAUSE -> "AAAAAgAAAJcAAAAZAw=="
-        RemoteKey.PLAY_PAUSE -> "AAAAAgAAAJcAAAAZAg=="
-        RemoteKey.STOP -> "AAAAAgAAAJcAAAAYAw=="
-        RemoteKey.REWIND -> "AAAAAgAAAJcAAAAbAw=="
-        RemoteKey.FAST_FORWARD -> "AAAAAgAAAJcAAAAcAw=="
-        RemoteKey.CH_UP -> "AAAAAQAAAAEAAAAQAw=="
-        RemoteKey.CH_DOWN -> "AAAAAQAAAAEAAAARAw=="
-        RemoteKey.SOURCE -> "AAAAAQAAAAEAAAAlAw=="
-        RemoteKey.NUM_0 -> "AAAAAQAAAAEAAAAJAw=="
-        RemoteKey.NUM_1 -> "AAAAAQAAAAEAAAAAAw=="
-        RemoteKey.NUM_2 -> "AAAAAQAAAAEAAAABAw=="
-        RemoteKey.NUM_3 -> "AAAAAQAAAAEAAAACAw=="
-        RemoteKey.NUM_4 -> "AAAAAQAAAAEAAAADAw=="
-        RemoteKey.NUM_5 -> "AAAAAQAAAAEAAAAEAw=="
-        RemoteKey.NUM_6 -> "AAAAAQAAAAEAAAAFAw=="
-        RemoteKey.NUM_7 -> "AAAAAQAAAAEAAAAGAw=="
-        RemoteKey.NUM_8 -> "AAAAAQAAAAEAAAAHAw=="
-        RemoteKey.NUM_9 -> "AAAAAQAAAAEAAAAIAw=="
-        RemoteKey.NUM_PRE_CH -> "AAAAAgAAAJcAAAAkAw=="
-        RemoteKey.INFO -> "AAAAAQAAAAEAAAA6Aw=="
-        RemoteKey.EXIT -> "AAAAAQAAAAEAAABjAw=="
-        else -> null
-    }
-
-    private fun sendPhilipsKey(ip: String, key: RemoteKey): Boolean {
-        val philipsKeyName = when (key) {
-            RemoteKey.UP -> "CursorUp"
-            RemoteKey.DOWN -> "CursorDown"
-            RemoteKey.LEFT -> "CursorLeft"
-            RemoteKey.RIGHT -> "CursorRight"
-            RemoteKey.ENTER -> "Confirm"
-            RemoteKey.BACK -> "Back"
-            RemoteKey.HOME -> "Home"
-            RemoteKey.MENU -> "Options"
-            RemoteKey.VOL_UP -> "VolumeUp"
-            RemoteKey.VOL_DOWN -> "VolumeDown"
-            RemoteKey.MUTE -> "Mute"
-            RemoteKey.PLAY -> "Play"
-            RemoteKey.PAUSE -> "Pause"
-            RemoteKey.PLAY_PAUSE -> "PlayPause"
-            RemoteKey.STOP -> "Stop"
-            RemoteKey.REWIND -> "Rewind"
-            RemoteKey.FAST_FORWARD -> "FastForward"
-            RemoteKey.POWER -> "Standby"
-            else -> return false
-        }
-        val endpoints = listOf("http://$ip:1925/1/input/key", "http://$ip:1926/6/input/key")
-        for (url in endpoints) {
-            try {
-                val body = "{\"key\":\"$philipsKeyName\"}".toRequestBody("application/json".toMediaType())
-                val req = Request.Builder().url(url).post(body).build()
-                unsafeOkHttpClient.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) return true
-                }
-            } catch (_: Exception) {}
-        }
-        return false
-    }
-
-    private fun sendCastCommand(ip: String, key: RemoteKey): Boolean {
-        val type = when (key) {
-            RemoteKey.PLAY_PAUSE -> "PLAY_PAUSE"
-            RemoteKey.PLAY -> "PLAY"
-            RemoteKey.PAUSE -> "PAUSE"
-            RemoteKey.STOP -> "STOP"
-            RemoteKey.VOL_UP -> "VOLUME_UP"
-            RemoteKey.VOL_DOWN -> "VOLUME_DOWN"
-            RemoteKey.MUTE -> "MUTE"
-            else -> return false
-        }
-        return try {
-            val req = Request.Builder()
-                .url("http://$ip:8008/apps/MediaSession")
-                .post("{\"type\":\"$type\"}".toRequestBody("application/json".toMediaType()))
-                .build()
-            unsafeOkHttpClient.newCall(req).execute().use { it.isSuccessful }
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun sendRestFallback(ip: String, keyCode: Int): Boolean {
-        val urls = listOf(
-            "http://$ip:8000/key?code=$keyCode",
-            "http://$ip:8080/key?code=$keyCode",
-            "http://$ip:9080/key?code=$keyCode"
-        )
-        for (url in urls) {
-            try {
-                val req = Request.Builder().url(url).build()
-                unsafeOkHttpClient.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) return true
-                }
-            } catch (_: Exception) {}
-        }
-        return false
     }
 
     suspend fun sendText(text: String): Boolean = withContext(Dispatchers.IO) {

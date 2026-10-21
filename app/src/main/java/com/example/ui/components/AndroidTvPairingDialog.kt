@@ -186,9 +186,7 @@ fun AndroidTvPairingDialog(
                 OutlinedTextField(
                     value = pinText,
                     onValueChange = { input ->
-                        if (input.length <= 6) {
-                            pinText = input.uppercase()
-                        }
+                        pinText = input.uppercase().filter { it in "0123456789ABCDEF" }.take(6)
                     },
                     label = { Text("6-CHARACTER CODE", fontFamily = FontFamily.Monospace, fontSize = 10.sp) },
                     placeholder = { Text("e.g. 4A8B2C", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
@@ -210,7 +208,7 @@ fun AndroidTvPairingDialog(
                     keyboardActions = KeyboardActions(
                         onDone = {
                             focusManager.clearFocus()
-                            if (pinText.isNotBlank()) onSubmitPin(pinText)
+                            if (pinText.length == 6 && !isLoading) onSubmitPin(pinText)
                         }
                     ),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -247,7 +245,7 @@ fun AndroidTvPairingDialog(
                             }
                             if (onRetry != null) {
                                 Surface(
-                                    onClick = onRetry,
+                                    onClick = { pinText = ""; onRetry() },
                                     color = Color.White,
                                     shape = RoundedCornerShape(4.dp),
                                     modifier = Modifier.align(Alignment.End).testTag("pairing_retry_button")
@@ -305,8 +303,8 @@ fun AndroidTvPairingDialog(
                     focusManager.clearFocus()
                     onSubmitPin(pinText)
                 },
-                enabled = pinText.length >= 4 && !isLoading,
-                color = if (pinText.length >= 4 && !isLoading) Color.White else Color(0xFF222222),
+                enabled = pinText.length == 6 && !isLoading,
+                color = if (pinText.length == 6 && !isLoading) Color.White else Color(0xFF222222),
                 shape = RoundedCornerShape(6.dp),
                 modifier = Modifier.testTag("pairing_submit_button")
             ) {
@@ -326,7 +324,7 @@ fun AndroidTvPairingDialog(
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
-                            color = if (pinText.length >= 4) Color.Black else TextMuted
+                            color = if (pinText.length == 6) Color.Black else TextMuted
                         )
                     }
                 }

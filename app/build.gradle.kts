@@ -63,7 +63,13 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      // Conscrypt's local TLS server reads InetAddress metadata under Robolectric/JDK 21.
+      all { it.jvmArgs("--add-opens=java.base/java.net=ALL-UNNAMED") }
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true

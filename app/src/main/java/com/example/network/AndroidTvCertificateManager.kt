@@ -78,13 +78,20 @@ object AndroidTvCertificateManager {
         return sslContext
     }
 
+    @Synchronized
     fun getClientCertificate(context: Context? = null): X509Certificate {
         cachedCert?.let { return it }
-        return getOrCreateKeyPairAndCertificate(context).first.also { cachedCert = it }
+        val (cert, key) = getOrCreateKeyPairAndCertificate(context)
+        cachedCert = cert
+        cachedKey = key
+        return cert
     }
 
     @Synchronized
     private fun getOrCreateKeyPairAndCertificate(context: Context?): Pair<X509Certificate, PrivateKey> {
+        val existingCert = cachedCert
+        val existingKey = cachedKey
+        if (existingCert != null && existingKey != null) return existingCert to existingKey
         // 1. Check persistent token store first: ensures the EXACT same client certificate and private key
         // are used permanently across all launches, re-connections, and app restarts.
         if (context != null) {
@@ -97,6 +104,7 @@ object AndroidTvCertificateManager {
                     val keyBytes = Base64.decode(keyBase64, Base64.DEFAULT)
                     val cf = CertificateFactory.getInstance("X.509")
                     val cert = cf.generateCertificate(ByteArrayInputStream(certBytes)) as X509Certificate
+                    cert.checkValidity()
                     val kf = KeyFactory.getInstance("RSA")
                     val key = kf.generatePrivate(PKCS8EncodedKeySpec(keyBytes))
                     Log.d(TAG, "Restored permanent client certificate from persistent store: CN=${cert.subjectX500Principal.name}")
@@ -204,14 +212,19 @@ object AndroidTvCertificateManager {
     }
 
     private fun buildValidity(notBefore: Date, notAfter: Date): ByteArray {
-        val sdf = SimpleDateFormat("yyMMddHHmmss'Z'", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
+        fun encode(date: Date): ByteArray {
+            val year = SimpleDateFormat("yyyy", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }.format(date).toInt()
+            // X.509 UTCTime only represents years 1950 through 2049.
+            val generalized = year !in 1950..2049
+            val format = if (generalized) "yyyyMMddHHmmss'Z'" else "yyMMddHHmmss'Z'"
+            val bytes = SimpleDateFormat(format, Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }.format(date).toByteArray(Charsets.US_ASCII)
+            return wrapDerElement(if (generalized) 0x18 else 0x17, bytes)
         }
-        val nbStr = sdf.format(notBefore).toByteArray(Charsets.US_ASCII)
-        val naStr = sdf.format(notAfter).toByteArray(Charsets.US_ASCII)
-        val nbElem = wrapDerElement(0x17, nbStr) // UTCTime
-        val naElem = wrapDerElement(0x17, naStr)
-        return wrapDerSequence(nbElem + naElem)
+        return wrapDerSequence(encode(notBefore) + encode(notAfter))
     }
 
     private fun wrapDerSequence(contents: ByteArray): ByteArray {
