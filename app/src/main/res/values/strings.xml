@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">OmniRemote</string>
+    <string name="tile_remote_label">Control TV</string>
+    <string name="tile_remote_desc">Abrir control remoto de TV</string>
+    <string name="tile_power_label">Encender TV</string>
+    <string name="tile_power_desc">Encender TV por Wake-on-LAN</string>
+</resources>

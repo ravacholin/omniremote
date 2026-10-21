@@ -1,0 +1,6 @@
+{
+  "name": "OmniRemote",
+  "description": "Unified smart remote for Samsung Smart TVs and Android TVs with seamless device switching, trackpad, and quick app launchers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
