@@ -129,7 +129,7 @@ class NsdTvDiscoveryService(private val context: Context) {
         // Also trigger subnet & SSDP network probe alongside NSD so TVs are found even if router filters mDNS
         subnetScanJob = scope.launch {
             try {
-                val subnetResults = fallbackScanner.scanLocalNetwork()
+                val subnetResults = fallbackScanner.scanLocalNetwork(onDeviceFound = { addOrUpdateDiscoveredTv(it) })
                 subnetResults.forEach { addOrUpdateDiscoveredTv(it) }
             } catch (e: Exception) {
                 Log.d("NsdTvDiscoveryService", "Subnet probe complement info: ${e.message}")
@@ -223,7 +223,7 @@ class NsdTvDiscoveryService(private val context: Context) {
 
     private fun getHostAddress(serviceInfo: NsdServiceInfo): String? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            serviceInfo.hostAddresses.firstOrNull()?.hostAddress ?: serviceInfo.host?.hostAddress
+            serviceInfo.hostAddresses.firstOrNull { it is java.net.Inet4Address }?.hostAddress ?: serviceInfo.hostAddresses.firstOrNull()?.hostAddress ?: serviceInfo.host?.hostAddress
         } else {
             serviceInfo.host?.hostAddress
         }
@@ -288,13 +288,16 @@ class NsdTvDiscoveryService(private val context: Context) {
         addOrUpdateDiscoveredTv(discovered)
     }
 
+    @Synchronized
     private fun addOrUpdateDiscoveredTv(tv: DiscoveredTv) {
         val current = _discoveredTvs.value.toMutableList()
         val index = current.indexOfFirst { it.ipAddress == tv.ipAddress }
         if (index >= 0) {
             val existing = current[index]
-            val betterName = if (tv.name.length > existing.name.length && !existing.name.contains("Smart TV")) tv.name else existing.name
-            current[index] = tv.copy(name = betterName)
+            val generic = tv.name.contains(tv.ipAddress) || tv.name == "Google TV"
+            val betterName = if (generic) existing.name else tv.name
+            val remotePort = if (existing.port == 6466 || tv.port == 6466) 6466 else tv.port
+            current[index] = tv.copy(name = betterName, port = remotePort)
         } else {
             current.add(tv)
         }

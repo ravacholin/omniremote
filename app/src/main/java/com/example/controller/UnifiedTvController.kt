@@ -115,8 +115,14 @@ class UnifiedTvController(
             onResult(false, "No hay ningún dispositivo seleccionado para vincular.")
             return
         }
-        pairingJob?.cancel()
+        val connection = connectionJob
+        val previousPairing = pairingJob
+        connection?.cancel()
+        previousPairing?.cancel()
+        androidClient.cancelPairing()
         pairingJob = scope.launch {
+            previousPairing?.join()
+            connection?.join()
             androidClient.startPairing(dev.ipAddress, onShowPinDialog, onResult)
         }
     }
@@ -142,7 +148,7 @@ class UnifiedTvController(
     fun isCurrentAndroidTvPaired(): Boolean {
         val dev = activeDevice ?: return false
         return if (dev.deviceType == DeviceType.ANDROID_TV) {
-            tokenStore?.isAndroidTvPaired(dev.ipAddress) ?: androidClient.isPaired
+            androidClient.isPaired
         } else false
     }
 
@@ -180,10 +186,7 @@ class UnifiedTvController(
             DeviceType.ANDROID_TV -> {
                 connectionJob = scope.launch {
                     val ok = androidClient.connect(effectiveDevice.ipAddress, effectiveDevice.port)
-                    if (ok) {
-                        _connectionState.value = ConnectionState.Connected(effectiveDevice.name, effectiveDevice.ipAddress)
-                        addLog(effectiveDevice.name, "Connected to ${effectiveDevice.name} at ${effectiveDevice.ipAddress}", true)
-                    }
+                    if (ok) addLog(effectiveDevice.name, "Conectado a ${effectiveDevice.name}", true)
                     // The client emits the specific connection or authorization error.
                 }
             }
@@ -195,6 +198,11 @@ class UnifiedTvController(
             disconnectCurrent()
             setActiveDevice(dev)
         }
+    }
+
+    fun cancelAndroidTvPairing() {
+        pairingJob?.cancel()
+        androidClient.cancelPairing()
     }
 
     private fun disconnectCurrent() {

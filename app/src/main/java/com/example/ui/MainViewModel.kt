@@ -201,6 +201,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
+            controller.connectionState.collect { state ->
+                if (state is ConnectionState.WaitingAuth && controller.isCurrentDeviceAndroidTv() &&
+                    !_isAndroidTvPairingDialogOpen.value) startAndroidTvPairing()
+            }
+        }
+        viewModelScope.launch {
             repository.cleanDemoDevices()
         }
 
@@ -452,7 +458,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var pairingSubmitJob: kotlinx.coroutines.Job? = null
+
     fun startAndroidTvPairing() {
+        pairingSubmitJob?.cancel()
         val dev = _activeDevice.value
         if (dev == null) {
             _pairingErrorMessage.value = "Selecciona primero tu Google TV para vincular."
@@ -485,13 +494,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun submitAndroidTvPin(pin: String) {
-        if (pin.length < 4) {
-            _pairingErrorMessage.value = "Introduce el código que aparece en tu pantalla de TV"
+        if (!pin.trim().matches(Regex("[0-9a-fA-F]{6}"))) {
+            _pairingErrorMessage.value = "Introduce los 6 caracteres (0–9 y A–F) que aparecen en la TV"
             return
         }
         _isPairingInProgress.value = true
         _pairingErrorMessage.value = null
-        viewModelScope.launch {
+        pairingSubmitJob = viewModelScope.launch {
             val ok = controller.submitAndroidTvPin(pin)
             _isPairingInProgress.value = false
             if (ok) {
@@ -505,6 +514,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeAndroidTvPairingDialog() {
+        pairingSubmitJob?.cancel()
+        controller.cancelAndroidTvPairing()
+        _isPairingInProgress.value = false
         _isAndroidTvPairingDialogOpen.value = false
         _pairingErrorMessage.value = null
         _pairingSuccessMessage.value = null

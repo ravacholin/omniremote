@@ -64,7 +64,7 @@ class AndroidTvSessionTest {
                     socket.startHandshake()
                     val input = socket.inputStream
                     val output = socket.outputStream
-                    Protocol.writePacket(output, byteArrayOf(0x0a, 0x00))
+                    Protocol.writePacket(output, byteArrayOf(0x0a, 0x02, 0x08, 99))
                     check(Protocol.hasField(Protocol.readPacket(input), 1))
                     Protocol.writePacket(output, byteArrayOf(0x12, 0x00))
                     check(Protocol.hasField(Protocol.readPacket(input), 2))
