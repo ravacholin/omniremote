@@ -82,8 +82,8 @@ object AndroidTvCertificateManager {
     fun getClientCertificate(context: Context? = null): X509Certificate {
         cachedCert?.let { return it }
         val (cert, key) = getOrCreateKeyPairAndCertificate(context)
-        cachedCert = cert
         cachedKey = key
+        cachedCert = cert
         return cert
     }
 
@@ -99,18 +99,31 @@ object AndroidTvCertificateManager {
             val certBase64 = tokenStore.getCertDer()
             val keyBase64 = tokenStore.getPrivateKeyPkcs8()
             if (!certBase64.isNullOrBlank() && !keyBase64.isNullOrBlank()) {
-                try {
+                val restored = try {
                     val certBytes = Base64.decode(certBase64, Base64.DEFAULT)
                     val keyBytes = Base64.decode(keyBase64, Base64.DEFAULT)
                     val cf = CertificateFactory.getInstance("X.509")
                     val cert = cf.generateCertificate(ByteArrayInputStream(certBytes)) as X509Certificate
-                    cert.checkValidity()
-                    val kf = KeyFactory.getInstance("RSA")
-                    val key = kf.generatePrivate(PKCS8EncodedKeySpec(keyBytes))
-                    Log.d(TAG, "Restored permanent client certificate from persistent store: CN=${cert.subjectX500Principal.name}")
-                    return Pair(cert, key)
+                    val key = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyBytes))
+                    cert to key
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to restore persisted cert: ${e.message}")
+                    null
+                }
+                if (restored != null) {
+                    val (cert, key) = restored
+                    val effectiveCert = try {
+                        cert.checkValidity()
+                        cert
+                    } catch (_: java.security.cert.CertificateExpiredException) {
+                        // Repair certificates from versions which encoded 2050+ as UTCTime.
+                        // Keep the authorized RSA key instead of silently rotating identity.
+                        val renewed = generateSelfSignedCertDer(KeyPair(cert.publicKey, key))
+                        tokenStore.saveCertData(Base64.encodeToString(renewed.encoded, Base64.NO_WRAP), keyBase64)
+                        Log.d(TAG, "Renewed expired client certificate using the existing RSA key")
+                        renewed
+                    }
+                    return effectiveCert to key
                 }
             }
         }
@@ -131,7 +144,7 @@ object AndroidTvCertificateManager {
                 tokenStore.saveCertData(certB64, keyB64)
                 Log.d(TAG, "Generated and permanently persisted new client TLS certificate and RSA key in TvTokenStore")
             } catch (e: Exception) {
-                Log.w(TAG, "Could not persist generated cert to store: ${e.message}")
+                throw IllegalStateException("Could not persist client TLS identity", e)
             }
         }
 
@@ -212,19 +225,21 @@ object AndroidTvCertificateManager {
     }
 
     private fun buildValidity(notBefore: Date, notAfter: Date): ByteArray {
-        fun encode(date: Date): ByteArray {
+        // X.509 UTCTime only represents 1950–2049. A 25-year certificate now
+        // ends after that range and must use GeneralizedTime for its expiry.
+        fun encodeTime(date: Date): ByteArray {
             val year = SimpleDateFormat("yyyy", Locale.US).apply {
                 timeZone = TimeZone.getTimeZone("UTC")
             }.format(date).toInt()
-            // X.509 UTCTime only represents years 1950 through 2049.
-            val generalized = year !in 1950..2049
-            val format = if (generalized) "yyyyMMddHHmmss'Z'" else "yyMMddHHmmss'Z'"
-            val bytes = SimpleDateFormat(format, Locale.US).apply {
+            val utc = year in 1950..2049
+            val formatter = SimpleDateFormat(if (utc) "yyMMddHHmmss'Z'" else "yyyyMMddHHmmss'Z'", Locale.US).apply {
                 timeZone = TimeZone.getTimeZone("UTC")
-            }.format(date).toByteArray(Charsets.US_ASCII)
-            return wrapDerElement(if (generalized) 0x18 else 0x17, bytes)
+            }
+            return wrapDerElement(if (utc) 0x17 else 0x18, formatter.format(date).toByteArray(Charsets.US_ASCII))
         }
-        return wrapDerSequence(encode(notBefore) + encode(notAfter))
+        val nbElem = encodeTime(notBefore)
+        val naElem = encodeTime(notAfter)
+        return wrapDerSequence(nbElem + naElem)
     }
 
     private fun wrapDerSequence(contents: ByteArray): ByteArray {

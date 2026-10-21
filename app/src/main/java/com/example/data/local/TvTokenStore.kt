@@ -3,6 +3,7 @@ package com.example.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.example.network.WakeOnLan
 
 /**
  * Persistent token store for TV device authorization credentials.
@@ -25,37 +26,38 @@ class TvTokenStore(context: Context) {
             putString(KEY_PREFIX_IP + cleanIp, token)
             if (deviceId != null && deviceId > 0) {
                 putString(KEY_PREFIX_ID + deviceId, token)
+                putLong(KEY_IP_OWNER_ID + cleanIp, deviceId)
             }
-            if (!macAddress.isNullOrBlank()) {
-                putString(KEY_PREFIX_MAC + macAddress.trim().uppercase(), token)
+            WakeOnLan.formatMacAddress(macAddress)?.let { mac ->
+                putString(KEY_PREFIX_MAC + mac, token)
+                putString(KEY_IP_OWNER_MAC + cleanIp, mac)
+                if (deviceId != null && deviceId > 0) putString(KEY_ID_OWNER_MAC + deviceId, mac)
             }
-            // Also store the most recent token as fallback
-            putString(KEY_LAST_SAMSUNG_TOKEN, token)
             apply()
         }
     }
 
     fun getSamsungToken(ipAddress: String, deviceId: Long? = null, macAddress: String? = null): String {
         val cleanIp = ipAddress.trim()
-        // 1. Try IP address match
-        var token = prefs.getString(KEY_PREFIX_IP + cleanIp, null)
-        if (!token.isNullOrBlank()) return token
-
-        // 2. Try Device ID match
+        // Stable hardware identity wins when DHCP assigns an old IP to another TV.
+        WakeOnLan.formatMacAddress(macAddress)?.let { mac ->
+            val token = prefs.getString(KEY_PREFIX_MAC + mac, null)
+                ?: macAddress?.let { prefs.getString(KEY_PREFIX_MAC + it.trim().uppercase(), null) }
+            if (!token.isNullOrBlank()) return token
+        }
         if (deviceId != null && deviceId > 0) {
-            token = prefs.getString(KEY_PREFIX_ID + deviceId, null)
+            val owner = prefs.getString(KEY_ID_OWNER_MAC + deviceId, null)
+            val requested = WakeOnLan.formatMacAddress(macAddress)
+            if (owner != null && requested != null && owner != requested) return ""
+            val token = prefs.getString(KEY_PREFIX_ID + deviceId, null)
             if (!token.isNullOrBlank()) return token
         }
-
-        // 3. Try MAC address match
-        if (!macAddress.isNullOrBlank()) {
-            token = prefs.getString(KEY_PREFIX_MAC + macAddress.trim().uppercase(), null)
-            if (!token.isNullOrBlank()) return token
-        }
-
-        // 4. If only one Samsung TV was ever paired on this network, use the last known token
-        val lastToken = prefs.getString(KEY_LAST_SAMSUNG_TOKEN, "") ?: ""
-        return lastToken
+        val ownerMac = prefs.getString(KEY_IP_OWNER_MAC + cleanIp, null)
+        val requestedMac = WakeOnLan.formatMacAddress(macAddress)
+        if (requestedMac != null && ownerMac != null && requestedMac != ownerMac) return ""
+        val ownerId = prefs.getLong(KEY_IP_OWNER_ID + cleanIp, 0)
+        if (deviceId != null && deviceId > 0 && ownerId > 0 && deviceId != ownerId) return ""
+        return prefs.getString(KEY_PREFIX_IP + cleanIp, "") ?: ""
     }
 
     fun clearSamsungToken(ipAddress: String) {
@@ -74,7 +76,12 @@ class TvTokenStore(context: Context) {
     }
 
     fun clearAllTokens() {
-        prefs.edit().clear().apply()
+        // The client identity is shared by all Android TVs. Rotating it would invalidate
+        // their existing authorizations, including after a process restart.
+        val editor = prefs.edit()
+        prefs.all.keys.filter { it != KEY_CLIENT_CERT_DER && it != KEY_CLIENT_KEY_PKCS8 }
+            .forEach { editor.remove(it) }
+        editor.apply()
     }
 
     fun isAndroidTvPaired(ipAddress: String): Boolean {
@@ -91,7 +98,7 @@ class TvTokenStore(context: Context) {
         prefs.edit()
             .putString(KEY_CLIENT_CERT_DER, certDerBase64)
             .putString(KEY_CLIENT_KEY_PKCS8, privateKeyPkcs8Base64)
-            .apply()
+            .commit().also { check(it) { "Could not persist Android TV TLS identity" } }
     }
 
     fun getCertDer(): String? = prefs.getString(KEY_CLIENT_CERT_DER, null)
@@ -103,7 +110,9 @@ class TvTokenStore(context: Context) {
         private const val KEY_PREFIX_IP = "samsung_token_ip_"
         private const val KEY_PREFIX_ID = "samsung_token_id_"
         private const val KEY_PREFIX_MAC = "samsung_token_mac_"
-        private const val KEY_LAST_SAMSUNG_TOKEN = "samsung_token_last"
+        private const val KEY_IP_OWNER_MAC = "samsung_ip_owner_mac_"
+        private const val KEY_IP_OWNER_ID = "samsung_ip_owner_id_"
+        private const val KEY_ID_OWNER_MAC = "samsung_id_owner_mac_"
         private const val KEY_PREFIX_ANDROID_PAIRED = "android_tv_paired_"
         private const val KEY_CLIENT_CERT_DER = "android_tv_client_cert_der"
         private const val KEY_CLIENT_KEY_PKCS8 = "android_tv_client_key_pkcs8"

@@ -73,7 +73,7 @@ object AndroidTvProtocol {
     /**
      * Writes a varint-framed packet to the SSL output stream.
      */
-    fun writePacket(output: OutputStream, payload: ByteArray) {
+    fun writePacket(output: OutputStream, payload: ByteArray) = synchronized(output) {
         val header = ByteArrayOutputStream()
         writeVarint(header, payload.size)
         output.write(header.toByteArray())
@@ -240,6 +240,8 @@ object AndroidTvProtocol {
     /** Builds RemoteConfigure using the RemoteDeviceInfo schema from remotemessage.proto. */
     fun buildRemoteConfigure(features: Int = REMOTE_FEATURES): ByteArray {
         val devInfo = ByteArrayOutputStream()
+        writeFieldString(devInfo, 1, "OmniRemote")
+        writeFieldString(devInfo, 2, "OmniRemote")
         writeFieldVarint(devInfo, 3, 1)
         writeFieldString(devInfo, 4, "1")
         writeFieldString(devInfo, 5, "atvremote")
@@ -297,6 +299,18 @@ object AndroidTvProtocol {
         writeFieldBytes(remoteMsg, 9, ping.toByteArray()) // field 9 = remote_ping_response
         return remoteMsg.toByteArray()
     }
+
+    fun buildRemoteResponse(packet: ByteArray, features: Int = REMOTE_FEATURES): ByteArray? = when {
+        hasField(packet, 1) -> buildRemoteConfigure(features)
+        hasField(packet, 2) -> buildRemoteSetActive(features)
+        hasField(packet, 8) -> getFieldBytes(packet, 8)?.let { ping ->
+            buildRemotePingResponse(getFieldVarint(ping, 1) ?: 0)
+        }
+        else -> null
+    }
+
+    fun isSuccessfulPairingReply(packet: ByteArray, expectedField: Int): Boolean =
+        runCatching { validatePairingResponse(packet, expectedField) }.isSuccess
 
     // --- Message Parsing Helpers ---
 

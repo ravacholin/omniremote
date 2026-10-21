@@ -35,6 +35,8 @@ class SamsungTvClient(
     var isConnected = false
         private set
 
+    private val connectionGeneration = java.util.concurrent.atomic.AtomicLong()
+
     private var currentIp: String = ""
     private var currentPort: Int = 8002
     private var currentToken: String = ""
@@ -66,7 +68,9 @@ class SamsungTvClient(
 
     fun connect(ipAddress: String, port: Int = 8002, token: String = "") {
         disconnect()
-        currentIp = ipAddress.trim()
+        val generation = connectionGeneration.get()
+        val sessionIp = ipAddress.trim()
+        currentIp = sessionIp
         // Modern Samsung Smart TVs (Tizen 2016-2024) require secure WSS on port 8002.
         // Port 8001 is unencrypted and invalidates/conflicts with secure token sessions.
         currentPort = 8002
@@ -88,13 +92,13 @@ class SamsungTvClient(
 
         webSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                isConnected = true
-                Log.d("SamsungTvClient", "Connected to Samsung TV WebSocket at $currentIp:$currentPort (Authorized session)")
-                onConnectionChanged?.invoke(true, null)
+                if (generation != connectionGeneration.get()) return
+                // Wait for ms.channel.connect before reporting an authorized session.
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                Log.d("SamsungTvClient", "Message from Samsung TV: $text")
+                if (generation != connectionGeneration.get()) return
+
                 try {
                     val json = JSONObject(text)
                     val event = json.optString("event")
@@ -102,9 +106,9 @@ class SamsungTvClient(
                     // Extract token from multiple possible structures returned across Samsung Tizen versions
                     val receivedToken = extractTokenFromJson(json)
                     if (!receivedToken.isNullOrBlank()) {
-                        Log.d("SamsungTvClient", "Received persistent Samsung TV authorization token: $receivedToken")
+                        Log.d("SamsungTvClient", "Received Samsung TV authorization token")
                         currentToken = receivedToken
-                        tokenStore?.saveSamsungToken(currentIp, receivedToken)
+                        tokenStore?.saveSamsungToken(sessionIp, receivedToken)
                         onTokenReceived?.invoke(receivedToken)
                         isConnected = true
                         onConnectionChanged?.invoke(true, null)
@@ -116,13 +120,9 @@ class SamsungTvClient(
                             onConnectionChanged?.invoke(true, null)
                         }
                         "ms.channel.unauthorized" -> {
+                            isConnected = false
                             Log.w("SamsungTvClient", "Samsung TV requires authorization on TV screen")
                             onWaitingAuthPrompt?.invoke()
-                        }
-                        "ms.channel.clientConnect" -> {
-                            // Client has successfully connected or was authorized by user
-                            isConnected = true
-                            onConnectionChanged?.invoke(true, null)
                         }
                     }
                 } catch (e: Exception) {
@@ -131,6 +131,7 @@ class SamsungTvClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (generation != connectionGeneration.get()) return
                 isConnected = false
                 Log.w("SamsungTvClient", "WebSocket failure on Samsung TV $currentIp:8002: ${t.message}")
                 onConnectionChanged?.invoke(
@@ -140,11 +141,13 @@ class SamsungTvClient(
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                if (generation != connectionGeneration.get()) return
                 isConnected = false
                 onConnectionChanged?.invoke(false, "Connection closed: $reason")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (generation != connectionGeneration.get()) return
                 isConnected = false
                 onConnectionChanged?.invoke(false, null)
             }
@@ -161,22 +164,11 @@ class SamsungTvClient(
         token = json.optString("token")
         if (!token.isNullOrBlank() && token != "null") return token
 
-        // Check inside clients array if present
-        val clients = dataObj?.optJSONArray("clients")
-        if (clients != null && clients.length() > 0) {
-            for (i in 0 until clients.length()) {
-                val clientObj = clients.optJSONObject(i)
-                val cToken = clientObj?.optString("token")
-                if (!cToken.isNullOrBlank() && cToken != "null") return cToken
-                val attrObj = clientObj?.optJSONObject("attributes")
-                val aToken = attrObj?.optString("token")
-                if (!aToken.isNullOrBlank() && aToken != "null") return aToken
-            }
-        }
         return null
     }
 
     fun disconnect() {
+        connectionGeneration.incrementAndGet()
         webSocket?.close(1000, "User disconnected")
         webSocket = null
         isConnected = false
