@@ -145,7 +145,7 @@ fun MacAddressConfigDialog(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Para encender la TV desde modo apagado/reposo, la red necesita su dirección física MAC (Wake-on-LAN). Otras apps funcionan porque ya tienen guardada esta dirección.",
+                                text = "Para encender la TV desde modo apagado/reposo, la red necesita su dirección física MAC (Wake-on-LAN). La compatibilidad con Wake-on-LAN depende de la TV y de su conexión de red.",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = TextPrimary,
                                     fontSize = 12.sp,
@@ -234,7 +234,7 @@ fun MacAddressConfigDialog(
                                 statusMessage = "¡MAC detectada exitosamente de la TV!"
                                 isError = false
                             } else {
-                                statusMessage = "La TV no respondió por red (está apagada). Ingresa la MAC manualmente."
+                                statusMessage = "No se pudo obtener la MAC por red. Esto no confirma que la TV esté apagada. Puedes ingresar la MAC manualmente."
                                 isError = true
                             }
                         }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.InetAddress
@@ -62,6 +63,8 @@ class NsdTvDiscoveryService(private val context: Context) {
     @Volatile
     private var isResolving = false
     private var resolveTimeoutJob: Job? = null
+    @Volatile private var scanGeneration = 0L
+    @Volatile private var resolveGeneration = 0L
 
     private val fallbackScanner = TvScanner(context)
     private var subnetScanJob: Job? = null
@@ -69,6 +72,7 @@ class NsdTvDiscoveryService(private val context: Context) {
     fun startDiscovery() {
         stopDiscovery()
         _discoveredTvs.value = emptyList()
+        val generation = scanGeneration
 
         // Acquire Multicast lock for mDNS multicast UDP packets
         try {
@@ -98,7 +102,7 @@ class NsdTvDiscoveryService(private val context: Context) {
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                     Log.d("NsdTvDiscoveryService", "NSD Service Found: ${serviceInfo.serviceName} (${serviceInfo.serviceType})")
-                    queueResolve(serviceInfo)
+                    if (generation == scanGeneration) queueResolve(serviceInfo)
                 }
 
                 override fun onServiceLost(serviceInfo: NsdServiceInfo) {
@@ -129,8 +133,8 @@ class NsdTvDiscoveryService(private val context: Context) {
         // Also trigger subnet & SSDP network probe alongside NSD so TVs are found even if router filters mDNS
         subnetScanJob = scope.launch {
             try {
-                val subnetResults = fallbackScanner.scanLocalNetwork()
-                subnetResults.forEach { addOrUpdateDiscoveredTv(it) }
+                val subnetResults = fallbackScanner.scanLocalNetwork(onDeviceFound = { if (generation == scanGeneration) addOrUpdateDiscoveredTv(it) })
+                if (generation == scanGeneration) subnetResults.forEach { addOrUpdateDiscoveredTv(it) }
             } catch (e: Exception) {
                 Log.d("NsdTvDiscoveryService", "Subnet probe complement info: ${e.message}")
             }
@@ -138,6 +142,8 @@ class NsdTvDiscoveryService(private val context: Context) {
     }
 
     fun stopDiscovery() {
+        scanGeneration++
+        resolveGeneration++
         subnetScanJob?.cancel()
         subnetScanJob = null
 
@@ -179,6 +185,7 @@ class NsdTvDiscoveryService(private val context: Context) {
         val nextService = resolveQueue.poll() ?: return
 
         isResolving = true
+        val request = ++resolveGeneration
         val manager = nsdManager ?: run {
             isResolving = false
             return
@@ -187,9 +194,10 @@ class NsdTvDiscoveryService(private val context: Context) {
         // Watchdog timeout to prevent queue stalling if device does not reply to resolve
         resolveTimeoutJob?.cancel()
         resolveTimeoutJob = scope.launch {
-            delay(3000)
-            if (isResolving) {
+            delay(6000)
+            if (isResolving && request == resolveGeneration) {
                 Log.w("NsdTvDiscoveryService", "Resolve timed out for ${nextService.serviceName}")
+                resolveGeneration++
                 isResolving = false
                 processNextResolve()
             }
@@ -198,6 +206,7 @@ class NsdTvDiscoveryService(private val context: Context) {
         try {
             manager.resolveService(nextService, object : NsdManager.ResolveListener {
                 override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    if (request != resolveGeneration) return
                     Log.w("NsdTvDiscoveryService", "Resolve failed for ${serviceInfo.serviceName}: code $errorCode")
                     resolveTimeoutJob?.cancel()
                     isResolving = false
@@ -205,6 +214,7 @@ class NsdTvDiscoveryService(private val context: Context) {
                 }
 
                 override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                    if (request != resolveGeneration) return
                     resolveTimeoutJob?.cancel()
                     val hostAddr = getHostAddress(serviceInfo)
                     Log.d("NsdTvDiscoveryService", "Service successfully resolved: ${serviceInfo.serviceName} at $hostAddr:${serviceInfo.port}")
@@ -223,7 +233,7 @@ class NsdTvDiscoveryService(private val context: Context) {
 
     private fun getHostAddress(serviceInfo: NsdServiceInfo): String? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            serviceInfo.hostAddresses.firstOrNull()?.hostAddress ?: serviceInfo.host?.hostAddress
+            serviceInfo.hostAddresses.firstOrNull { it is java.net.Inet4Address }?.hostAddress ?: serviceInfo.host?.hostAddress
         } else {
             serviceInfo.host?.hostAddress
         }
@@ -262,7 +272,8 @@ class NsdTvDiscoveryService(private val context: Context) {
         }
 
         // Clean readable friendly name
-        val cleanName = sName
+        val friendlyName = serviceInfo.attributes["fn"]?.toString(Charsets.UTF_8)?.takeIf { it.isNotBlank() } ?: sName
+        val cleanName = friendlyName
             .replace("_googlecast._tcp", "")
             .replace("_samsungmsf._tcp", "")
             .replace("_androidtvremote2._tcp", "")
@@ -289,15 +300,17 @@ class NsdTvDiscoveryService(private val context: Context) {
     }
 
     private fun addOrUpdateDiscoveredTv(tv: DiscoveredTv) {
-        val current = _discoveredTvs.value.toMutableList()
-        val index = current.indexOfFirst { it.ipAddress == tv.ipAddress }
-        if (index >= 0) {
-            val existing = current[index]
-            val betterName = if (tv.name.length > existing.name.length && !existing.name.contains("Smart TV")) tv.name else existing.name
-            current[index] = tv.copy(name = betterName)
-        } else {
-            current.add(tv)
+        _discoveredTvs.update { current ->
+            val existing = current.firstOrNull { it.ipAddress == tv.ipAddress }
+            if (existing == null) current + tv else {
+                val remote = tv.modelInfo.contains("androidtvremote2") || tv.port == 6466
+                val existingRemote = existing.modelInfo.contains("androidtvremote2") || existing.port == 6466
+                val replacement = if (remote || !existingRemote) tv else existing
+                val name = if (tv.name.contains("(") || tv.name.length > existing.name.length) existing.name else tv.name
+                current.map { if (it.ipAddress == tv.ipAddress) replacement.copy(
+                    name = name, macAddress = tv.macAddress.ifBlank { existing.macAddress }
+                ) else it }
+            }
         }
-        _discoveredTvs.value = current
     }
 }

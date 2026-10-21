@@ -65,7 +65,9 @@ fun AndroidTvPairingDialog(
 ) {
     if (!isOpen) return
 
-    var pinText by remember { mutableStateOf("") }
+    var pinText by remember(deviceIp) { mutableStateOf("") }
+    val canEnterPin = !isLoading && errorMessage.isNullOrBlank() && successMessage.isNullOrBlank()
+    val canSubmit = canEnterPin && pinText.matches(Regex("[0-9A-F]{6}"))
     val focusManager = LocalFocusManager.current
 
     AlertDialog(
@@ -153,7 +155,7 @@ fun AndroidTvPairingDialog(
                             }
                         }
                     }
-                } else {
+                } else if (canEnterPin) {
                     Surface(
                         color = Color(0xFF121212),
                         shape = RoundedCornerShape(8.dp),
@@ -171,7 +173,7 @@ fun AndroidTvPairingDialog(
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = "Check your TV display. A pairing dialog with a 6-character code (letters & numbers) is now visible. Enter it below to establish secure communication:",
+                                text = "La TV aceptó la solicitud de vinculación. Introduce el código de 6 caracteres (0–9, A–F) que aparezca en su pantalla.",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = TextSecondary,
                                     fontSize = 11.sp,
@@ -185,10 +187,9 @@ fun AndroidTvPairingDialog(
                 // PIN Input Field
                 OutlinedTextField(
                     value = pinText,
+                    enabled = canEnterPin,
                     onValueChange = { input ->
-                        if (input.length <= 6) {
-                            pinText = input.uppercase()
-                        }
+                        pinText = input.uppercase().filter { it in "0123456789ABCDEF" }.take(6)
                     },
                     label = { Text("6-CHARACTER CODE", fontFamily = FontFamily.Monospace, fontSize = 10.sp) },
                     placeholder = { Text("e.g. 4A8B2C", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
@@ -210,7 +211,7 @@ fun AndroidTvPairingDialog(
                     keyboardActions = KeyboardActions(
                         onDone = {
                             focusManager.clearFocus()
-                            if (pinText.isNotBlank()) onSubmitPin(pinText)
+                            if (canSubmit) onSubmitPin(pinText)
                         }
                     ),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -247,7 +248,7 @@ fun AndroidTvPairingDialog(
                             }
                             if (onRetry != null) {
                                 Surface(
-                                    onClick = onRetry,
+                                    onClick = { pinText = ""; onRetry() },
                                     color = Color.White,
                                     shape = RoundedCornerShape(4.dp),
                                     modifier = Modifier.align(Alignment.End).testTag("pairing_retry_button")
@@ -291,7 +292,7 @@ fun AndroidTvPairingDialog(
 
                 // Tip
                 Text(
-                    text = "If no code appears on TV, ensure TV is powered ON on home screen and connected to the same Wi-Fi.",
+                    text = "Si falla la conexión, comprueba la IP actual de la TV y que la red permita la comunicación entre dispositivos. La MAC solo se utiliza para Wake-on-LAN.",
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = TextMuted,
                         fontSize = 10.sp
@@ -305,8 +306,8 @@ fun AndroidTvPairingDialog(
                     focusManager.clearFocus()
                     onSubmitPin(pinText)
                 },
-                enabled = pinText.length >= 4 && !isLoading,
-                color = if (pinText.length >= 4 && !isLoading) Color.White else Color(0xFF222222),
+                enabled = canSubmit,
+                color = if (canSubmit) Color.White else Color(0xFF222222),
                 shape = RoundedCornerShape(6.dp),
                 modifier = Modifier.testTag("pairing_submit_button")
             ) {
@@ -326,7 +327,7 @@ fun AndroidTvPairingDialog(
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
-                            color = if (pinText.length >= 4) Color.Black else TextMuted
+                            color = if (canSubmit) Color.Black else TextMuted
                         )
                     }
                 }

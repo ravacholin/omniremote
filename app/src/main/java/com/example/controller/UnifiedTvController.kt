@@ -28,6 +28,9 @@ class UnifiedTvController(
     private val onDeviceMacResolved: ((Long, String) -> Unit)? = null
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var pairingJob: kotlinx.coroutines.Job? = null
+    private var connectionJob: kotlinx.coroutines.Job? = null
+    private var pairingSubmitJob: kotlinx.coroutines.Job? = null
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -88,8 +91,10 @@ class UnifiedTvController(
         context = context,
         tokenStore = tokenStore,
         onConnectionChanged = { connected, error ->
+            val source = activeDevice
             scope.launch {
-                val dev = activeDevice ?: return@launch
+                val dev = source ?: return@launch
+                if (activeDevice?.id != dev.id) return@launch
                 if (connected) {
                     _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
                 } else if (error != null) {
@@ -102,9 +107,10 @@ class UnifiedTvController(
         onPairingPromptNeeded = { ip ->
             scope.launch {
                 val dev = activeDevice ?: return@launch
+                if (dev.ipAddress != ip) return@launch
                 _connectionState.value = ConnectionState.WaitingAuth(
                     dev.name,
-                    "Google TV: Introduce el código de 6 caracteres que aparece en pantalla."
+                    "Google TV requiere vinculación. Pulsa Vincular para solicitar el código en la TV."
                 )
             }
         }
@@ -116,21 +122,45 @@ class UnifiedTvController(
             onResult(false, "No hay ningún dispositivo seleccionado para vincular.")
             return
         }
-        scope.launch {
+        val previous = pairingJob
+        val previousSubmission = pairingSubmitJob
+        val previousConnection = connectionJob
+        previousConnection?.cancel()
+        previousSubmission?.cancel()
+        previous?.cancel()
+        androidClient.cancelPairing()
+        pairingJob = scope.launch {
+            previous?.join()
+            previousSubmission?.join()
+            previousConnection?.join()
+            if (activeDevice?.id != dev.id) return@launch
             androidClient.startPairing(dev.ipAddress, onShowPinDialog, onResult)
         }
     }
 
+    fun cancelAndroidTvPairing() {
+        pairingSubmitJob?.cancel()
+        pairingJob?.cancel()
+        androidClient.cancelPairing()
+    }
+
+    fun androidTvPairingError(): String? = androidClient.lastPairingError
+
     suspend fun submitAndroidTvPin(pin: String): Boolean {
-        val success = androidClient.submitPairingPin(pin)
-        if (success) {
-            val dev = activeDevice
-            if (dev != null) {
-                _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
-                addLog(dev.name, "Google TV / Android TV vinculado correctamente!", true)
+        val device = activeDevice ?: return false
+        val job = kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]
+        pairingSubmitJob = job
+        try {
+            val success = androidClient.submitPairingPin(pin)
+            if (activeDevice?.id != device.id) return false
+            if (success) {
+                _connectionState.value = ConnectionState.Connected(device.name, device.ipAddress)
+                addLog(device.name, "Google TV / Android TV vinculado correctamente!", true)
             }
+            return success
+        } finally {
+            if (pairingSubmitJob === job) pairingSubmitJob = null
         }
-        return success
     }
 
     fun isCurrentDeviceAndroidTv(): Boolean {
@@ -175,14 +205,11 @@ class UnifiedTvController(
                 samsungClient.connect(effectiveDevice.ipAddress, 8002, effectiveDevice.authToken)
             }
             DeviceType.ANDROID_TV -> {
-                scope.launch {
-                    val ok = androidClient.connect(effectiveDevice.ipAddress, effectiveDevice.port)
-                    if (ok) {
-                        _connectionState.value = ConnectionState.Connected(effectiveDevice.name, effectiveDevice.ipAddress)
-                        addLog(effectiveDevice.name, "Connected to ${effectiveDevice.name} at ${effectiveDevice.ipAddress}", true)
-                    } else {
-                        _connectionState.value = ConnectionState.Error("Google TV (${effectiveDevice.ipAddress}) no responde. ¿La TV está apagada? Pulsa Encender para despertar.")
-                    }
+                val previous = connectionJob
+                connectionJob = scope.launch {
+                    previous?.join()
+                    androidClient.connect(effectiveDevice.ipAddress, effectiveDevice.port)
+                    // Connection and pairing state come from the validated protocol callbacks.
                 }
             }
         }
@@ -196,6 +223,8 @@ class UnifiedTvController(
     }
 
     private fun disconnectCurrent() {
+        connectionJob?.cancel()
+        cancelAndroidTvPairing()
         samsungClient.disconnect()
         androidClient.disconnect()
         _connectionState.value = ConnectionState.Disconnected

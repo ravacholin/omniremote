@@ -35,12 +35,16 @@ data class DiscoveredTv(
 
 class TvScanner(private val context: Context) {
 
+    private val localNetwork = TvLocalNetwork(context)
+
     private val httpClient = OkHttpClient.Builder()
+        .socketFactory(localNetwork.socketFactory)
         .connectTimeout(1200, TimeUnit.MILLISECONDS)
         .readTimeout(1500, TimeUnit.MILLISECONDS)
         .build()
 
     fun getLocalIpAddress(): String? {
+        localNetwork.localIpv4()?.let { return it }
         try {
             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
             val wifiInfo = wifiManager?.connectionInfo
@@ -57,20 +61,7 @@ class TvScanner(private val context: Context) {
                 if (ip != "0.0.0.0") return ip
             }
 
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            while (interfaces.hasMoreElements()) {
-                val intf = interfaces.nextElement()
-                val addrs = intf.inetAddresses
-                while (addrs.hasMoreElements()) {
-                    val addr = addrs.nextElement()
-                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
-                        val host = addr.hostAddress
-                        if (host != null && !host.startsWith("127.")) {
-                            return host
-                        }
-                    }
-                }
-            }
+
         } catch (e: Exception) {
             Log.e("TvScanner", "Failed to get local IP", e)
         }
@@ -89,13 +80,14 @@ class TvScanner(private val context: Context) {
 
     suspend fun scanLocalNetwork(
         customSubnet: String? = null,
-        onProgress: ((Int, Int) -> Unit)? = null
+        onProgress: ((Int, Int) -> Unit)? = null,
+        onDeviceFound: ((DiscoveredTv) -> Unit)? = null
     ): List<DiscoveredTv> = withContext(Dispatchers.IO) {
-        val discoveredMap = mutableMapOf<String, DiscoveredTv>()
+        val discoveredMap = java.util.concurrent.ConcurrentHashMap<String, DiscoveredTv>()
 
         // 1. SSDP / UPnP Multicast Search
         try {
-            performSsdpDiscovery(discoveredMap)
+            performSsdpDiscovery(discoveredMap, onDeviceFound)
         } catch (e: Exception) {
             Log.w("TvScanner", "SSDP discovery error: ${e.message}")
         }
@@ -103,14 +95,14 @@ class TvScanner(private val context: Context) {
         // 2. Active Subnet TCP Sweep on TV Ports (8001, 8002, 8008, 5555, 6466)
         val prefix = customSubnet?.trim()?.let {
             if (it.endsWith(".")) it else "$it."
-        } ?: getSubnetPrefix()
+        } ?: getSubnetPrefix(getLocalIpAddress() ?: return@withContext discoveredMap.values.toList())
 
-        performSubnetSweep(prefix, discoveredMap, onProgress)
+        performSubnetSweep(prefix, discoveredMap, onProgress, onDeviceFound)
 
         discoveredMap.values.toList()
     }
 
-    private fun performSsdpDiscovery(discoveredMap: MutableMap<String, DiscoveredTv>) {
+    private fun performSsdpDiscovery(discoveredMap: MutableMap<String, DiscoveredTv>, onDeviceFound: ((DiscoveredTv) -> Unit)?) {
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         val multicastLock = wifiManager?.createMulticastLock("OmniRemoteMulticast")
         multicastLock?.setReferenceCounted(true)
@@ -126,6 +118,7 @@ class TvScanner(private val context: Context) {
 
             val ssdpBytes = ssdpQuery.toByteArray()
             socket = DatagramSocket()
+            localNetwork.bind(socket)
             socket.soTimeout = 1800
 
             val packet = DatagramPacket(
@@ -173,6 +166,7 @@ class TvScanner(private val context: Context) {
                             )
                         }
                     }
+                    discoveredMap[ip]?.let { onDeviceFound?.invoke(it) }
                 } catch (_: Exception) {
                     break
                 }
@@ -188,7 +182,8 @@ class TvScanner(private val context: Context) {
     private suspend fun performSubnetSweep(
         subnetPrefix: String,
         discoveredMap: MutableMap<String, DiscoveredTv>,
-        onProgress: ((Int, Int) -> Unit)?
+        onProgress: ((Int, Int) -> Unit)?,
+        onDeviceFound: ((DiscoveredTv) -> Unit)?
     ) = coroutineScope {
         val semaphore = Semaphore(35) // 35 concurrent probes
         var completed = 0
@@ -198,8 +193,15 @@ class TvScanner(private val context: Context) {
             async(Dispatchers.IO) {
                 val ip = "$subnetPrefix$i"
                 semaphore.withPermit {
-                    // Check Samsung Ports first: 8001 / 8002
-                    if (isPortOpen(ip, 8001, 280) || isPortOpen(ip, 8002, 280)) {
+                    // Pairing is available on some TVs before the control port responds.
+                    if (isPortOpen(ip, 6466, 500) || isPortOpen(ip, 6467, 500)) {
+                        val tv = fetchCastDeviceInfo(ip)?.copy(port = 6466) ?: DiscoveredTv(
+                            name = "Android TV ($ip)", ipAddress = ip,
+                            deviceType = DeviceType.ANDROID_TV, port = 6466,
+                            modelInfo = "Android TV Remote Service v2"
+                        )
+                        discoveredMap[ip] = tv
+                    } else if (isPortOpen(ip, 8001, 280) || isPortOpen(ip, 8002, 280)) {
                         val samsungInfo = fetchSamsungDeviceInfo(ip)
                         val tv = samsungInfo ?: DiscoveredTv(
                             name = "Samsung Smart TV ($ip)",
@@ -236,18 +238,6 @@ class TvScanner(private val context: Context) {
                         synchronized(discoveredMap) {
                             discoveredMap[ip] = tv
                         }
-                    } else if (isPortOpen(ip, 80, 280) || isPortOpen(ip, 8000, 280)) {
-                        // Sony BRAVIA Google TV
-                        val tv = DiscoveredTv(
-                            name = "Sony Google TV ($ip)",
-                            ipAddress = ip,
-                            deviceType = DeviceType.ANDROID_TV,
-                            port = 80,
-                            modelInfo = "Sony Google TV / Android TV"
-                        )
-                        synchronized(discoveredMap) {
-                            discoveredMap[ip] = tv
-                        }
                     } else if (isPortOpen(ip, 5555, 280)) {
                         // Check Google TV ADB port
                         val tv = DiscoveredTv(
@@ -261,6 +251,7 @@ class TvScanner(private val context: Context) {
                             discoveredMap[ip] = tv
                         }
                     }
+                    discoveredMap[ip]?.let { onDeviceFound?.invoke(it) }
                 }
                 synchronized(this@TvScanner) {
                     completed++
@@ -273,7 +264,7 @@ class TvScanner(private val context: Context) {
 
     fun isPortOpen(ip: String, port: Int, timeoutMs: Int = 300): Boolean {
         return try {
-            Socket().use { socket ->
+            localNetwork.socketFactory.createSocket().use { socket ->
                 socket.connect(InetSocketAddress(ip, port), timeoutMs)
                 true
             }

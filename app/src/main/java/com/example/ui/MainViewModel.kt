@@ -221,6 +221,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectDevice(device: TvDeviceEntity) {
+        if (_activeDevice.value?.id != device.id || _activeDevice.value?.ipAddress != device.ipAddress) {
+            closeAndroidTvPairingDialog()
+        }
         _activeDevice.value = device
         controller.setActiveDevice(device)
         viewModelScope.launch(Dispatchers.IO) {
@@ -478,7 +481,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun submitAndroidTvPin(pin: String) {
-        if (pin.length < 4) {
+        if (!pin.matches(Regex("[0-9a-fA-F]{6}"))) {
             _pairingErrorMessage.value = "Introduce el código que aparece en tu pantalla de TV"
             return
         }
@@ -492,12 +495,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(1200)
                 _isAndroidTvPairingDialogOpen.value = false
             } else {
-                _pairingErrorMessage.value = "Código inválido o tiempo de espera agotado. Verifica el código en pantalla y vuelve a intentar."
+                _pairingErrorMessage.value = controller.androidTvPairingError() ?: "No se pudo completar la vinculación. Pulsa Reintentar para solicitar un código nuevo."
             }
         }
     }
 
     fun closeAndroidTvPairingDialog() {
+        controller.cancelAndroidTvPairing()
+        _isPairingInProgress.value = false
         _isAndroidTvPairingDialogOpen.value = false
         _pairingErrorMessage.value = null
         _pairingSuccessMessage.value = null

@@ -73,7 +73,7 @@ object AndroidTvProtocol {
     /**
      * Writes a varint-framed packet to the SSL output stream.
      */
-    fun writePacket(output: OutputStream, payload: ByteArray) {
+    fun writePacket(output: OutputStream, payload: ByteArray) = synchronized(output) {
         val header = ByteArrayOutputStream()
         writeVarint(header, payload.size)
         output.write(header.toByteArray())
@@ -181,7 +181,7 @@ object AndroidTvProtocol {
         pinCode: String
     ): ByteArray {
         val cleanPin = pinCode.trim().uppercase()
-        if (cleanPin.length != 6) {
+        if (!cleanPin.matches(Regex("[0-9A-F]{6}"))) {
             throw IllegalArgumentException("El código debe tener exactamente 6 caracteres")
         }
 
@@ -218,36 +218,7 @@ object AndroidTvProtocol {
             return digest
         }
 
-        // 2. Alternate permutation: serverModulus, serverExponent, clientModulus, clientExponent, nonce
-        val md2 = MessageDigest.getInstance("SHA-256")
-        md2.update(serverModulusBytes)
-        md2.update(serverExponentBytes)
-        md2.update(clientModulusBytes)
-        md2.update(clientExponentBytes)
-        md2.update(nonceBytes)
-        val digest2 = md2.digest()
-
-        if (expectedFirstByte != null && digest2[0] == expectedFirstByte) {
-            Log.d(TAG, "PIN checksum verified with alternate order: 0x%02X".format(digest2[0]))
-            return digest2
-        }
-
-        // 3. Fallback representation: raw BigInteger byte arrays
-        val md3 = MessageDigest.getInstance("SHA-256")
-        md3.update(clientRsa.modulus.toByteArray())
-        md3.update(clientRsa.publicExponent.toByteArray())
-        md3.update(serverRsa.modulus.toByteArray())
-        md3.update(serverRsa.publicExponent.toByteArray())
-        md3.update(nonceBytes)
-        val digest3 = md3.digest()
-
-        if (expectedFirstByte != null && digest3[0] == expectedFirstByte) {
-            Log.d(TAG, "PIN checksum verified with raw byte representation: 0x%02X".format(digest3[0]))
-            return digest3
-        }
-
-        Log.d(TAG, "Defaulting to standard Polo pairing secret")
-        return digest
+        throw IllegalArgumentException("El código no coincide con esta TV. Comprueba los 6 caracteres en pantalla.")
     }
 
     /**
@@ -277,20 +248,20 @@ object AndroidTvProtocol {
      *   field 1 (remote_configure):
      *     field 1 (code1): 622
      *     field 2 (device_info):
-     *       field 1 (unknown1): 1
-     *       field 2 (unknown2): "1"
-     *       field 3 (package_name): "atvremote"
-     *       field 4 (app_version): "1.0.0"
+     *       field 3 (unknown1): 1
+     *       field 4 (unknown2): "1"
+     *       field 5 (package_name): "atvremote"
+     *       field 6 (app_version): "1.0.0"
      */
-    fun buildRemoteConfigure(): ByteArray {
+    fun buildRemoteConfigure(features: Int = 622): ByteArray {
         val devInfo = ByteArrayOutputStream()
-        writeFieldVarint(devInfo, 1, 1)
-        writeFieldString(devInfo, 2, "1")
-        writeFieldString(devInfo, 3, "atvremote")
-        writeFieldString(devInfo, 4, "1.0.0")
+        writeFieldVarint(devInfo, 3, 1)
+        writeFieldString(devInfo, 4, "1")
+        writeFieldString(devInfo, 5, "atvremote")
+        writeFieldString(devInfo, 6, "1.0.0")
 
         val config = ByteArrayOutputStream()
-        writeFieldVarint(config, 1, 622)
+        writeFieldVarint(config, 1, features)
         writeFieldBytes(config, 2, devInfo.toByteArray())
 
         val remoteMsg = ByteArrayOutputStream()
@@ -383,6 +354,30 @@ object AndroidTvProtocol {
             if (offset < 0) break
         }
         return null
+    }
+
+    fun getFieldBytes(data: ByteArray, targetFieldNumber: Int): ByteArray? {
+        var offset = 0
+        while (offset < data.size) {
+            val (tag, next) = decodeVarint(data, offset)
+            offset = next
+            if (tag ushr 3 == targetFieldNumber && tag and 7 == 2) {
+                val (length, start) = decodeVarint(data, offset)
+                require(length >= 0 && length <= data.size - start) { "Truncated protobuf field" }
+                return data.copyOfRange(start, start + length)
+            }
+            offset = skipField(data, offset, tag and 7)
+            if (offset < 0) break
+        }
+        return null
+    }
+
+    fun requirePairingResponse(data: ByteArray, expectedField: Int) {
+        val status = getFieldVarint(data, FIELD_STATUS)
+        require(status == STATUS_OK) { "La TV rechazó la vinculación (estado: $status)." }
+        require(getFieldBytes(data, expectedField) != null) {
+            "Respuesta de vinculación inesperada; se esperaba el mensaje $expectedField."
+        }
     }
 
     private fun decodeVarint(data: ByteArray, startOffset: Int): Pair<Int, Int> {
