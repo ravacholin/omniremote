@@ -17,9 +17,10 @@ object AndroidTvProtocol {
 
     const val PORT_PAIRING = 6467
     const val PORT_REMOTE = 6466
-    // Ping, keys, power, volume and app links. Do not advertise voice/IME.
     const val APP_LINK_FEATURE = 512
-    const val REMOTE_FEATURES = 1 or 2 or 32 or 64 or APP_LINK_FEATURE
+    const val FEATURE_IME = 4
+    // Ping, keys, text input, power, volume and app links. Voice is not implemented.
+    const val REMOTE_FEATURES = 1 or 2 or FEATURE_IME or 32 or 64 or APP_LINK_FEATURE
 
     // RemoteDirection (port 6466)
     const val REMOTE_DIRECTION_UNKNOWN = 0
@@ -308,6 +309,26 @@ object AndroidTvProtocol {
         val remoteMsg = ByteArrayOutputStream()
         writeFieldBytes(remoteMsg, 9, ping.toByteArray()) // field 9 = remote_ping_response
         return remoteMsg.toByteArray()
+    }
+
+    /** Native IME insertion, using the counters last reported by the TV. */
+    fun buildRemoteImeBatchEdit(text: String, imeCounter: Int, fieldCounter: Int): ByteArray {
+        require(text.isNotEmpty()) { "Text cannot be empty" }
+        val value = ByteArrayOutputStream()
+        // Android cursor offsets use UTF-16 code units (String.length), including for emoji.
+        writeFieldVarint(value, 1, text.length - 1)
+        writeFieldVarint(value, 2, text.length - 1)
+        writeFieldString(value, 3, text)
+        val edit = ByteArrayOutputStream()
+        writeFieldVarint(edit, 1, 1) // insert
+        writeFieldBytes(edit, 2, value.toByteArray())
+        val batch = ByteArrayOutputStream()
+        writeFieldVarint(batch, 1, imeCounter)
+        writeFieldVarint(batch, 2, fieldCounter)
+        writeFieldBytes(batch, 3, edit.toByteArray())
+        return ByteArrayOutputStream().apply {
+            writeFieldBytes(this, 21, batch.toByteArray())
+        }.toByteArray()
     }
 
     fun buildRemoteResponse(packet: ByteArray, features: Int = REMOTE_FEATURES): ByteArray? = when {

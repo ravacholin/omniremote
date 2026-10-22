@@ -82,7 +82,9 @@ class AndroidTvClient(
     private var remoteInput: InputStream? = null
     private var remoteReaderJob: Job? = null
     @Volatile
-    private var negotiatedFeatures: Int = 0
+    private var negotiatedFeatures = 0
+    @Volatile
+    private var imeCounters = 0 to 0
 
     // Pending pairing session
     @Volatile
@@ -128,6 +130,9 @@ class AndroidTvClient(
      */
     private suspend fun initRemoteV2Connection(ip: String): Boolean = remoteConnectMutex.withLock {
         withContext(Dispatchers.IO) {
+            // Several rapid commands can observe a lost connection before the first
+            // reconnect finishes. Reuse its result instead of tearing it down again.
+            if (isConnected && remoteSocket != null && activeIp == ip) return@withContext true
             try {
                 currentCoroutineContext().ensureActive()
                 closeRemoteSocket()
@@ -147,6 +152,12 @@ class AndroidTvClient(
                         features = (AndroidTvProtocol.getFieldVarint(configure, 1) ?: 0) and AndroidTvProtocol.REMOTE_FEATURES
                         require(features and 2 != 0) { "La TV no permite enviar teclas." }
                         negotiatedFeatures = features
+                    }
+                    AndroidTvProtocol.getFieldBytes(packet, 21)?.let { batch ->
+                        if (remoteSocket === socket) {
+                            imeCounters = (AndroidTvProtocol.getFieldVarint(batch, 1) ?: 0) to
+                                (AndroidTvProtocol.getFieldVarint(batch, 2) ?: 0)
+                        }
                     }
                     AndroidTvProtocol.buildRemoteResponse(packet, features)?.let { writeRemotePacket(out, it) }
                     require(!AndroidTvProtocol.hasField(packet, 3)) { "La TV rechazó el canal de control." }
@@ -352,6 +363,7 @@ class AndroidTvClient(
         remoteOutput = null
         remoteInput = null
         negotiatedFeatures = 0
+        imeCounters = 0 to 0
         isConnected = false
         remoteReaderJob?.cancel()
         remoteReaderJob = null
@@ -397,29 +409,21 @@ class AndroidTvClient(
     }
 
     suspend fun sendText(text: String): Boolean = withContext(Dispatchers.IO) {
-        val targetIp = activeIp.trim()
-        if (targetIp.isBlank()) return@withContext false
-        val encodedText = text.replace(" ", "%s")
-
-        // Try ADB text
+        if (text.isEmpty() || activeIp.isBlank() || !isPaired) return@withContext false
+        if (!isConnected && !initRemoteV2Connection(activeIp)) return@withContext false
         try {
-            localNetwork.socketFactory.createSocket().use { socket ->
-                socket.connect(InetSocketAddress(targetIp, 5555), 1500)
-                val out = socket.getOutputStream()
-                val cmd = "input text $encodedText\n"
-                out.write(cmd.toByteArray())
-                out.flush()
-                return@withContext true
+            synchronized(writeLock) {
+                if (!isConnected || negotiatedFeatures and AndroidTvProtocol.FEATURE_IME == 0) {
+                    return@withContext false
+                }
+                val out = remoteOutput ?: return@withContext false
+                val (imeCounter, fieldCounter) = imeCounters
+                writeRemotePacket(out, AndroidTvProtocol.buildRemoteImeBatchEdit(text, imeCounter, fieldCounter))
             }
-        } catch (_: Exception) {}
-
-        // Try HTTP Companion
-        try {
-            val req = Request.Builder()
-                .url("http://$targetIp:8000/text?q=${java.net.URLEncoder.encode(text, "UTF-8")}")
-                .build()
-            unsafeOkHttpClient.newCall(req).execute().use { it.isSuccessful }
-        } catch (_: Exception) {
+            true
+        } catch (e: Exception) {
+            closeRemoteSocket()
+            onConnectionChanged?.invoke(false, "No se pudo enviar el texto. Vuelve a conectar la TV.")
             false
         }
     }
