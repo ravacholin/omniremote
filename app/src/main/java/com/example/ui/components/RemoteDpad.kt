@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -132,7 +133,7 @@ fun RemoteDpad(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = if (isShortScreen) Arrangement.spacedBy(10.dp) else Arrangement.SpaceBetween
         ) {
-            // Top Navigation Helpers: Back, Home, Menu, Brightness
+            // Fourth action: Android TV brightness or Samsung Bluetooth audio.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -166,8 +167,8 @@ fun RemoteDpad(
                     onClick = { handlePress(RemoteKey.MENU) }
                 )
                 CircleRemoteButton(
-                    icon = Icons.Default.Brightness6,
-                    label = "Brightness",
+                    icon = if (deviceType == DeviceType.SAMSUNG_TIZEN) Icons.Default.BluetoothAudio else Icons.Default.Brightness6,
+                    label = if (deviceType == DeviceType.SAMSUNG_TIZEN) "Bluetooth" else "Brightness",
                     testTag = "brightness_button",
                     size = navBtnSize,
                     iconSize = navIconSize,
