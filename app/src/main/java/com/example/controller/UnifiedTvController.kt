@@ -10,6 +10,7 @@ import com.example.data.model.TvAppShortcut
 import com.example.data.model.TvDeviceEntity
 import com.example.network.AndroidTvClient
 import com.example.network.SamsungTvClient
+import com.example.network.SamsungBluetoothAudio
 import com.example.network.WakeOnLan
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,7 @@ class UnifiedTvController(
 
     private var connectionJob: Job? = null
     private var pairingJob: Job? = null
+    private var bluetoothSettingsJob: Job? = null
 
     private var activeDevice: TvDeviceEntity? = null
 
@@ -210,6 +212,7 @@ class UnifiedTvController(
     }
 
     private fun disconnectCurrent() {
+        cancelBluetoothNavigation()
         connectionJob?.cancel()
         connectionJob = null
         pairingJob?.cancel()
@@ -221,6 +224,7 @@ class UnifiedTvController(
     }
 
     fun sendKey(key: RemoteKey) {
+        cancelBluetoothNavigation()
         val device = activeDevice ?: return
         _lastDispatchedKey.value = key
 
@@ -243,6 +247,7 @@ class UnifiedTvController(
     }
 
     fun sendText(text: String) {
+        cancelBluetoothNavigation()
         val device = activeDevice ?: return
         scope.launch(Dispatchers.IO) {
             val success = when (device.deviceType) {
@@ -258,10 +263,24 @@ class UnifiedTvController(
         }
     }
 
+    private fun cancelBluetoothNavigation() {
+        bluetoothSettingsJob?.cancel()
+        bluetoothSettingsJob = null
+    }
+
     fun openBrightness(dimmer: TvAppEntity?) {
         val device = activeDevice ?: return
         if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
-            addLog(device.name, "Samsung brightness shortcut is not configured yet. Use Picture settings on the TV.", false)
+            if (bluetoothSettingsJob?.isActive == true) return
+            bluetoothSettingsJob = scope.launch(Dispatchers.IO) {
+                val sent = SamsungBluetoothAudio.open { key ->
+                    val current = activeDevice
+                    current?.id == device.id && current.ipAddress == device.ipAddress &&
+                        current.deviceType == DeviceType.SAMSUNG_TIZEN &&
+                        samsungClient.isConnected && samsungClient.sendKey(key)
+                }
+                addLog(device.name, "Abrir Sonido > Salida de sonido > Lista de altavoces Bluetooth (RU7100)", sent)
+            }
             return
         }
         if (dimmer == null || dimmer.deviceId != device.id) {
@@ -280,6 +299,7 @@ class UnifiedTvController(
     }
 
     fun launchApp(shortcut: TvAppShortcut) {
+        cancelBluetoothNavigation()
         val device = activeDevice ?: return
         scope.launch(Dispatchers.IO) {
             val success = when (device.deviceType) {
@@ -295,6 +315,7 @@ class UnifiedTvController(
     }
 
     fun launchTvApp(app: TvAppEntity) {
+        cancelBluetoothNavigation()
         val device = activeDevice ?: return
         scope.launch(Dispatchers.IO) {
             var launchError: String? = null

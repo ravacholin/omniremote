@@ -272,6 +272,16 @@ class TvAppRepository(private val dao: TvAppDao) {
                 iconKey = "movie",
                 isFavorite = false,
                 sortOrder = 9
+            ),
+            TvAppEntity(
+                deviceId = deviceId,
+                appName = "TvDimmer - NightCompanion",
+                appIdentifier = "com.tribalapps.tvdimmer",
+                category = "Tools",
+                colorHex = 0xFF6366F1,
+                iconKey = "tv",
+                isFavorite = false,
+                sortOrder = 10
             )
         )
     }
