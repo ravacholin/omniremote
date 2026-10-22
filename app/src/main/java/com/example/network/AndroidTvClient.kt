@@ -43,11 +43,13 @@ class AndroidTvClient(
     private val writeLock = Any()
     private var pairingIp: String = ""
     private val tag = "AndroidTvClient"
+    private val localNetwork = TvLocalNetwork(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val unsafeOkHttpClient: OkHttpClient by lazy {
         val sslContext = AndroidTvCertificateManager.getOrCreateSslContext(context)
         OkHttpClient.Builder()
+            .socketFactory(localNetwork.socketFactory)
             .sslSocketFactory(sslContext.socketFactory, AndroidTvCertificateManager.trustAllManager)
             .hostnameVerifier { _, _ -> true }
             .connectTimeout(3000, TimeUnit.MILLISECONDS)
@@ -110,7 +112,7 @@ class AndroidTvClient(
 
     private fun isPortOpen(ip: String, port: Int, timeoutMs: Int): Boolean {
         return try {
-            Socket().use { socket ->
+            localNetwork.socketFactory.createSocket().use { socket ->
                 socket.connect(InetSocketAddress(ip, port), timeoutMs)
                 true
             }
@@ -128,11 +130,10 @@ class AndroidTvClient(
                 currentCoroutineContext().ensureActive()
                 closeRemoteSocket()
                 val sslContext = AndroidTvCertificateManager.getOrCreateSslContext(context)
-                val socket = sslContext.socketFactory.createSocket() as SSLSocket
+                val socket = localNetwork.tlsSocket(sslContext, ip, remotePort, 3000)
                 remoteSocket = socket // Also close sockets whose TLS handshake is still pending.
                 socket.tcpNoDelay = true
                 socket.soTimeout = 8000
-                socket.connect(InetSocketAddress(ip, remotePort), 3000)
                 socket.startHandshake()
                 val out = socket.getOutputStream()
                 val input = socket.getInputStream()
@@ -216,13 +217,12 @@ class AndroidTvClient(
             pairingIp = targetIp
             supportsRemoteV2 = true
             val sslContext = AndroidTvCertificateManager.getOrCreateSslContext(context)
-            val socket = sslContext.socketFactory.createSocket() as SSLSocket
+            val socket = localNetwork.tlsSocket(sslContext, targetIp, pairingPort, 6000)
+            sessionSocket = socket
+            pairingSocket = socket
             socket.tcpNoDelay = true
             socket.soTimeout = 12000
             currentCoroutineContext().ensureActive()
-            sessionSocket = socket
-            pairingSocket = socket
-            socket.connect(InetSocketAddress(targetIp, pairingPort), 6000)
             socket.startHandshake()
             currentCoroutineContext().ensureActive()
             check(pairingSocket === socket) { "Pairing session replaced" }
@@ -283,8 +283,10 @@ class AndroidTvClient(
             currentCoroutineContext().ensureActive()
             withContext(Dispatchers.Main) {
                 val userMsg = when {
+                    e.message?.contains("EHOSTUNREACH") == true || e.message?.contains("No route to host") == true ->
+                        "No hay ruta de red hacia $targetIp:$pairingPort. No se ha solicitado ningún código. Comprueba la IP actual de la TV y que el router permita comunicar los dispositivos (red de invitados/aislamiento Wi-Fi)."
                     e.message?.contains("Connection refused") == true ->
-                        "Conexión rechazada en el puerto 6467. Asegúrate de que la TV esté encendida en la pantalla principal."
+                        "La TV rechazó el puerto de vinculación 6467. Comprueba que Android TV Remote Service esté disponible y habilitado."
                     e.message?.contains("timed out") == true ->
                         "Tiempo de espera agotado al conectar con $targetIp. Comprueba que el teléfono y la TV estén en la misma red Wi-Fi."
                     e.message?.contains("SSL") == true || e.message?.contains("handshake") == true ->
@@ -397,7 +399,7 @@ class AndroidTvClient(
 
         // Try ADB text
         try {
-            Socket().use { socket ->
+            localNetwork.socketFactory.createSocket().use { socket ->
                 socket.connect(InetSocketAddress(targetIp, 5555), 1500)
                 val out = socket.getOutputStream()
                 val cmd = "input text $encodedText\n"
@@ -453,7 +455,7 @@ class AndroidTvClient(
         // 2. Monkey Intent over port 5555 (ADB)
         if (!launched) {
             try {
-                Socket().use { socket ->
+                localNetwork.socketFactory.createSocket().use { socket ->
                     socket.connect(InetSocketAddress(targetIp, 5555), 1500)
                     val out = socket.getOutputStream()
                     val cmd = "monkey -p $packageName -c android.intent.category.LAUNCHER 1\n"

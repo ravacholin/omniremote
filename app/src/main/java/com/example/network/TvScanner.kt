@@ -38,23 +38,17 @@ class TvScanner(
     private val portProbe: ((String, Int, Int) -> Boolean)? = null
 ) {
 
+    private val localNetwork = TvLocalNetwork(context)
+
     private val httpClient = OkHttpClient.Builder()
+        .socketFactory(localNetwork.socketFactory)
         .connectTimeout(1200, TimeUnit.MILLISECONDS)
         .readTimeout(1500, TimeUnit.MILLISECONDS)
         .build()
 
     fun getLocalIpAddress(): String? {
         try {
-            val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
-            connectivity?.allNetworks?.forEach { network ->
-                val caps = connectivity.getNetworkCapabilities(network)
-                if (caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true ||
-                    caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) == true) {
-                    connectivity.getLinkProperties(network)?.linkAddresses?.firstOrNull {
-                        it.address is Inet4Address && !it.address.isLoopbackAddress
-                    }?.address?.hostAddress?.let { return it }
-                }
-            }
+            localNetwork.localIpv4()?.let { return it }
             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
             val wifiInfo = wifiManager?.connectionInfo
             val ipInt = wifiInfo?.ipAddress ?: 0
@@ -70,20 +64,7 @@ class TvScanner(
                 if (ip != "0.0.0.0") return ip
             }
 
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            while (interfaces.hasMoreElements()) {
-                val intf = interfaces.nextElement()
-                val addrs = intf.inetAddresses
-                while (addrs.hasMoreElements()) {
-                    val addr = addrs.nextElement()
-                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
-                        val host = addr.hostAddress
-                        if (host != null && !host.startsWith("127.")) {
-                            return host
-                        }
-                    }
-                }
-            }
+
         } catch (e: Exception) {
             Log.e("TvScanner", "Failed to get local IP", e)
         }
@@ -105,11 +86,11 @@ class TvScanner(
         onProgress: ((Int, Int) -> Unit)? = null,
         onDeviceFound: ((DiscoveredTv) -> Unit)? = null
     ): List<DiscoveredTv> = withContext(Dispatchers.IO) {
-        val discoveredMap = mutableMapOf<String, DiscoveredTv>()
+        val discoveredMap = java.util.concurrent.ConcurrentHashMap<String, DiscoveredTv>()
 
         // 1. SSDP / UPnP Multicast Search
         try {
-            performSsdpDiscovery(discoveredMap)
+            performSsdpDiscovery(discoveredMap, onDeviceFound)
         } catch (e: Exception) {
             Log.w("TvScanner", "SSDP discovery error: ${e.message}")
         }
@@ -117,14 +98,14 @@ class TvScanner(
         // 2. Active Subnet TCP Sweep on TV Ports (8001, 8002, 8008, 5555, 6466)
         val prefix = customSubnet?.trim()?.let {
             if (it.endsWith(".")) it else "$it."
-        } ?: getSubnetPrefix()
+        } ?: getSubnetPrefix(getLocalIpAddress() ?: return@withContext discoveredMap.values.toList())
 
         performSubnetSweep(prefix, discoveredMap, onProgress, onDeviceFound)
 
         discoveredMap.values.toList()
     }
 
-    private fun performSsdpDiscovery(discoveredMap: MutableMap<String, DiscoveredTv>) {
+    private fun performSsdpDiscovery(discoveredMap: MutableMap<String, DiscoveredTv>, onDeviceFound: ((DiscoveredTv) -> Unit)?) {
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         val multicastLock = wifiManager?.createMulticastLock("OmniRemoteMulticast")
         multicastLock?.setReferenceCounted(true)
@@ -140,6 +121,7 @@ class TvScanner(
 
             val ssdpBytes = ssdpQuery.toByteArray()
             socket = DatagramSocket()
+            localNetwork.bind(socket)
             socket.soTimeout = 1800
 
             val packet = DatagramPacket(
@@ -187,6 +169,7 @@ class TvScanner(
                             )
                         }
                     }
+                    discoveredMap[ip]?.let { onDeviceFound?.invoke(it) }
                 } catch (_: Exception) {
                     break
                 }
@@ -251,7 +234,7 @@ class TvScanner(
     fun isPortOpen(ip: String, port: Int, timeoutMs: Int = 300): Boolean {
         portProbe?.let { return it(ip, port, timeoutMs) }
         return try {
-            Socket().use { socket ->
+            localNetwork.socketFactory.createSocket().use { socket ->
                 socket.connect(InetSocketAddress(ip, port), timeoutMs)
                 true
             }

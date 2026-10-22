@@ -63,4 +63,29 @@ class AndroidTvRegressionTest {
             client.disconnect()
         }
     }
+    @Test
+    fun scannerUsesWifiLinkAddressEvenWithoutInternetValidation() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val shadow = org.robolectric.Shadows.shadowOf(cm)
+        cm.allNetworks.filter { cm.getNetworkCapabilities(it)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true }
+            .forEach { shadow.removeNetwork(it) }
+        val wifi = org.robolectric.shadows.ShadowNetwork.newInstance(42)
+        shadow.addNetwork(wifi, org.robolectric.shadows.ShadowNetworkInfo.newInstance(
+            android.net.NetworkInfo.DetailedState.CONNECTED, android.net.ConnectivityManager.TYPE_WIFI,
+            0, true, true))
+        shadow.setNetworkCapabilities(wifi, android.net.NetworkCapabilities().apply {
+            org.robolectric.util.ReflectionHelpers.callInstanceMethod<android.net.NetworkCapabilities>(this,
+                "addTransportType", org.robolectric.util.ReflectionHelpers.ClassParameter.from(
+                    Int::class.javaPrimitiveType!!, android.net.NetworkCapabilities.TRANSPORT_WIFI))
+        })
+        shadow.setLinkProperties(wifi, android.net.LinkProperties().apply {
+            val address = org.robolectric.util.ReflectionHelpers.callConstructor(android.net.LinkAddress::class.java,
+                org.robolectric.util.ReflectionHelpers.ClassParameter.from(String::class.java, "192.168.0.16/24"))
+            org.robolectric.util.ReflectionHelpers.callInstanceMethod<Boolean>(this, "addLinkAddress",
+                org.robolectric.util.ReflectionHelpers.ClassParameter.from(android.net.LinkAddress::class.java, address))
+        })
+        assertEquals("192.168.0.16", TvScanner(context).getLocalIpAddress())
+    }
+
 }
