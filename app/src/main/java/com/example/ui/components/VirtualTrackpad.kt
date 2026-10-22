@@ -9,6 +9,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -169,18 +172,18 @@ fun VirtualTrackpad(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Top status badge & Sensitivity selector
-        Row(
+        // Keep gesture feedback and sensitivity readable on narrow screens.
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Live Gesture HUD
             Surface(
                 color = Color(0xFF101010),
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(2.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong),
                 modifier = Modifier.testTag("trackpad_hud")
             ) {
@@ -211,20 +214,22 @@ fun VirtualTrackpad(
             // Sensitivity Switcher Pill
             Surface(
                 color = Color(0xFF0C0C0C),
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(2.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
             ) {
                 Row(
-                    modifier = Modifier.padding(2.dp),
+                    modifier = Modifier.fillMaxWidth().padding(2.dp).selectableGroup(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TrackpadSensitivity.values().forEach { sens ->
                         val isSelected = sens == sensitivity
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .clip(RoundedCornerShape(2.dp))
                                 .background(if (isSelected) Color.White else Color.Transparent)
-                                .clickable { sensitivity = sens }
+                                .selectable(selected = isSelected, role = Role.RadioButton, onClick = { sensitivity = sens })
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                                 .testTag("sensitivity_${sens.name.lowercase()}"),
                             contentAlignment = Alignment.Center
@@ -251,8 +256,8 @@ fun VirtualTrackpad(
                 .fillMaxWidth()
                 .weight(1f)
                 .heightIn(min = 220.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .border(1.5.dp, RemoteBorderStrong, RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(4.dp))
+                .border(1.5.dp, RemoteBorderStrong, RoundedCornerShape(4.dp))
                 .pointerInput(sensitivity) {
                     awaitEachGesture {
                         val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = false)
@@ -350,7 +355,7 @@ fun VirtualTrackpad(
                 }
                 .testTag("trackpad_surface"),
             color = Color(0xFF090909),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(4.dp)
         ) {
             Box(
                 modifier = Modifier

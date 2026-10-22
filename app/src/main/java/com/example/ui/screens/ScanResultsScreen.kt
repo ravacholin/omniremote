@@ -170,7 +170,7 @@ fun ScanResultsScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = RemoteCardBg,
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(4.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -233,7 +233,7 @@ fun ScanResultsScreen(
                             Button(
                                 onClick = onStartScan,
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(2.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.testTag("rescan_header_button")
                             ) {
@@ -263,8 +263,8 @@ fun ScanResultsScreen(
                         items(serviceTypes) { sType ->
                             Box(
                                 modifier = Modifier
-                                    .background(Color(0xFF0F172A), RoundedCornerShape(6.dp))
-                                    .border(0.5.dp, RemoteBorder, RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF0F172A), RoundedCornerShape(2.dp))
+                                    .border(0.5.dp, RemoteBorder, RoundedCornerShape(2.dp))
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
@@ -311,7 +311,7 @@ fun ScanResultsScreen(
                         .fillMaxWidth()
                         .weight(1f),
                     color = RemoteCardBg,
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(4.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                 ) {
                     Column(
@@ -375,7 +375,7 @@ fun ScanResultsScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             OutlinedButton(
                                 onClick = onDirectIpClick,
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(2.dp)
                             ) {
                                 Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -385,7 +385,7 @@ fun ScanResultsScreen(
                             Button(
                                 onClick = onStartScan,
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(2.dp)
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -414,7 +414,7 @@ fun ScanResultsScreen(
                         OutlinedButton(
                             onClick = onDirectIpClick,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(4.dp)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
@@ -435,8 +435,8 @@ fun NsdDiscoveredTvCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(2.dp))
+            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
             .clickable { onConnect() }
             .testTag("discovered_tv_${tv.ipAddress.replace(".", "_")}"),
         color = Color(0xFF0C0C0C)
@@ -456,8 +456,8 @@ fun NsdDiscoveredTvCard(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .background(Color(0xFF181818), RoundedCornerShape(8.dp))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(8.dp)),
+                        .background(Color(0xFF181818), RoundedCornerShape(2.dp))
+                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -487,8 +487,8 @@ fun NsdDiscoveredTvCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .background(Color(0xFF1E1E1E), RoundedCornerShape(4.dp))
-                                .border(1.dp, RemoteBorderStrong, RoundedCornerShape(4.dp))
+                                .background(Color(0xFF1E1E1E), RoundedCornerShape(2.dp))
+                                .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Text(
@@ -533,7 +533,7 @@ fun NsdDiscoveredTvCard(
             Surface(
                 onClick = onConnect,
                 color = Color.White,
-                shape = RoundedCornerShape(4.dp),
+                shape = RoundedCornerShape(2.dp),
                 modifier = Modifier.testTag("connect_btn_${tv.ipAddress.replace(".", "_")}")
             ) {
                 Text(

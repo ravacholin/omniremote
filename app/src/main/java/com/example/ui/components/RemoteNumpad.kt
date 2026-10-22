@@ -88,7 +88,7 @@ fun RemoteNumpad(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color(0xFF0C0C0C),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(2.dp),
             border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
         ) {
             Column(
@@ -169,7 +169,7 @@ fun RemoteNumpad(
                             containerColor = Color.White,
                             contentColor = Color.Black
                         ),
-                        shape = RoundedCornerShape(6.dp)
+                        shape = RoundedCornerShape(2.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
@@ -234,8 +234,8 @@ fun NumButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.90f else 1.0f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        targetValue = if (isPressed) 0.96f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
         label = "num_btn_scale"
     )
 
@@ -246,14 +246,14 @@ fun NumButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(2.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
             ) { onClick() }
             .testTag(testTag),
         color = if (isPressed) Color.White else Color(0xFF101010),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(2.dp),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             if (isPressed) Color.White else RemoteBorderStrong
@@ -279,7 +279,7 @@ fun NumButton(
                     text = label,
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        fontSize = 8.sp,
+                        fontSize = 11.sp,
                         color = if (isPressed) Color(0xFF444444) else TextMuted
                     )
                 )
@@ -299,21 +299,21 @@ fun ColorButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1.0f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        targetValue = if (isPressed) 0.96f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
         label = "color_btn_scale"
     )
 
     Box(
         modifier = Modifier
-            .size(width = 68.dp, height = 30.dp)
+            .size(width = 68.dp, height = 48.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(2.dp))
             .background(if (isPressed) Color.White else bgColor)
-            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(6.dp))
+            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
