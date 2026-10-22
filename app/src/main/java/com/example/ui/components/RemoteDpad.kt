@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.graphicsLayer
@@ -36,11 +37,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
 import com.example.ui.theme.*
+import kotlin.math.abs
 
 @Composable
 fun RemoteDpad(
@@ -64,6 +68,7 @@ fun RemoteDpad(
 ) {
     val context = LocalContext.current
     val accentColor = deviceType.brandColor
+    val currentOnKeyPress by rememberUpdatedState(onKeyPress)
 
     fun handlePress(key: RemoteKey) {
         HapticUtil.triggerKeyHaptic(context)
@@ -350,6 +355,30 @@ fun RemoteDpad(
                             Color.White,
                             RoundedCornerShape(2.dp)
                         )
+                        .pointerInput(Unit) {
+                            var dragOffset = Offset.Zero
+                            // The drag detector consumes movement after touch slop, cancelling
+                            // OK's click and keeping the surrounding column from scrolling.
+                            detectDragGestures(
+                                onDragStart = { dragOffset = Offset.Zero },
+                                onDragCancel = { dragOffset = Offset.Zero },
+                                onDragEnd = {
+                                    if (dragOffset != Offset.Zero) {
+                                        val key = if (abs(dragOffset.x) > abs(dragOffset.y)) {
+                                            if (dragOffset.x > 0) RemoteKey.RIGHT else RemoteKey.LEFT
+                                        } else {
+                                            if (dragOffset.y > 0) RemoteKey.DOWN else RemoteKey.UP
+                                        }
+                                        HapticUtil.triggerKeyHaptic(context)
+                                        currentOnKeyPress(key)
+                                    }
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    dragOffset += amount
+                                }
+                            )
+                        }
                         .clickable(
                             interactionSource = okInteraction,
                             indication = null

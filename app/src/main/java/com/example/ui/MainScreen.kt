@@ -74,8 +74,6 @@ import com.example.ui.components.HapticUtil
 import com.example.ui.components.RemoteAppsGrid
 import com.example.ui.components.RemoteDpad
 import com.example.ui.components.RemoteNumpad
-import com.example.ui.components.RemoteTouchpad
-import com.example.ui.components.VirtualTrackpad
 import com.example.ui.screens.ScanResultsScreen
 import com.example.ui.theme.*
 import com.example.ui.theme.TextSecondary
@@ -541,7 +539,7 @@ fun MainScreen(
                     }
                 }
 
-                // Remote Navigation Mode Switcher Pills (D-Pad, Trackpad, Apps, Numpad)
+                // Navigation and gestures share the D-pad; apps and numpad have their own tabs.
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -560,17 +558,6 @@ fun MainScreen(
                         onClick = {
                             HapticUtil.triggerKeyHaptic(context)
                             viewModel.setActiveTab(RemoteMode.DPAD)
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    RemoteModeTabButton(
-                        mode = RemoteMode.TOUCHPAD,
-                        icon = RemoteIcons.Touchpad,
-                        isSelected = activeTab == RemoteMode.TOUCHPAD,
-                        brandAccent = brandAccent,
-                        onClick = {
-                            HapticUtil.triggerKeyHaptic(context)
-                            viewModel.setActiveTab(RemoteMode.TOUCHPAD)
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -621,20 +608,6 @@ fun MainScreen(
                                 deviceType = currentType,
                                 onKeyPress = { key -> viewModel.sendKey(key) },
                                 onBrightnessClick = { viewModel.openBrightness() },
-                                isPlaying = isPlaying,
-                                onTogglePlayPause = { viewModel.togglePlayPause() },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        RemoteMode.TOUCHPAD -> {
-                            VirtualTrackpad(
-                                deviceType = currentType,
-                                onNavigationCommand = { command ->
-                                    viewModel.sendKey(command.remoteKey)
-                                },
-                                onKeyPress = { key ->
-                                    viewModel.sendKey(key)
-                                },
                                 isPlaying = isPlaying,
                                 onTogglePlayPause = { viewModel.togglePlayPause() },
                                 modifier = Modifier.fillMaxSize()
@@ -825,7 +798,6 @@ fun RemoteModeTabButton(
             imageVector = icon,
             contentDescription = when (mode) {
                 RemoteMode.DPAD -> "Mando"
-                RemoteMode.TOUCHPAD -> "Panel táctil"
                 RemoteMode.APPS -> "Aplicaciones"
                 RemoteMode.NUMPAD -> "Teclado"
             },
