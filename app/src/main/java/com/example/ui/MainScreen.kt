@@ -36,12 +36,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Navigation
-import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -74,6 +69,7 @@ import com.example.data.model.RemoteKey
 import com.example.ui.components.AndroidTvPairingDialog
 import com.example.ui.components.DeviceManagerDialog
 import com.example.ui.components.DeviceSelectorBar
+import com.example.ui.components.RemoteIcons
 import com.example.ui.components.HapticUtil
 import com.example.ui.components.RemoteAppsGrid
 import com.example.ui.components.RemoteDpad
@@ -558,7 +554,7 @@ fun MainScreen(
                 ) {
                     RemoteModeTabButton(
                         mode = RemoteMode.DPAD,
-                        icon = Icons.Default.Navigation,
+                        icon = RemoteIcons.Dpad,
                         isSelected = activeTab == RemoteMode.DPAD,
                         brandAccent = brandAccent,
                         onClick = {
@@ -569,7 +565,7 @@ fun MainScreen(
                     )
                     RemoteModeTabButton(
                         mode = RemoteMode.TOUCHPAD,
-                        icon = Icons.Default.TouchApp,
+                        icon = RemoteIcons.Touchpad,
                         isSelected = activeTab == RemoteMode.TOUCHPAD,
                         brandAccent = brandAccent,
                         onClick = {
@@ -580,7 +576,7 @@ fun MainScreen(
                     )
                     RemoteModeTabButton(
                         mode = RemoteMode.APPS,
-                        icon = Icons.Default.Apps,
+                        icon = RemoteIcons.Apps,
                         isSelected = activeTab == RemoteMode.APPS,
                         brandAccent = brandAccent,
                         onClick = {
@@ -591,7 +587,7 @@ fun MainScreen(
                     )
                     RemoteModeTabButton(
                         mode = RemoteMode.NUMPAD,
-                        icon = Icons.Default.Dialpad,
+                        icon = RemoteIcons.Keyboard,
                         isSelected = activeTab == RemoteMode.NUMPAD,
                         brandAccent = brandAccent,
                         onClick = {
@@ -677,7 +673,7 @@ fun MainScreen(
 
                 // Real-time Command Feedback Bar anchored cleanly at bottom
                 val latestLog = recentLogs.firstOrNull()
-                Surface(
+                if (latestLog != null) Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("command_feedback_bar"),
@@ -700,16 +696,16 @@ fun MainScreen(
                                 modifier = Modifier
                                     .size(5.dp)
                                     .background(
-                                        if (latestLog?.success != false) Color.White else Color(0xFFA1A1AA),
+                                        if (latestLog.success) Color.White else Color(0xFFA1A1AA),
                                         CircleShape
                                     )
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = latestLog?.command?.let { "CMD // $it" } ?: "SYSTEM // READY",
+                                text = latestLog.command,
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                    color = if (latestLog != null) TextPrimary else TextMuted,
+                                    color = TextPrimary,
                                     fontSize = 10.sp,
                                     letterSpacing = 0.5.sp
                                 ),
@@ -717,16 +713,6 @@ fun MainScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-
-                        Text(
-                            text = "[${currentType.brandTag}]",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                color = TextSecondary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 9.sp
-                            )
-                        )
                     }
                 }
             }
@@ -835,31 +821,16 @@ fun RemoteModeTabButton(
             .testTag("tab_${mode.name.lowercase()}"),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (isSelected) Color.Black else TextSecondary,
-                modifier = Modifier.size(15.dp)
-            )
-            Text(
-                text = when (mode) {
-                    RemoteMode.DPAD -> "MANDO"
-                    RemoteMode.TOUCHPAD -> "TÁCTIL"
-                    RemoteMode.APPS -> "APPS"
-                    RemoteMode.NUMPAD -> "TECLADO"
-                },
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    color = if (isSelected) Color.Black else TextSecondary,
-                    fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                    fontSize = 11.sp,
-                    letterSpacing = 0.5.sp
-                )
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = when (mode) {
+                RemoteMode.DPAD -> "Mando"
+                RemoteMode.TOUCHPAD -> "Panel táctil"
+                RemoteMode.APPS -> "Aplicaciones"
+                RemoteMode.NUMPAD -> "Teclado"
+            },
+            tint = if (isSelected) Color.Black else TextSecondary,
+            modifier = Modifier.size(24.dp)
+        )
     }
 }

@@ -41,7 +41,7 @@ class AndroidTvSessionTest {
         soTimeout = 10000
     }
 
-    @Test fun `pairing then remote negotiation ping and real key frame over mutual TLS`() = runBlocking {
+    @Test fun `app rejection preserves paired TLS ping and keys while real EOF disconnects`() = runBlocking {
         val executor = Executors.newFixedThreadPool(2)
         val pairServer = server()
         val remoteServer = server()
@@ -97,10 +97,35 @@ class AndroidTvSessionTest {
                     AndroidTvProtocol.getFieldBytes(appRequest, 90)!!, 1
                 )!!.toString(Charsets.UTF_8)
                 assertEquals("android-app://com.example.dimmer", appLink)
+                val appPacket = AndroidTvProtocol.readPacket(input)
+                val launch = AndroidTvProtocol.getFieldBytes(appPacket, 90)!!
+                assertEquals("https://www.disneyplus.com", AndroidTvProtocol.getFieldBytes(launch, 1)!!.toString(Charsets.UTF_8))
+                for (expected in listOf("https://tv.apple.com", "https://www.paramountplus.com/", "https://play.hbomax.com")) {
+                    val packet = AndroidTvProtocol.readPacket(input)
+                    val appLink = AndroidTvProtocol.getFieldBytes(packet, 90)!!
+                    assertEquals(expected, AndroidTvProtocol.getFieldBytes(appLink, 1)!!.toString(Charsets.UTF_8))
+                }
+                val flowRequest = AndroidTvProtocol.readPacket(input)
+                AndroidTvProtocol.writePacket(output, bytes(3, byteArrayOf(8, 1) + bytes(2, flowRequest)))
+                val flowStore = AndroidTvProtocol.getFieldBytes(AndroidTvProtocol.readPacket(input), 90)!!
+                assertEquals("https://play.google.com/store/apps/details?id=ar.com.flow.androidtv",
+                    AndroidTvProtocol.getFieldBytes(flowStore, 1)!!.toString(Charsets.UTF_8))
+                val rejectedApp = AndroidTvProtocol.readPacket(input)
+                assertTrue(AndroidTvProtocol.hasField(rejectedApp, 90))
+                AndroidTvProtocol.writePacket(output, bytes(3, byteArrayOf(8, 1) + bytes(2, rejectedApp)))
+                // Some Remote Service versions omit the rejected command from RemoteError.
+                AndroidTvProtocol.readPacket(input)
+                AndroidTvProtocol.writePacket(output, bytes(3, byteArrayOf(8, 1)))
+                AndroidTvProtocol.writePacket(output, bytes(8, byteArrayOf(8, 56)))
+                val afterRejection = List(2) { AndroidTvProtocol.readPacket(input) }
+                assertTrue(afterRejection.any { it.contentEquals(bytes(9, byteArrayOf(8, 56))) })
+                assertTrue(afterRejection.any { it.contentEquals(bytes(10, byteArrayOf(8, 3, 16, 3))) })
                 release.await(10, TimeUnit.SECONDS)
             }
         }
-        val client = AndroidTvClient(context, store, remotePort = remoteServer.localPort, pairingPort = pairServer.localPort)
+        val disconnected = CountDownLatch(1)
+        val client = AndroidTvClient(context, store, remotePort = remoteServer.localPort, pairingPort = pairServer.localPort,
+            onConnectionChanged = { connected, _ -> if (!connected) disconnected.countDown() })
         try {
             var prompted = false
             var pairingError: String? = null
@@ -117,9 +142,23 @@ class AndroidTvSessionTest {
             assertTrue(store.isAndroidTvPaired("127.0.0.1"))
             assertTrue(client.sendKey(RemoteKey.HOME))
             assertTrue(client.launchAppLink("android-app://com.example.dimmer"))
+            assertTrue(client.launchAppByPackage("com.disney.disneyplus"))
+            for (pkg in listOf("com.apple.atve.androidtv.appletv", "com.cbs.ca", "com.wbd.stream")) {
+                assertTrue(client.launchAppByPackage(pkg, "market://launch?id=$pkg"))
+            }
+            var storeOpened = false
+            assertTrue(client.launchAppByPackage("ar.com.flow.androidtv") { storeOpened = true })
+            assertTrue("A store fallback must explicitly require confirmation on the TV", storeOpened)
+            assertFalse("Rejected app links must report an app error", client.launchAppByPackage("com.example.missing", "test://not-installed"))
+            assertFalse(client.launchAppByPackage("com.example.missing", "test://no-error-echo"))
+            assertTrue("An app rejection must keep the paired remote connected", client.isConnected)
+            assertTrue(client.sendKey(RemoteKey.HOME))
+            assertEquals("App errors must not emit a disconnect callback", 1L, disconnected.count)
             pairingTask.get(10, TimeUnit.SECONDS)
             release.countDown()
             remoteTask.get(10, TimeUnit.SECONDS)
+            assertTrue("A real closed socket must still report disconnected", disconnected.await(3, TimeUnit.SECONDS))
+            assertFalse(client.isConnected)
         } finally {
             allowStart.countDown()
             release.countDown()

@@ -292,6 +292,7 @@ object AndroidTvProtocol {
 
     /** RemoteMessage field 90 contains RemoteAppLinkLaunchRequest (app_link = 1). */
     fun buildRemoteAppLinkLaunch(appLink: String): ByteArray {
+        require(appLink.isNotBlank())
         val request = ByteArrayOutputStream()
         writeFieldString(request, 1, appLink)
         val message = ByteArrayOutputStream()

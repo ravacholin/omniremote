@@ -3,6 +3,12 @@ package com.example.network
 import android.util.Base64
 import android.util.Log
 import com.example.data.model.RemoteKey
+import com.example.data.model.StreamingAppCatalog
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.example.data.model.TvAppShortcut
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +38,9 @@ class SamsungTvClient(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var webSocket: WebSocket? = null
+    private val appDiscoveryMutex = Mutex()
+    @Volatile private var installedApps: List<SamsungInstalledApp> = emptyList()
+    @Volatile private var pendingAppDiscovery: CompletableDeferred<List<SamsungInstalledApp>>? = null
     var isConnected = false
         private set
 
@@ -115,8 +124,13 @@ class SamsungTvClient(
                     }
 
                     when (event) {
+                        "ed.installedApp.get" -> {
+                            installedApps = SamsungAppProtocol.installedApps(json)
+                            pendingAppDiscovery?.complete(installedApps)
+                        }
                         "ms.channel.connect" -> {
                             isConnected = true
+                            webSocket.send(SamsungAppProtocol.requestApps())
                             onConnectionChanged?.invoke(true, null)
                         }
                         "ms.channel.unauthorized" -> {
@@ -169,6 +183,9 @@ class SamsungTvClient(
 
     fun disconnect() {
         connectionGeneration.incrementAndGet()
+        installedApps = emptyList()
+        pendingAppDiscovery?.complete(emptyList())
+        pendingAppDiscovery = null
         webSocket?.close(1000, "User disconnected")
         webSocket = null
         isConnected = false
@@ -218,24 +235,39 @@ class SamsungTvClient(
         return launchAppById(ipAddress, shortcut.samsungAppId)
     }
 
-    suspend fun launchAppById(ipAddress: String, appId: String): Result<Unit> {
-        return withContext(Dispatchers.IO) {
-            try {
-                val url = "http://$ipAddress:8001/api/v2/applications/$appId"
-                val request = Request.Builder()
-                    .url(url)
-                    .post("".toRequestBody(null))
-                    .build()
-                okHttpClient.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        Result.success(Unit)
-                    } else {
-                        Result.success(Unit)
-                    }
+    suspend fun launchAppById(ipAddress: String, appId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            require(ipAddress == currentIp && isConnected) { "Conecta primero el televisor." }
+            val generation = connectionGeneration.get()
+            val definition = StreamingAppCatalog.apps.firstOrNull { it.samsungId == appId }
+            val name = if (appId.startsWith("name:")) appId.removePrefix("name:") else definition?.name
+            var installed = name?.let { SamsungAppProtocol.find(installedApps, it) }
+            if (installed == null && appId.startsWith("name:")) {
+                installed = appDiscoveryMutex.withLock {
+                    SamsungAppProtocol.find(installedApps, name!!)?.let { return@withLock it }
+                    val pending = CompletableDeferred<List<SamsungInstalledApp>>()
+                    pendingAppDiscovery = pending
+                    try {
+                        check(webSocket?.send(SamsungAppProtocol.requestApps()) == true) { "No se pudo consultar las apps de la TV." }
+                        val apps = withTimeoutOrNull(4000) { pending.await() }
+                            ?: error("La TV no permite consultar sus apps instaladas; no se pudo identificar Flow.")
+                        SamsungAppProtocol.find(apps, name)
+                            ?: error("Flow no aparece entre las apps instaladas del televisor.")
+                    } finally { if (pendingAppDiscovery === pending) pendingAppDiscovery = null }
                 }
-            } catch (e: Exception) {
-                Result.failure(e)
             }
-        }
+            check(generation == connectionGeneration.get() && currentIp == ipAddress && isConnected) { "La conexión con la TV cambió." }
+            val target = installed ?: SamsungInstalledApp(appId, name.orEmpty(), if (appId == "3201807016597") 1 else 2)
+            if (webSocket?.send(SamsungAppProtocol.launch(target)) == true) return@withContext Result.success(Unit)
+            // Legacy REST fallback: a rejected HTTP response must never report a successful launch.
+            val request = Request.Builder().url("http://$ipAddress:8001/api/v2/applications/${target.id}")
+                .post("".toRequestBody(null)).build()
+            okHttpClient.newBuilder().readTimeout(4, TimeUnit.SECONDS).callTimeout(6, TimeUnit.SECONDS).build()
+                .newCall(request).execute().use { response ->
+                    check(response.isSuccessful) { "La TV rechazó abrir la app (HTTP ${response.code})." }
+                }
+            Result.success(Unit)
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { Result.failure(e) }
     }
 }

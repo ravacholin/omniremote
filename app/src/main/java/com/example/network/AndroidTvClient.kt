@@ -4,7 +4,10 @@ import android.content.Context
 import android.util.Log
 import com.example.data.local.TvTokenStore
 import com.example.data.model.RemoteKey
+import com.example.data.model.StreamingAppCatalog
 import com.example.data.model.TvAppShortcut
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -37,9 +40,13 @@ class AndroidTvClient(
     private val onConnectionChanged: ((Boolean, String?) -> Unit)? = null,
     private val onPairingPromptNeeded: ((String) -> Unit)? = null,
     private val remotePort: Int = AndroidTvProtocol.PORT_REMOTE,
-    private val pairingPort: Int = AndroidTvProtocol.PORT_PAIRING
+    private val pairingPort: Int = AndroidTvProtocol.PORT_PAIRING,
+    private val onCommandRejected: ((String) -> Unit)? = null
 ) {
     private val remoteConnectMutex = Mutex()
+    private val appLaunchMutex = Mutex()
+    private data class PendingAppLaunch(val link: String, val accepted: CompletableDeferred<Boolean>)
+    @Volatile private var pendingAppLaunch: PendingAppLaunch? = null
     private val writeLock = Any()
     private var pairingIp: String = ""
     private val tag = "AndroidTvClient"
@@ -160,7 +167,23 @@ class AndroidTvClient(
                         }
                     }
                     AndroidTvProtocol.buildRemoteResponse(packet, features)?.let { writeRemotePacket(out, it) }
-                    require(!AndroidTvProtocol.hasField(packet, 3)) { "La TV rechazó el canal de control." }
+                    AndroidTvProtocol.getFieldBytes(packet, 3)?.let { error ->
+                        // RemoteError describes a rejected command, not a broken TLS connection.
+                        // During negotiation it still means that the session could not start.
+                        check(isConnected) { "La TV rechazó el canal de control." }
+                        val rejectedMessage = AndroidTvProtocol.getFieldBytes(error, 2)
+                        val rejectedApp = rejectedMessage?.let { AndroidTvProtocol.getFieldBytes(it, 90) }
+                        val rejectedLink = rejectedApp?.let { AndroidTvProtocol.getFieldBytes(it, 1)?.toString(Charsets.UTF_8) }
+                        val pending = pendingAppLaunch
+                        if (pending != null && (rejectedLink == pending.link || rejectedMessage == null)) {
+                            pending.accepted.complete(false)
+                        } else {
+                            Log.w(tag, "TV rejected a remote command; keeping the authenticated session")
+                            onCommandRejected?.invoke(if (rejectedApp != null)
+                                "La TV rechazó abrir la app. El mando sigue conectado."
+                                else "La TV rechazó una orden. El mando sigue conectado.")
+                        }
+                    }
                 }
                 // The TV initiates configure -> active -> start. TLS alone is not readiness.
                 val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(12)
@@ -360,6 +383,7 @@ class AndroidTvClient(
         // Detach before closing: the reader must not publish a stale disconnect on replacement.
         val socket = remoteSocket
         remoteSocket = null
+        pendingAppLaunch?.accepted?.complete(false)
         remoteOutput = null
         remoteInput = null
         negotiatedFeatures = 0
@@ -449,7 +473,38 @@ class AndroidTvClient(
         return launchAppByPackage(shortcut.androidPackageName)
     }
 
-    suspend fun launchAppByPackage(packageName: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun launchAppByPackage(
+        packageName: String,
+        deepLinkUrl: String = "",
+        onStoreOpened: (() -> Unit)? = null
+    ): Boolean = appLaunchMutex.withLock { withContext(Dispatchers.IO) {
+        if (!packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) return@withContext false
+        if (isPaired && (isConnected || initRemoteV2Connection(activeIp)) && negotiatedFeatures and AndroidTvProtocol.APP_LINK_FEATURE != 0) {
+            try {
+                for (link in StreamingAppCatalog.androidLaunchLinks(packageName, deepLinkUrl)) {
+                    if (!isConnected) return@withContext false
+                    val out = remoteOutput ?: return@withContext false
+                    val pending = PendingAppLaunch(link, CompletableDeferred())
+                    pendingAppLaunch = pending
+                    val accepted = try {
+                        writeRemotePacket(out, AndroidTvProtocol.buildRemoteAppLinkLaunch(link))
+                        // Remote Service returns errors, but has no positive launch acknowledgement.
+                        withTimeoutOrNull(900) { pending.accepted.await() } != false
+                    } finally { if (pendingAppLaunch === pending) pendingAppLaunch = null }
+                    if (accepted) {
+                        if (link.startsWith("https://play.google.com/store/apps/details?")) onStoreOpened?.invoke()
+                        return@withContext true
+                    }
+                }
+                return@withContext false
+            } catch (e: Exception) {
+                currentCoroutineContext().ensureActive()
+                // Only a transport failure, not RemoteError, invalidates the session.
+                closeRemoteSocket()
+                onConnectionChanged?.invoke(false, "No se pudo enviar la orden a la TV. Vuelve a conectar.")
+                return@withContext false
+            }
+        }
         val targetIp = activeIp.trim()
         if (targetIp.isBlank()) return@withContext false
         var launched = false
@@ -477,20 +532,7 @@ class AndroidTvClient(
             } catch (_: Exception) {}
         }
 
-        // 2. Monkey Intent over port 5555 (ADB)
-        if (!launched) {
-            try {
-                localNetwork.socketFactory.createSocket().use { socket ->
-                    socket.connect(InetSocketAddress(targetIp, 5555), 1500)
-                    val out = socket.getOutputStream()
-                    val cmd = "monkey -p $packageName -c android.intent.category.LAUNCHER 1\n"
-                    out.write(cmd.toByteArray())
-                    out.flush()
-                    launched = true
-                }
-            } catch (_: Exception) {}
-        }
 
         launched
-    }
+    } }
 }

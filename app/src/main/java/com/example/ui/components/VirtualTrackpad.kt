@@ -32,21 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.VolumeDown
-import androidx.compose.material.icons.automirrored.filled.VolumeMute
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -94,15 +80,15 @@ enum class NavigationCommand(
     val remoteKey: RemoteKey,
     val icon: ImageVector
 ) {
-    UP("Up", RemoteKey.UP, Icons.Default.KeyboardArrowUp),
-    DOWN("Down", RemoteKey.DOWN, Icons.Default.KeyboardArrowDown),
-    LEFT("Left", RemoteKey.LEFT, Icons.Default.KeyboardArrowLeft),
-    RIGHT("Right", RemoteKey.RIGHT, Icons.Default.KeyboardArrowRight),
+    UP("Up", RemoteKey.UP, RemoteIcons.Up),
+    DOWN("Down", RemoteKey.DOWN, RemoteIcons.Down),
+    LEFT("Left", RemoteKey.LEFT, RemoteIcons.Left),
+    RIGHT("Right", RemoteKey.RIGHT, RemoteIcons.Right),
     SELECT("Select", RemoteKey.ENTER, Icons.Default.Check),
-    MENU("Menu", RemoteKey.MENU, Icons.Default.Menu),
-    PLAY_PAUSE("Play/Pause", RemoteKey.PLAY_PAUSE, Icons.Default.PlayArrow),
-    BACK("Back", RemoteKey.BACK, Icons.AutoMirrored.Filled.ArrowBack),
-    HOME("Home", RemoteKey.HOME, Icons.Default.Home)
+    MENU("Menu", RemoteKey.MENU, RemoteIcons.Menu),
+    PLAY_PAUSE("Play/Pause", RemoteKey.PLAY_PAUSE, RemoteIcons.Play),
+    BACK("Back", RemoteKey.BACK, RemoteIcons.Back),
+    HOME("Home", RemoteKey.HOME, RemoteIcons.Home)
 }
 
 /**
@@ -193,7 +179,7 @@ fun VirtualTrackpad(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
-                        imageVector = lastCommand?.icon ?: Icons.Default.TouchApp,
+                        imageVector = lastCommand?.icon ?: RemoteIcons.Touchpad,
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(13.dp)
@@ -369,7 +355,7 @@ fun VirtualTrackpad(
                         .padding(top = 10.dp)
                 ) {
                     DirectionIndicator(
-                        icon = Icons.Default.KeyboardArrowUp,
+                        icon = RemoteIcons.Up,
                         isActive = activeDirection == NavigationCommand.UP,
                         accentColor = accentColor,
                         contentDescription = "Swipe Up"
@@ -383,7 +369,7 @@ fun VirtualTrackpad(
                         .padding(bottom = 10.dp)
                 ) {
                     DirectionIndicator(
-                        icon = Icons.Default.KeyboardArrowDown,
+                        icon = RemoteIcons.Down,
                         isActive = activeDirection == NavigationCommand.DOWN,
                         accentColor = accentColor,
                         contentDescription = "Swipe Down"
@@ -397,7 +383,7 @@ fun VirtualTrackpad(
                         .padding(start = 10.dp)
                 ) {
                     DirectionIndicator(
-                        icon = Icons.Default.KeyboardArrowLeft,
+                        icon = RemoteIcons.Left,
                         isActive = activeDirection == NavigationCommand.LEFT,
                         accentColor = accentColor,
                         contentDescription = "Swipe Left"
@@ -411,7 +397,7 @@ fun VirtualTrackpad(
                         .padding(end = 10.dp)
                 ) {
                     DirectionIndicator(
-                        icon = Icons.Default.KeyboardArrowRight,
+                        icon = RemoteIcons.Right,
                         isActive = activeDirection == NavigationCommand.RIGHT,
                         accentColor = accentColor,
                         contentDescription = "Swipe Right"
@@ -431,9 +417,9 @@ fun VirtualTrackpad(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.TouchApp,
+                        imageVector = RemoteIcons.Touchpad,
                         contentDescription = "Virtual Trackpad Target",
-                        tint = if (activeDirection == NavigationCommand.SELECT) Color.White else Color(0xFF444444),
+                        tint = if (activeDirection == NavigationCommand.SELECT) Color.White else TextMuted,
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -464,7 +450,7 @@ fun VirtualTrackpad(
             verticalAlignment = Alignment.CenterVertically
         ) {
             CircleRemoteButton(
-                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                icon = RemoteIcons.Back,
                 label = "Back",
                 testTag = "trackpad_btn_back",
                 onClick = {
@@ -478,7 +464,7 @@ fun VirtualTrackpad(
             )
 
             CircleRemoteButton(
-                icon = Icons.AutoMirrored.Filled.VolumeDown,
+                icon = RemoteIcons.VolumeDown,
                 label = "Vol -",
                 testTag = "trackpad_btn_vol_down",
                 onClick = {
@@ -489,7 +475,7 @@ fun VirtualTrackpad(
             )
 
             CircleRemoteButton(
-                icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                icon = if (isPlaying) RemoteIcons.Pause else RemoteIcons.Play,
                 label = if (isPlaying) "Pause" else "Play",
                 accent = accentColor,
                 testTag = "trackpad_btn_play_pause",
@@ -508,7 +494,7 @@ fun VirtualTrackpad(
             )
 
             CircleRemoteButton(
-                icon = Icons.AutoMirrored.Filled.VolumeMute,
+                icon = RemoteIcons.Mute,
                 label = "Mute",
                 testTag = "trackpad_btn_mute",
                 onClick = {
@@ -519,7 +505,7 @@ fun VirtualTrackpad(
             )
 
             CircleRemoteButton(
-                icon = Icons.AutoMirrored.Filled.VolumeUp,
+                icon = RemoteIcons.VolumeUp,
                 label = "Vol +",
                 testTag = "trackpad_btn_vol_up",
                 onClick = {
@@ -530,7 +516,7 @@ fun VirtualTrackpad(
             )
 
             CircleRemoteButton(
-                icon = Icons.Default.Home,
+                icon = RemoteIcons.Home,
                 label = "Home",
                 accent = accentColor,
                 testTag = "trackpad_btn_home",
