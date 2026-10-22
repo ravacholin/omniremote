@@ -254,6 +254,27 @@ class UnifiedTvController(
         }
     }
 
+    fun openBrightness(dimmer: TvAppEntity?) {
+        val device = activeDevice ?: return
+        if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
+            addLog(device.name, "Samsung brightness shortcut is not configured yet. Use Picture settings on the TV.", false)
+            return
+        }
+        if (dimmer == null || dimmer.deviceId != device.id) {
+            addLog(device.name, "Add TVDimmer in Apps with its Android package name to enable Brightness.", false)
+            return
+        }
+        val packageName = dimmer.appIdentifier.trim()
+        if (!packageName.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) {
+            addLog(device.name, "TVDimmer needs a valid Android package name in Apps.", false)
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val sent = androidClient.launchAppLink("android-app://$packageName")
+            addLog(device.name, if (sent) "TVDimmer launch request sent" else "Could not launch TVDimmer. Check the TV connection and app installation.", sent)
+        }
+    }
+
     fun launchApp(shortcut: TvAppShortcut) {
         val device = activeDevice ?: return
         scope.launch(Dispatchers.IO) {

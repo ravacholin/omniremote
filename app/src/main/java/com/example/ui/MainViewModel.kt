@@ -31,6 +31,7 @@ import com.example.data.repository.TvAppRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 
 enum class RemoteMode(val label: String) {
@@ -298,6 +299,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * - Keeps playback state in sync for PLAY, PAUSE, STOP, and PLAY_PAUSE
      * - Routes POWER through powerToggle (Wake-on-LAN + key dispatch)
      */
+    fun openBrightness() {
+        val device = _activeDevice.value ?: return
+        viewModelScope.launch {
+            val dimmer = if (device.deviceType == DeviceType.ANDROID_TV) {
+                appRepository.getAppsForDevice(device.id).first().firstOrNull { app ->
+                    app.appName.filter { it.isLetterOrDigit() }
+                        .startsWith("tvdimmer", ignoreCase = true)
+                }
+            } else null
+            if (_activeDevice.value?.id == device.id) controller.openBrightness(dimmer)
+        }
+    }
+
     fun sendKey(key: RemoteKey) {
         when (key) {
             RemoteKey.PLAY -> _isPlaying.value = true

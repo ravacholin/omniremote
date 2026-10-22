@@ -79,19 +79,24 @@ class AndroidTvSessionTest {
                 socket.soTimeout = 10000
                 val input = socket.inputStream
                 val output = socket.outputStream
-                AndroidTvProtocol.writePacket(output, bytes(1, byteArrayOf(8, 99)))
+                AndroidTvProtocol.writePacket(output, bytes(1, byteArrayOf(8, 0xE3.toByte(), 4)))
                 val cfg = AndroidTvProtocol.getFieldBytes(AndroidTvProtocol.readPacket(input), 1)!!
-                assertEquals(99, AndroidTvProtocol.getFieldVarint(cfg, 1))
-                AndroidTvProtocol.writePacket(output, bytes(2, byteArrayOf(8, 99)))
-                assertArrayEquals(bytes(2, byteArrayOf(8, 99)), AndroidTvProtocol.readPacket(input))
+                assertEquals(611, AndroidTvProtocol.getFieldVarint(cfg, 1))
+                AndroidTvProtocol.writePacket(output, bytes(2, byteArrayOf(8, 0xE3.toByte(), 4)))
+                assertArrayEquals(bytes(2, byteArrayOf(8, 0xE3.toByte(), 4)), AndroidTvProtocol.readPacket(input))
                 configured.countDown()
                 assertTrue(allowStart.await(10, TimeUnit.SECONDS))
                 AndroidTvProtocol.writePacket(output, bytes(40, byteArrayOf(8, 1)))
                 AndroidTvProtocol.writePacket(output, bytes(8, byteArrayOf(8, 55)))
                 // Ping reply and tap may arrive in either order, but each must be a complete frame.
-                val packets = List(2) { AndroidTvProtocol.readPacket(input) }
+                val packets = List(3) { AndroidTvProtocol.readPacket(input) }
                 assertTrue(packets.any { it.contentEquals(bytes(9, byteArrayOf(8, 55))) })
                 assertTrue(packets.any { it.contentEquals(bytes(10, byteArrayOf(8, 3, 16, 3))) })
+                val appRequest = packets.first { AndroidTvProtocol.hasField(it, 90) }
+                val appLink = AndroidTvProtocol.getFieldBytes(
+                    AndroidTvProtocol.getFieldBytes(appRequest, 90)!!, 1
+                )!!.toString(Charsets.UTF_8)
+                assertEquals("android-app://com.example.dimmer", appLink)
                 release.await(10, TimeUnit.SECONDS)
             }
         }
@@ -111,6 +116,7 @@ class AndroidTvSessionTest {
             assertTrue(client.isConnected)
             assertTrue(store.isAndroidTvPaired("127.0.0.1"))
             assertTrue(client.sendKey(RemoteKey.HOME))
+            assertTrue(client.launchAppLink("android-app://com.example.dimmer"))
             pairingTask.get(10, TimeUnit.SECONDS)
             release.countDown()
             remoteTask.get(10, TimeUnit.SECONDS)
