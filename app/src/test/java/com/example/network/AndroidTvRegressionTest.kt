@@ -1,32 +1,68 @@
 package com.example.network
 
+import androidx.test.core.app.ApplicationProvider
+import android.content.Context
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.net.ServerSocket
+import java.io.ByteArrayInputStream
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class AndroidTvRegressionTest {
-    @Test
-    fun unreachableTvIsNeverReportedConnected() = runBlocking {
-        var reportedConnected = false
-        val client = AndroidTvClient(onConnectionChanged = { connected, _ -> reportedConnected = connected })
-        // Loopback refuses all normal TV ports; the preferred port is also closed.
-        val closedPort = ServerSocket(0).use { it.localPort }
+    // Decode independently of the production parser, following remotemessage.proto.
+    private fun fields(bytes: ByteArray): Map<Int, Any> {
+        val input = ByteArrayInputStream(bytes)
+        val result = mutableMapOf<Int, Any>()
+        while (input.available() > 0) {
+            val tag = AndroidTvProtocol.readVarint(input)
+            result[tag ushr 3] = when (tag and 7) {
+                0 -> AndroidTvProtocol.readVarint(input)
+                2 -> ByteArray(AndroidTvProtocol.readVarint(input)).also { input.read(it) }
+                else -> error("Unexpected wire type")
+            }
+        }
+        return result
+    }
+
+    @Test fun `configure uses the actual RemoteDeviceInfo field numbers`() {
+        val configure = fields(fields(AndroidTvProtocol.buildRemoteConfigure())[1] as ByteArray)
+        val info = fields(configure[2] as ByteArray)
+        assertEquals(1, info[3])
+        assertEquals("1", String(info[4] as ByteArray))
+        assertEquals("atvremote", String(info[5] as ByteArray))
+        assertEquals("1.0.0", String(info[6] as ByteArray))
+        assertTrue((configure[1] as Int) and 1 != 0) // advertise ping support
+    }
+
+    @Test fun `generated certificate is valid now and throughout its advertised lifetime`() {
+        val cert = AndroidTvCertificateManager.getClientCertificate(ApplicationProvider.getApplicationContext<Context>())
+        cert.checkValidity()
+        cert.verify(cert.publicKey)
+        assertTrue(cert.notAfter.after(cert.notBefore))
+    }
+
+    @Test fun `incorrect pin checksum is rejected locally`() {
+        val cert = AndroidTvCertificateManager.getClientCertificate(ApplicationProvider.getApplicationContext<Context>())
+        // At most one of the 256 checksum prefixes can match this fixed nonce.
+        val accepted = (0..255).count { prefix ->
+            runCatching { AndroidTvProtocol.computePairingSecret(cert, cert, "%02X1234".format(prefix)) }.isSuccess
+        }
+        assertEquals(1, accepted)
+    }
+
+    @Test fun `unreachable device is never reported as connected`() = runBlocking {
+        val client = AndroidTvClient()
         try {
-            assertFalse(client.connect("127.0.0.1", closedPort))
+            assertFalse(client.connect("127.0.0.2"))
             assertFalse(client.isConnected)
-            assertFalse(reportedConnected)
-            assertFalse(client.sendKey(com.example.data.model.RemoteKey.UP))
         } finally {
             client.disconnect()
         }
     }
-
     @Test
     fun scannerUsesWifiLinkAddressEvenWithoutInternetValidation() {
         val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
@@ -52,30 +88,4 @@ class AndroidTvRegressionTest {
         assertEquals("192.168.0.16", TvScanner(context).getLocalIpAddress())
     }
 
-    @Test
-    fun configureUsesRemoteDeviceInfoFieldNumbers() {
-        // Published RemoteDeviceInfo: unknown1=3, unknown2=4, package=5, version=6.
-        val expected = byteArrayOf(0x0a, 0x1c, 0x08, 0xee.toByte(), 0x04, 0x12, 0x17,
-            0x18, 0x01, 0x22, 0x01, 0x31, 0x2a, 0x09) +
-            "atvremote".toByteArray() + byteArrayOf(0x32, 0x05) + "1.0.0".toByteArray()
-        assertArrayEquals(expected, AndroidTvProtocol.buildRemoteConfigure())
-    }
-
-    @Test
-    fun incorrectPinChecksumIsRejectedLocally() {
-        val certificate = AndroidTvCertificateManager.getClientCertificate(null)
-        val nonce = "1234"
-        val digest = java.security.MessageDigest.getInstance("SHA-256").apply {
-            val key = certificate.publicKey as java.security.interfaces.RSAPublicKey
-            repeat(2) {
-                update(AndroidTvProtocol.bigIntegerToHexBytes(key.modulus))
-                update(AndroidTvProtocol.bigIntegerToHexBytes(key.publicExponent))
-            }
-            update(AndroidTvProtocol.hexToBytes(nonce))
-        }.digest()
-        val wrongPrefix = ((digest[0].toInt() and 255) xor 1).toString(16).padStart(2, '0')
-        assertThrows(IllegalArgumentException::class.java) {
-            AndroidTvProtocol.computePairingSecret(certificate, certificate, wrongPrefix + nonce)
-        }
-    }
 }

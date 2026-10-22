@@ -201,6 +201,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
+            controller.connectionState.collect { state ->
+                if (state is ConnectionState.WaitingAuth && controller.isCurrentDeviceAndroidTv() &&
+                    !_isAndroidTvPairingDialogOpen.value) startAndroidTvPairing()
+            }
+        }
+        viewModelScope.launch {
             repository.cleanDemoDevices()
         }
 
@@ -221,9 +227,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectDevice(device: TvDeviceEntity) {
-        if (_activeDevice.value?.id != device.id || _activeDevice.value?.ipAddress != device.ipAddress) {
-            closeAndroidTvPairingDialog()
-        }
         _activeDevice.value = device
         controller.setActiveDevice(device)
         viewModelScope.launch(Dispatchers.IO) {
@@ -378,7 +381,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (!result.success) {
                 // TV cannot wake because MAC address is missing: open prompt immediately!
                 _powerOnStatusMessage.value = result.message
-                openMacConfigDialog(device)
+                if (com.example.network.WakeOnLan.formatMacAddress(device.macAddress) == null) {
+                    openMacConfigDialog(device)
+                }
                 return@launch
             }
 
@@ -387,11 +392,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Polling loop to auto-connect once TV hardware powers up network interfaces
             repeat(10) {
                 delay(1500)
-                if (controller.connectionState.value is ConnectionState.Connected) {
-                    _powerOnStatusMessage.value = null
-                    return@launch
+                if (_activeDevice.value?.id != device.id) return@launch
+                when (controller.connectionState.value) {
+                    is ConnectionState.Connected -> {
+                        _powerOnStatusMessage.value = null
+                        return@launch
+                    }
+                    is ConnectionState.Connecting -> Unit
+                    else -> controller.reconnect()
                 }
-                controller.reconnect()
             }
             delay(1500)
             _powerOnStatusMessage.value = null
@@ -409,12 +418,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateDeviceMac(device: TvDeviceEntity, newMac: String, andPowerOn: Boolean = true) {
-        val cleanMac = com.example.network.WakeOnLan.formatMacAddress(newMac) ?: newMac.trim().uppercase()
+        val cleanMac = com.example.network.WakeOnLan.formatMacAddress(newMac) ?: return
         viewModelScope.launch(Dispatchers.IO) {
             repository.updateDeviceMac(device.id, cleanMac)
             val updated = device.copy(macAddress = cleanMac)
             if (_activeDevice.value?.id == device.id) {
                 _activeDevice.value = updated
+                controller.setActiveDevice(updated)
             }
             closeMacConfigDialog()
             if (andPowerOn) {
@@ -448,7 +458,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var pairingSubmitJob: kotlinx.coroutines.Job? = null
+
     fun startAndroidTvPairing() {
+        pairingSubmitJob?.cancel()
         val dev = _activeDevice.value
         if (dev == null) {
             _pairingErrorMessage.value = "Selecciona primero tu Google TV para vincular."
@@ -481,13 +494,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun submitAndroidTvPin(pin: String) {
-        if (!pin.matches(Regex("[0-9a-fA-F]{6}"))) {
-            _pairingErrorMessage.value = "Introduce el código que aparece en tu pantalla de TV"
+        if (!pin.trim().matches(Regex("[0-9a-fA-F]{6}"))) {
+            _pairingErrorMessage.value = "Introduce los 6 caracteres (0–9 y A–F) que aparecen en la TV"
             return
         }
         _isPairingInProgress.value = true
         _pairingErrorMessage.value = null
-        viewModelScope.launch {
+        pairingSubmitJob = viewModelScope.launch {
             val ok = controller.submitAndroidTvPin(pin)
             _isPairingInProgress.value = false
             if (ok) {
@@ -495,12 +508,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(1200)
                 _isAndroidTvPairingDialogOpen.value = false
             } else {
-                _pairingErrorMessage.value = controller.androidTvPairingError() ?: "No se pudo completar la vinculación. Pulsa Reintentar para solicitar un código nuevo."
+                _pairingErrorMessage.value = "Código inválido o tiempo de espera agotado. Verifica el código en pantalla y vuelve a intentar."
             }
         }
     }
 
     fun closeAndroidTvPairingDialog() {
+        pairingSubmitJob?.cancel()
         controller.cancelAndroidTvPairing()
         _isPairingInProgress.value = false
         _isAndroidTvPairingDialogOpen.value = false
@@ -522,13 +536,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val updatedDevice = repository.getDeviceById(id)
             if (updatedDevice != null) {
                 selectDevice(updatedDevice)
-                // If it's a newly added Google TV / Android TV that is not yet paired, prompt pairing immediately
-                if (updatedDevice.deviceType == DeviceType.ANDROID_TV && !tokenStore.isAndroidTvPaired(updatedDevice.ipAddress)) {
-                    delay(500)
-                    withContext(Dispatchers.Main) {
-                        startAndroidTvPairing()
-                    }
-                }
+                // The saved TLS identity is tried first; a changed DHCP IP does not
+                // mean the TV needs pairing again. The connection reports auth errors.
             }
         }
     }

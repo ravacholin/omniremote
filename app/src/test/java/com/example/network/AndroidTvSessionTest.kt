@@ -1,155 +1,154 @@
 package com.example.network
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.setMain
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.example.data.local.TvTokenStore
+import com.example.data.model.DeviceType
+import com.example.data.model.RemoteKey
+import kotlinx.coroutines.*
+import kotlinx.coroutines.test.*
+import org.junit.*
 import org.junit.Assert.*
-import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.ByteArrayOutputStream
 import java.net.InetAddress
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
+import java.security.MessageDigest
+import java.security.interfaces.RSAPublicKey
+import java.util.concurrent.*
 import javax.net.ssl.SSLServerSocket
 import javax.net.ssl.SSLSocket
-import kotlin.concurrent.thread
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@Config(sdk = [36])
 class AndroidTvSessionTest {
-    private fun server(port: Int) = (AndroidTvCertificateManager.getOrCreateSslContext(null)
-        .serverSocketFactory.createServerSocket(port, 5, InetAddress.getByName("127.0.0.1")) as SSLServerSocket)
-        .apply { soTimeout = 10000 }
+    private val context get() = ApplicationProvider.getApplicationContext<Context>()
+    @Before fun mainDispatcher() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+    @After fun resetMainDispatcher() { Dispatchers.resetMain() }
 
-    @Test fun negotiatesControlAndAnswersKeepAlive(): Unit = runBlocking {
-        val result = CompletableFuture<Unit>()
-        val listener = server(6466)
-        val worker = thread(isDaemon = true) {
-            try {
-                // connect() first probes the TCP port, then opens mutual TLS.
-                listener.accept().close()
-                (listener.accept() as SSLSocket).use { socket ->
-                    socket.soTimeout = 10000
-                    socket.startHandshake()
-                    val input = socket.inputStream
-                    val output = socket.outputStream
-                    AndroidTvProtocol.writePacket(output, byteArrayOf(0x0a, 3, 8, 0xee.toByte(), 4))
-                    assertArrayEquals(AndroidTvProtocol.buildRemoteConfigure(), AndroidTvProtocol.readPacket(input))
-                    AndroidTvProtocol.writePacket(output, byteArrayOf(0x12, 3, 8, 0xee.toByte(), 4))
-                    assertArrayEquals(AndroidTvProtocol.buildRemoteSetActive(), AndroidTvProtocol.readPacket(input))
-                    AndroidTvProtocol.writePacket(output, byteArrayOf(0xc2.toByte(), 2, 2, 8, 1))
-                    AndroidTvProtocol.writePacket(output, byteArrayOf(0x42, 2, 8, 7))
-                    assertArrayEquals(byteArrayOf(0x4a, 2, 8, 7), AndroidTvProtocol.readPacket(input))
-                    result.complete(Unit)
-                    // Keep the channel open until the client deliberately disconnects.
-                    input.read()
-                }
-            } catch (error: Throwable) { result.completeExceptionally(error) }
-        }
-        val client = AndroidTvClient()
-        try {
-            assertTrue(client.connect("127.0.0.1"))
-            assertTrue(client.isConnected)
-            result.get(15, TimeUnit.SECONDS)
-        } finally {
-            client.disconnect()
-            listener.close()
-            worker.join(1000)
-        }
+    private fun bytes(field: Int, value: ByteArray): ByteArray = ByteArrayOutputStream().apply {
+        AndroidTvProtocol.writeVarint(this, (field shl 3) or 2)
+        AndroidTvProtocol.writeVarint(this, value.size)
+        write(value)
+    }.toByteArray()
+
+    private fun ack(field: Int) = byteArrayOf(8, 2, 16, 0xC8.toByte(), 1) + bytes(field, byteArrayOf())
+    private fun server(): SSLServerSocket = (AndroidTvCertificateManager.getOrCreateSslContext(context)
+        .serverSocketFactory.createServerSocket(0, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
+        needClientAuth = true
+        soTimeout = 10000
     }
 
-    @Test fun acceptedPinIsDistinguishedFromUnavailableControlChannel() = runBlocking {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
-        val listener = server(6467)
-        val certificate = AndroidTvCertificateManager.getClientCertificate(null)
-        val key = certificate.publicKey as java.security.interfaces.RSAPublicKey
-        val digest = java.security.MessageDigest.getInstance("SHA-256").apply {
+    @Test fun `pairing then remote negotiation ping and real key frame over mutual TLS`() = runBlocking {
+        val executor = Executors.newFixedThreadPool(2)
+        val pairServer = server()
+        val remoteServer = server()
+        val allowStart = CountDownLatch(1)
+        val configured = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val store = TvTokenStore.getInstance(context)
+        store.setAndroidTvPaired("127.0.0.1", false)
+        val cert = AndroidTvCertificateManager.getClientCertificate(context)
+        val rsa = cert.publicKey as RSAPublicKey
+        val hash = MessageDigest.getInstance("SHA-256").apply {
             repeat(2) {
-                update(AndroidTvProtocol.bigIntegerToHexBytes(key.modulus))
-                update(AndroidTvProtocol.bigIntegerToHexBytes(key.publicExponent))
+                update(AndroidTvProtocol.bigIntegerToHexBytes(rsa.modulus))
+                update(AndroidTvProtocol.bigIntegerToHexBytes(rsa.publicExponent))
             }
-            update(AndroidTvProtocol.hexToBytes("1234"))
+            update(byteArrayOf(0x12, 0x34))
         }.digest()
-        val pin = (digest[0].toInt() and 255).toString(16).padStart(2, '0') + "1234"
-        val result = CompletableFuture<Unit>()
-        val worker = thread(isDaemon = true) {
-            try {
-                (listener.accept() as SSLSocket).use { socket ->
-                    socket.soTimeout = 10000
-                    socket.startHandshake()
-                    val input = socket.inputStream
-                    val output = socket.outputStream
-                    fun ack(field: Int) {
-                        val bytes = java.io.ByteArrayOutputStream()
-                        bytes.write(byteArrayOf(8, 2, 16, 0xc8.toByte(), 1))
-                        AndroidTvProtocol.writeVarint(bytes, (field shl 3) or 2)
-                        bytes.write(0)
-                        AndroidTvProtocol.writePacket(output, bytes.toByteArray())
-                    }
-                    assertArrayEquals(AndroidTvProtocol.buildPairingRequest(), AndroidTvProtocol.readPacket(input))
-                    ack(AndroidTvProtocol.FIELD_PAIRING_REQUEST_ACK)
-                    assertArrayEquals(AndroidTvProtocol.buildOptionsMessage(), AndroidTvProtocol.readPacket(input))
-                    ack(AndroidTvProtocol.FIELD_OPTIONS)
-                    assertArrayEquals(AndroidTvProtocol.buildPairingConfiguration(), AndroidTvProtocol.readPacket(input))
-                    ack(AndroidTvProtocol.FIELD_CONFIGURATION_ACK)
-                    assertArrayEquals(AndroidTvProtocol.buildPairingSecret(digest), AndroidTvProtocol.readPacket(input))
-                    ack(AndroidTvProtocol.FIELD_SECRET_ACK)
+        val code = "%02X1234".format(hash[0].toInt() and 255)
+        val pairingTask = executor.submit {
+            (pairServer.accept() as SSLSocket).use { socket ->
+                socket.soTimeout = 10000
+                val input = socket.inputStream
+                val output = socket.outputStream
+                for ((request, response) in listOf(10 to 11, 20 to 20, 30 to 31)) {
+                    assertTrue(AndroidTvProtocol.hasField(AndroidTvProtocol.readPacket(input), request))
+                    AndroidTvProtocol.writePacket(output, ack(response))
                 }
-                result.complete(Unit)
-            } catch (error: Throwable) { result.completeExceptionally(error) }
+                val secret = AndroidTvProtocol.getFieldBytes(AndroidTvProtocol.readPacket(input), 40)!!
+                assertArrayEquals(hash, AndroidTvProtocol.getFieldBytes(secret, 1))
+                AndroidTvProtocol.writePacket(output, ack(41))
+            }
         }
-        val client = AndroidTvClient()
-        var prompted = false
+        val remoteTask = executor.submit {
+            (remoteServer.accept() as SSLSocket).use { socket ->
+                socket.soTimeout = 10000
+                val input = socket.inputStream
+                val output = socket.outputStream
+                AndroidTvProtocol.writePacket(output, bytes(1, byteArrayOf(8, 99)))
+                val cfg = AndroidTvProtocol.getFieldBytes(AndroidTvProtocol.readPacket(input), 1)!!
+                assertEquals(99, AndroidTvProtocol.getFieldVarint(cfg, 1))
+                AndroidTvProtocol.writePacket(output, bytes(2, byteArrayOf(8, 99)))
+                assertArrayEquals(bytes(2, byteArrayOf(8, 99)), AndroidTvProtocol.readPacket(input))
+                configured.countDown()
+                assertTrue(allowStart.await(10, TimeUnit.SECONDS))
+                AndroidTvProtocol.writePacket(output, bytes(40, byteArrayOf(8, 1)))
+                AndroidTvProtocol.writePacket(output, bytes(8, byteArrayOf(8, 55)))
+                // Ping reply and tap may arrive in either order, but each must be a complete frame.
+                val packets = List(2) { AndroidTvProtocol.readPacket(input) }
+                assertTrue(packets.any { it.contentEquals(bytes(9, byteArrayOf(8, 55))) })
+                assertTrue(packets.any { it.contentEquals(bytes(10, byteArrayOf(8, 3, 16, 3))) })
+                release.await(10, TimeUnit.SECONDS)
+            }
+        }
+        val client = AndroidTvClient(context, store, remotePort = remoteServer.localPort, pairingPort = pairServer.localPort)
         try {
-            client.startPairing("127.0.0.1", { prompted = true }) { _, error -> fail(error) }
+            var prompted = false
+            var pairingError: String? = null
+            client.startPairing("127.0.0.1", { prompted = true }, { _, error -> pairingError = error })
+            if (!prompted) { pairingTask.get(10, TimeUnit.SECONDS); fail(pairingError) }
             assertTrue(prompted)
-            assertFalse(client.submitPairingPin(pin))
-            result.get(15, TimeUnit.SECONDS)
-            assertTrue(client.isPaired)
-            assertTrue(client.lastPairingError.orEmpty().contains("aceptó el código"))
+            assertFalse(client.isConnected)
+            val result = async(Dispatchers.Default) { client.submitPairingPin(code) }
+            assertTrue(configured.await(10, TimeUnit.SECONDS))
+            assertFalse(client.isConnected) // TLS + configure alone cannot show Connected.
+            allowStart.countDown()
+            assertTrue(result.await())
+            assertTrue(client.isConnected)
+            assertTrue(store.isAndroidTvPaired("127.0.0.1"))
+            assertTrue(client.sendKey(RemoteKey.HOME))
+            pairingTask.get(10, TimeUnit.SECONDS)
+            release.countDown()
+            remoteTask.get(10, TimeUnit.SECONDS)
         } finally {
+            allowStart.countDown()
+            release.countDown()
             client.disconnect()
-            listener.close()
-            worker.join(1000)
-            Dispatchers.resetMain()
+            pairServer.close()
+            remoteServer.close()
+            executor.shutdownNow()
         }
+        Unit
     }
 
-    @Test fun rejectedPairingRequestNeverClaimsPinIsVisible() = runBlocking {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
-        val listener = server(6467)
-        val result = CompletableFuture<Unit>()
-        val worker = thread(isDaemon = true) {
-            try {
-                (listener.accept() as SSLSocket).use { socket ->
-                    socket.soTimeout = 10000
-                    socket.startHandshake()
-                    AndroidTvProtocol.readPacket(socket.inputStream)
-                    AndroidTvProtocol.writePacket(socket.outputStream, byteArrayOf(8, 2, 16, 0x90.toByte(), 3))
-                }
-                result.complete(Unit)
-            } catch (error: Throwable) { result.completeExceptionally(error) }
+    @Test fun `pairing service alone identifies an Android TV box without Cast`() {
+        val probed = mutableListOf<Int>()
+        val scanner = TvScanner(context) { _, port, _ -> probed.add(port); port == 6467 }
+        val device = scanner.probeDevice("192.168.0.25")!!
+        assertEquals(DeviceType.ANDROID_TV, device.deviceType)
+        assertEquals(6466, device.port)
+        assertEquals(listOf(6466, 6467), probed)
+    }
+
+    @Test fun `generic web and adb ports do not create a false TV`() {
+        val scanner = TvScanner(context) { _, port, _ -> port in listOf(80, 8000, 5555) }
+        assertNull(scanner.probeDevice("192.168.0.1"))
+    }
+
+    @Test fun `pairing rejects missing status errors and wrong acknowledgements`() {
+        for (packet in listOf(byteArrayOf(), bytes(41, byteArrayOf()), ack(11), byteArrayOf(16, 0x92.toByte(), 3) + bytes(41, byteArrayOf()))) {
+            assertTrue(runCatching { AndroidTvProtocol.validatePairingResponse(packet, 41) }.isFailure)
         }
-        val client = AndroidTvClient()
-        var prompted = false
-        var failure: String? = null
-        try {
-            client.startPairing("127.0.0.1", { prompted = true }) { success, error ->
-                assertFalse(success)
-                failure = error
-            }
-            result.get(15, TimeUnit.SECONDS)
-            assertFalse(prompted)
-            assertNotNull(failure)
-        } finally {
-            client.disconnect()
-            listener.close()
-            worker.join(1000)
-            Dispatchers.resetMain()
+        AndroidTvProtocol.validatePairingResponse(ack(41), 41)
+    }
+
+    @Test fun `malformed protobuf fields fail instead of hanging or accepting truncated replies`() {
+        for (packet in listOf(byteArrayOf(0x80.toByte()), byteArrayOf(0x0A, 10, 1), byteArrayOf(0x0F))) {
+            assertTrue(runCatching { AndroidTvProtocol.getFieldBytes(packet, 41) }.isFailure)
         }
     }
 }

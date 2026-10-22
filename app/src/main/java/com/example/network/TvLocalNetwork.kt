@@ -23,7 +23,8 @@ class TvLocalNetwork(context: Context?) {
             val caps = manager.getNetworkCapabilities(network)
             caps != null && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
                 (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) &&
+                manager.getLinkProperties(network)?.linkAddresses?.any { !it.address.isLoopbackAddress } == true
         }
     }
 

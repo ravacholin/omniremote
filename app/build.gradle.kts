@@ -66,7 +66,7 @@ android {
   testOptions {
     unitTests {
       isIncludeAndroidResources = true
-      // Robolectric's TLS provider accesses InetAddress internals on Java 17+.
+      // Conscrypt's local TLS server reads InetAddress metadata under Robolectric/JDK 21.
       all { it.jvmArgs("--add-opens=java.base/java.net=ALL-UNNAMED") }
     }
   }

@@ -33,7 +33,10 @@ data class DiscoveredTv(
     val macAddress: String = ""
 )
 
-class TvScanner(private val context: Context) {
+class TvScanner(
+    private val context: Context,
+    private val portProbe: ((String, Int, Int) -> Boolean)? = null
+) {
 
     private val localNetwork = TvLocalNetwork(context)
 
@@ -44,8 +47,8 @@ class TvScanner(private val context: Context) {
         .build()
 
     fun getLocalIpAddress(): String? {
-        localNetwork.localIpv4()?.let { return it }
         try {
+            localNetwork.localIpv4()?.let { return it }
             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
             val wifiInfo = wifiManager?.connectionInfo
             val ipInt = wifiInfo?.ipAddress ?: 0
@@ -193,65 +196,11 @@ class TvScanner(private val context: Context) {
             async(Dispatchers.IO) {
                 val ip = "$subnetPrefix$i"
                 semaphore.withPermit {
-                    // Pairing is available on some TVs before the control port responds.
-                    if (isPortOpen(ip, 6466, 500) || isPortOpen(ip, 6467, 500)) {
-                        val tv = fetchCastDeviceInfo(ip)?.copy(port = 6466) ?: DiscoveredTv(
-                            name = "Android TV ($ip)", ipAddress = ip,
-                            deviceType = DeviceType.ANDROID_TV, port = 6466,
-                            modelInfo = "Android TV Remote Service v2"
-                        )
-                        discoveredMap[ip] = tv
-                    } else if (isPortOpen(ip, 8001, 280) || isPortOpen(ip, 8002, 280)) {
-                        val samsungInfo = fetchSamsungDeviceInfo(ip)
-                        val tv = samsungInfo ?: DiscoveredTv(
-                            name = "Samsung Smart TV ($ip)",
-                            ipAddress = ip,
-                            deviceType = DeviceType.SAMSUNG_TIZEN,
-                            port = if (isPortOpen(ip, 8002, 200)) 8002 else 8001,
-                            modelInfo = "Samsung Tizen Smart TV"
-                        )
-                        synchronized(discoveredMap) {
-                            discoveredMap[ip] = tv
-                        }
-                    } else if (isPortOpen(ip, 8008, 280)) {
-                        // Check Google Cast / Google TV DIAL port 8008
-                        val castInfo = fetchCastDeviceInfo(ip)
-                        val tv = castInfo ?: DiscoveredTv(
-                            name = "Google TV ($ip)",
-                            ipAddress = ip,
-                            deviceType = DeviceType.ANDROID_TV,
-                            port = 8008,
-                            modelInfo = "Google TV / Android TV"
-                        )
-                        synchronized(discoveredMap) {
-                            discoveredMap[ip] = tv
-                        }
-                    } else if (isPortOpen(ip, 6466, 280)) {
-                        // Google TV Remote Control v2
-                        val tv = DiscoveredTv(
-                            name = "Google TV ($ip)",
-                            ipAddress = ip,
-                            deviceType = DeviceType.ANDROID_TV,
-                            port = 6466,
-                            modelInfo = "Google TV Remote v2"
-                        )
-                        synchronized(discoveredMap) {
-                            discoveredMap[ip] = tv
-                        }
-                    } else if (isPortOpen(ip, 5555, 280)) {
-                        // Check Google TV ADB port
-                        val tv = DiscoveredTv(
-                            name = "Google TV ($ip)",
-                            ipAddress = ip,
-                            deviceType = DeviceType.ANDROID_TV,
-                            port = 5555,
-                            modelInfo = "Google TV (ADB Ready)"
-                        )
-                        synchronized(discoveredMap) {
-                            discoveredMap[ip] = tv
-                        }
+                    val tv = probeDevice(ip)
+                    if (tv != null) {
+                        synchronized(discoveredMap) { discoveredMap[ip] = tv }
+                        onDeviceFound?.invoke(tv)
                     }
-                    discoveredMap[ip]?.let { onDeviceFound?.invoke(it) }
                 }
                 synchronized(this@TvScanner) {
                     completed++
@@ -262,7 +211,28 @@ class TvScanner(private val context: Context) {
         jobs.awaitAll()
     }
 
+    internal fun probeDevice(ip: String): DiscoveredTv? {
+        // Remote Service is authoritative, even if Cast or OEM HTTP services are absent.
+        // Some boxes expose only the pairing service before their first authorization.
+        if (isPortOpen(ip, 6466, 650) || isPortOpen(ip, 6467, 650)) {
+            return DiscoveredTv(
+                name = "Android TV / Google TV ($ip)", ipAddress = ip,
+                deviceType = DeviceType.ANDROID_TV, port = 6466,
+                modelInfo = "Android TV Remote Service • Compatible con FlowBox"
+            )
+        }
+        if (isPortOpen(ip, 8001, 350) || isPortOpen(ip, 8002, 350)) {
+            fetchSamsungDeviceInfo(ip)?.let { return it }
+        }
+        if (isPortOpen(ip, 8008, 350)) {
+            fetchCastDeviceInfo(ip)?.let { return it }
+        }
+        // A web server or ADB port alone does not identify a controllable television.
+        return null
+    }
+
     fun isPortOpen(ip: String, port: Int, timeoutMs: Int = 300): Boolean {
+        portProbe?.let { return it(ip, port, timeoutMs) }
         return try {
             localNetwork.socketFactory.createSocket().use { socket ->
                 socket.connect(InetSocketAddress(ip, port), timeoutMs)

@@ -14,7 +14,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
-import java.io.OutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -37,27 +36,10 @@ data class PowerOnResult(
 )
 
 /**
- * Enterprise TV Power-On and Wake Engine.
- *
- * Implements the exact techniques used by commercial remote apps (SmartThings, Google Home,
- * official brand controllers) to power ON Smart TVs from standby/sleep over Wi-Fi and Ethernet:
- *
- * 1. Wake-on-LAN (WoL) & Wake-on-WLAN (WoWLAN) Multi-Vector Burst:
- *    - All local subnet broadcast addresses via NetworkInterface enumeration
- *    - Global broadcast: 255.255.255.255 on UDP ports 9, 7, and 0
- *    - Direct Unicast to TV IP: Crucial for Wi-Fi routers that filter 255.255.255.255 broadcasts
- *    - Burst transmissions: 12 packets spaced by 50ms (total ~600ms) to wake sleeping Wi-Fi chipsets
- *    - Android WifiManager.MulticastLock to prevent OS from dropping outgoing UDP broadcasts
- *
- * 2. Automatic Hardware MAC Address Resolution:
- *    - Queries Samsung REST API (port 8001 / 8002) for wifiMac, mac, wiredMac
- *    - Queries Google Cast eureka_info (port 8008) for mac_address
- *    - Resolves from Linux kernel ARP cache (/proc/net/arp) where accessible
- *
- * 3. Brand-Specific Network Wakeup:
- *    - Samsung Tizen: HTTP Wake ping to port 8001/8002
- *    - Android TV / Google TV: Google Cast Wake-on-Cast ping (port 8008) & ADB Keyevent WAKEUP (port 5555)
- *    - Sony BRAVIA: SOAP IRCC Power-On code
+ * Sends standard WoL packets to local broadcasts and the saved TV address.
+ * MAC discovery must run while the TV is reachable. Standby network wake also
+ * requires support and the appropriate power/network settings on the TV.
+ * A successful UDP send confirms transmission, not that the TV woke up.
  */
 object WakeOnLan {
 
@@ -93,7 +75,7 @@ object WakeOnLan {
         val clean = raw.trim().uppercase().replace("-", ":")
         val hexOnly = clean.replace(":", "").replace(".", "")
         if (hexOnly.length == 12 && hexOnly.matches(Regex("^[0-9A-F]{12}$"))) {
-            if (hexOnly == "000000000000" || hexOnly == "FFFFFFFFFFFF") return null
+            if (hexOnly == "000000000000" || hexOnly == "FFFFFFFFFFFF" || hexOnly == "020000000000") return null
             return hexOnly.chunked(2).joinToString(":")
         }
         return null
@@ -276,7 +258,7 @@ object WakeOnLan {
 
     /**
      * Sends a Wake-on-LAN magic packet burst across multiple addresses, interfaces, and ports.
-     * Uses 12 bursts spaced by 50ms with Android MulticastLock to ensure sleeping Wi-Fi chipsets wake up.
+     * Uses repeated transmissions to improve delivery on local networks.
      */
     suspend fun sendMagicPacketBurst(
         macAddress: String,
@@ -329,17 +311,17 @@ object WakeOnLan {
             } catch (_: Exception) {}
         }
 
-        // 4. Direct Unicast to TV IP: Essential for routers with Wi-Fi AP isolation or broadcast filtering
+        // 4. Also try the last known IP; sleeping hosts may no longer be in the ARP cache.
         if (!targetIp.isNullOrBlank()) {
             try {
                 targetAddresses.add(InetAddress.getByName(targetIp.trim()))
             } catch (_: Exception) {}
         }
 
-        val ports = listOf(9, 7, 0)
+        val ports = listOf(9, 7)
         var packetsSent = 0
 
-        // Acquire Wi-Fi MulticastLock if context available so Android does not suppress broadcast UDP
+        // Retain multicast reception while performing the wake operation.
         val wifiManager = context?.applicationContext?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         val multicastLock = try {
             wifiManager?.createMulticastLock("wol_wake_multicast_lock")?.apply {
@@ -464,18 +446,6 @@ object WakeOnLan {
                     triggeredProtocols.add("Google Cast Wake-on-Cast (Port 8008)")
                 } catch (_: Exception) {}
 
-                // Android TV: ADB Keyevent WAKEUP (Port 5555)
-                try {
-                    Socket().use { socket ->
-                        socket.connect(InetSocketAddress(device.ipAddress, 5555), 600)
-                        val out: OutputStream = socket.getOutputStream()
-                        out.write("input keyevent 224\n".toByteArray())
-                        out.write("input keyevent 26\n".toByteArray())
-                        out.flush()
-                        triggeredProtocols.add("ADB Network Wakeup (Port 5555)")
-                    }
-                } catch (_: Exception) {}
-
                 // Sony BRAVIA IRCC Wakeup
                 try {
                     val soapBody = """
@@ -504,7 +474,7 @@ object WakeOnLan {
         val message = if (success) {
             "Se enviaron $totalPackets paquetes Wake-on-LAN a ${device.name} (MAC: $effectiveMac). Esperando inicio de la TV..."
         } else {
-            "Señal de encendido enviada a ${device.ipAddress}"
+            "No se pudo enviar ningún paquete Wake-on-LAN. Comprueba la conexión a la red local."
         }
 
         PowerOnResult(

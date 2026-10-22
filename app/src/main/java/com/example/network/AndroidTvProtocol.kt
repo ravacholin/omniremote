@@ -1,6 +1,5 @@
 package com.example.network
 
-import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.EOFException
 import java.io.InputStream
@@ -16,9 +15,10 @@ import java.security.interfaces.RSAPublicKey
  */
 object AndroidTvProtocol {
 
-    private const val TAG = "AndroidTvProtocol"
     const val PORT_PAIRING = 6467
     const val PORT_REMOTE = 6466
+    // Ping, keys, power, volume. Do not advertise unimplemented voice/IME.
+    const val REMOTE_FEATURES = 1 or 2 or 32 or 64
 
     // RemoteDirection (port 6466)
     const val REMOTE_DIRECTION_UNKNOWN = 0
@@ -198,11 +198,7 @@ object AndroidTvProtocol {
         val nonceStr = cleanPin.substring(2)
         val nonceBytes = hexToBytes(nonceStr)
 
-        val expectedFirstByte = try {
-            cleanPin.substring(0, 2).toInt(16).toByte()
-        } catch (_: Exception) {
-            null
-        }
+        val expectedFirstByte = cleanPin.substring(0, 2).toInt(16).toByte()
 
         // 1. Primary Polo formula: clientModulus, clientExponent, serverModulus, serverExponent, nonce
         val md = MessageDigest.getInstance("SHA-256")
@@ -213,12 +209,11 @@ object AndroidTvProtocol {
         md.update(nonceBytes)
         val digest = md.digest()
 
-        if (expectedFirstByte != null && digest[0] == expectedFirstByte) {
-            Log.d(TAG, "PIN checksum verified with standard order: 0x%02X".format(digest[0]))
+        if (digest[0] == expectedFirstByte) {
             return digest
         }
 
-        throw IllegalArgumentException("El código no coincide con esta TV. Comprueba los 6 caracteres en pantalla.")
+        throw IllegalArgumentException("El código no coincide con esta TV. Verifica los 6 caracteres de la pantalla.")
     }
 
     /**
@@ -242,19 +237,11 @@ object AndroidTvProtocol {
 
     // --- Remote Control Messages (Port 6466) ---
 
-    /**
-     * Builds RemoteConfigure message:
-     * RemoteMessage:
-     *   field 1 (remote_configure):
-     *     field 1 (code1): 622
-     *     field 2 (device_info):
-     *       field 3 (unknown1): 1
-     *       field 4 (unknown2): "1"
-     *       field 5 (package_name): "atvremote"
-     *       field 6 (app_version): "1.0.0"
-     */
-    fun buildRemoteConfigure(features: Int = 622): ByteArray {
+    /** Builds RemoteConfigure using the RemoteDeviceInfo schema from remotemessage.proto. */
+    fun buildRemoteConfigure(features: Int = REMOTE_FEATURES): ByteArray {
         val devInfo = ByteArrayOutputStream()
+        writeFieldString(devInfo, 1, "OmniRemote")
+        writeFieldString(devInfo, 2, "OmniRemote")
         writeFieldVarint(devInfo, 3, 1)
         writeFieldString(devInfo, 4, "1")
         writeFieldString(devInfo, 5, "atvremote")
@@ -273,9 +260,9 @@ object AndroidTvProtocol {
      * Builds RemoteSetActive message:
      * RemoteMessage:
      *   field 2 (remote_set_active):
-     *     field 1 (active): 622
+     *     field 1 (active): negotiated feature mask
      */
-    fun buildRemoteSetActive(active: Int = 622): ByteArray {
+    fun buildRemoteSetActive(active: Int = REMOTE_FEATURES): ByteArray {
         val out = ByteArrayOutputStream()
         writeFieldVarint(out, 1, active)
 
@@ -312,6 +299,18 @@ object AndroidTvProtocol {
         writeFieldBytes(remoteMsg, 9, ping.toByteArray()) // field 9 = remote_ping_response
         return remoteMsg.toByteArray()
     }
+
+    fun buildRemoteResponse(packet: ByteArray, features: Int = REMOTE_FEATURES): ByteArray? = when {
+        hasField(packet, 1) -> buildRemoteConfigure(features)
+        hasField(packet, 2) -> buildRemoteSetActive(features)
+        hasField(packet, 8) -> getFieldBytes(packet, 8)?.let { ping ->
+            buildRemotePingResponse(getFieldVarint(ping, 1) ?: 0)
+        }
+        else -> null
+    }
+
+    fun isSuccessfulPairingReply(packet: ByteArray, expectedField: Int): Boolean =
+        runCatching { validatePairingResponse(packet, expectedField) }.isSuccess
 
     // --- Message Parsing Helpers ---
 
@@ -367,16 +366,15 @@ object AndroidTvProtocol {
                 return data.copyOfRange(start, start + length)
             }
             offset = skipField(data, offset, tag and 7)
-            if (offset < 0) break
         }
         return null
     }
 
-    fun requirePairingResponse(data: ByteArray, expectedField: Int) {
+    fun validatePairingResponse(data: ByteArray, expectedField: Int) {
         val status = getFieldVarint(data, FIELD_STATUS)
-        require(status == STATUS_OK) { "La TV rechazó la vinculación (estado: $status)." }
+        require(status == STATUS_OK) { "La TV rechazó la vinculación (estado $status)." }
         require(getFieldBytes(data, expectedField) != null) {
-            "Respuesta de vinculación inesperada; se esperaba el mensaje $expectedField."
+            "Respuesta de vinculación inesperada (paso $expectedField)."
         }
     }
 
@@ -386,28 +384,28 @@ object AndroidTvProtocol {
         var offset = startOffset
         while (offset < data.size && shift < 32) {
             val b = data[offset++].toInt() and 0xFF
+            require(shift != 28 || b and 0xF0 == 0) { "Protobuf varint overflow" }
             result = result or ((b and 0x7F) shl shift)
-            if ((b and 0x80) == 0) return Pair(result, offset)
+            if (b and 0x80 == 0) return Pair(result, offset)
             shift += 7
         }
-        return Pair(result, offset)
+        throw IllegalArgumentException("Truncated protobuf varint")
     }
 
     private fun skipField(data: ByteArray, offset: Int, wireType: Int): Int {
-        var cur = offset
-        when (wireType) {
-            0 -> { // Varint
-                val (_, next) = decodeVarint(data, cur)
-                return next
+        val end = when (wireType) {
+            0 -> decodeVarint(data, offset).second
+            1 -> offset + 8
+            2 -> {
+                val (length, start) = decodeVarint(data, offset)
+                require(length >= 0 && length <= data.size - start) { "Truncated protobuf field" }
+                start + length
             }
-            1 -> return cur + 8 // 64-bit
-            2 -> { // Length-delimited
-                val (len, next) = decodeVarint(data, cur)
-                return next + len
-            }
-            5 -> return cur + 4 // 32-bit
-            else -> return -1
+            5 -> offset + 4
+            else -> throw IllegalArgumentException("Unsupported protobuf wire type $wireType")
         }
+        require(end in offset..data.size) { "Truncated protobuf field" }
+        return end
     }
 
     // --- Helper Utilities ---

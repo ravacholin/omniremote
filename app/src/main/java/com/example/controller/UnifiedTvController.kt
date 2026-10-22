@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import android.content.Context
 import com.example.data.local.TvTokenStore
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 class UnifiedTvController(
     private val context: Context? = null,
@@ -28,9 +29,6 @@ class UnifiedTvController(
     private val onDeviceMacResolved: ((Long, String) -> Unit)? = null
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var pairingJob: kotlinx.coroutines.Job? = null
-    private var connectionJob: kotlinx.coroutines.Job? = null
-    private var pairingSubmitJob: kotlinx.coroutines.Job? = null
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -40,6 +38,9 @@ class UnifiedTvController(
 
     private val _lastDispatchedKey = MutableStateFlow<RemoteKey?>(null)
     val lastDispatchedKey: StateFlow<RemoteKey?> = _lastDispatchedKey.asStateFlow()
+
+    private var connectionJob: Job? = null
+    private var pairingJob: Job? = null
 
     private var activeDevice: TvDeviceEntity? = null
 
@@ -53,22 +54,13 @@ class UnifiedTvController(
             }
         },
         onConnectionChanged = { connected, error ->
+            val eventDevice = activeDevice
             scope.launch {
-                val dev = activeDevice ?: return@launch
+                val dev = eventDevice ?: return@launch
+                if (activeDevice?.id != dev.id || activeDevice?.ipAddress != dev.ipAddress) return@launch
                 if (connected) {
                     _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
-                    // If device doesn't have a MAC address yet, resolve it right now from the active TV!
-                    if (dev.macAddress.isBlank()) {
-                        scope.launch(Dispatchers.IO) {
-                            val mac = WakeOnLan.fetchMacFromTv(dev.ipAddress, dev.deviceType)
-                            if (!mac.isNullOrBlank()) {
-                                activeDevice = activeDevice?.copy(macAddress = mac)
-                                onDeviceMacResolved?.invoke(dev.id, mac)
-                                tokenStore?.saveSamsungToken(dev.ipAddress, dev.authToken, dev.id, mac)
-                                addLog(dev.name, "Dirección MAC guardada para Wake-on-LAN: $mac", true)
-                            }
-                        }
-                    }
+                    resolveDeviceMac(dev)
                 } else if (error != null) {
                     _connectionState.value = ConnectionState.Error(error)
                 } else {
@@ -91,12 +83,13 @@ class UnifiedTvController(
         context = context,
         tokenStore = tokenStore,
         onConnectionChanged = { connected, error ->
-            val source = activeDevice
+            val eventDevice = activeDevice
             scope.launch {
-                val dev = source ?: return@launch
-                if (activeDevice?.id != dev.id) return@launch
+                val dev = eventDevice ?: return@launch
+                if (activeDevice?.id != dev.id || activeDevice?.ipAddress != dev.ipAddress) return@launch
                 if (connected) {
                     _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
+                    resolveDeviceMac(dev)
                 } else if (error != null) {
                     _connectionState.value = ConnectionState.Error(error)
                 } else {
@@ -107,7 +100,7 @@ class UnifiedTvController(
         onPairingPromptNeeded = { ip ->
             scope.launch {
                 val dev = activeDevice ?: return@launch
-                if (dev.ipAddress != ip) return@launch
+                if (dev.ipAddress != ip || dev.deviceType != DeviceType.ANDROID_TV) return@launch
                 _connectionState.value = ConnectionState.WaitingAuth(
                     dev.name,
                     "Google TV requiere vinculación. Pulsa Vincular para solicitar el código en la TV."
@@ -122,45 +115,30 @@ class UnifiedTvController(
             onResult(false, "No hay ningún dispositivo seleccionado para vincular.")
             return
         }
-        val previous = pairingJob
-        val previousSubmission = pairingSubmitJob
-        val previousConnection = connectionJob
-        previousConnection?.cancel()
-        previousSubmission?.cancel()
-        previous?.cancel()
+        val connection = connectionJob
+        val previousPairing = pairingJob
+        connection?.cancel()
+        previousPairing?.cancel()
         androidClient.cancelPairing()
         pairingJob = scope.launch {
-            previous?.join()
-            previousSubmission?.join()
-            previousConnection?.join()
-            if (activeDevice?.id != dev.id) return@launch
+            previousPairing?.join()
+            connection?.join()
             androidClient.startPairing(dev.ipAddress, onShowPinDialog, onResult)
         }
     }
 
-    fun cancelAndroidTvPairing() {
-        pairingSubmitJob?.cancel()
-        pairingJob?.cancel()
-        androidClient.cancelPairing()
-    }
-
-    fun androidTvPairingError(): String? = androidClient.lastPairingError
-
     suspend fun submitAndroidTvPin(pin: String): Boolean {
-        val device = activeDevice ?: return false
-        val job = kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]
-        pairingSubmitJob = job
-        try {
-            val success = androidClient.submitPairingPin(pin)
-            if (activeDevice?.id != device.id) return false
-            if (success) {
-                _connectionState.value = ConnectionState.Connected(device.name, device.ipAddress)
-                addLog(device.name, "Google TV / Android TV vinculado correctamente!", true)
+        val success = androidClient.submitPairingPin(pin)
+        if (success) {
+            val dev = activeDevice
+            if (dev != null) {
+                if (androidClient.isConnected) {
+                    _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
+                }
+                addLog(dev.name, "Google TV / Android TV vinculado correctamente!", true)
             }
-            return success
-        } finally {
-            if (pairingSubmitJob === job) pairingSubmitJob = null
         }
+        return success
     }
 
     fun isCurrentDeviceAndroidTv(): Boolean {
@@ -170,7 +148,7 @@ class UnifiedTvController(
     fun isCurrentAndroidTvPaired(): Boolean {
         val dev = activeDevice ?: return false
         return if (dev.deviceType == DeviceType.ANDROID_TV) {
-            tokenStore?.isAndroidTvPaired(dev.ipAddress) ?: androidClient.isPaired
+            androidClient.isPaired
         } else false
     }
 
@@ -190,6 +168,7 @@ class UnifiedTvController(
 
         if (activeDevice?.id == effectiveDevice.id && activeDevice?.ipAddress == effectiveDevice.ipAddress &&
             _connectionState.value is ConnectionState.Connected) {
+            activeDevice = effectiveDevice
             return
         }
 
@@ -205,11 +184,10 @@ class UnifiedTvController(
                 samsungClient.connect(effectiveDevice.ipAddress, 8002, effectiveDevice.authToken)
             }
             DeviceType.ANDROID_TV -> {
-                val previous = connectionJob
                 connectionJob = scope.launch {
-                    previous?.join()
-                    androidClient.connect(effectiveDevice.ipAddress, effectiveDevice.port)
-                    // Connection and pairing state come from the validated protocol callbacks.
+                    val ok = androidClient.connect(effectiveDevice.ipAddress, effectiveDevice.port)
+                    if (ok) addLog(effectiveDevice.name, "Conectado a ${effectiveDevice.name}", true)
+                    // The client emits the specific connection or authorization error.
                 }
             }
         }
@@ -222,9 +200,17 @@ class UnifiedTvController(
         }
     }
 
+    fun cancelAndroidTvPairing() {
+        pairingJob?.cancel()
+        androidClient.cancelPairing()
+    }
+
     private fun disconnectCurrent() {
         connectionJob?.cancel()
-        cancelAndroidTvPairing()
+        connectionJob = null
+        pairingJob?.cancel()
+        pairingJob = null
+        activeDevice = null
         samsungClient.disconnect()
         androidClient.disconnect()
         _connectionState.value = ConnectionState.Disconnected
@@ -235,11 +221,6 @@ class UnifiedTvController(
         _lastDispatchedKey.value = key
 
         scope.launch(Dispatchers.IO) {
-            // If the command is POWER, always broadcast Wake-on-LAN and Network Wakeup so standby TVs turn ON immediately
-            if (key == RemoteKey.POWER) {
-                WakeOnLan.powerOnTv(device, context = context)
-            }
-
             val success: Boolean = when (device.deviceType) {
                 DeviceType.SAMSUNG_TIZEN -> {
                     samsungClient.sendKey(key)
@@ -315,6 +296,22 @@ class UnifiedTvController(
             // Delay and auto reconnect
             kotlinx.coroutines.delay(1800)
             reconnect()
+        }
+    }
+
+    private fun resolveDeviceMac(device: TvDeviceEntity) {
+        if (WakeOnLan.formatMacAddress(device.macAddress) != null) return
+        scope.launch(Dispatchers.IO) {
+            val mac = WakeOnLan.fetchMacFromTv(device.ipAddress, device.deviceType) ?: return@launch
+            if (activeDevice?.id != device.id || activeDevice?.ipAddress != device.ipAddress) return@launch
+            activeDevice = activeDevice?.copy(macAddress = mac)
+            onDeviceMacResolved?.invoke(device.id, mac)
+            if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
+                val token = tokenStore?.getSamsungToken(device.ipAddress, device.id, mac).orEmpty()
+                    .ifBlank { device.authToken }
+                tokenStore?.saveSamsungToken(device.ipAddress, token, device.id, mac)
+            }
+            addLog(device.name, "Dirección MAC guardada para Wake-on-LAN: $mac", true)
         }
     }
 

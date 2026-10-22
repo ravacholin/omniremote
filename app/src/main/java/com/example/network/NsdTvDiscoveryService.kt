@@ -15,7 +15,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.InetAddress
@@ -233,7 +232,7 @@ class NsdTvDiscoveryService(private val context: Context) {
 
     private fun getHostAddress(serviceInfo: NsdServiceInfo): String? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            serviceInfo.hostAddresses.firstOrNull { it is java.net.Inet4Address }?.hostAddress ?: serviceInfo.host?.hostAddress
+            serviceInfo.hostAddresses.firstOrNull { it is java.net.Inet4Address }?.hostAddress ?: serviceInfo.hostAddresses.firstOrNull()?.hostAddress ?: serviceInfo.host?.hostAddress
         } else {
             serviceInfo.host?.hostAddress
         }
@@ -299,18 +298,19 @@ class NsdTvDiscoveryService(private val context: Context) {
         addOrUpdateDiscoveredTv(discovered)
     }
 
+    @Synchronized
     private fun addOrUpdateDiscoveredTv(tv: DiscoveredTv) {
-        _discoveredTvs.update { current ->
-            val existing = current.firstOrNull { it.ipAddress == tv.ipAddress }
-            if (existing == null) current + tv else {
-                val remote = tv.modelInfo.contains("androidtvremote2") || tv.port == 6466
-                val existingRemote = existing.modelInfo.contains("androidtvremote2") || existing.port == 6466
-                val replacement = if (remote || !existingRemote) tv else existing
-                val name = if (tv.name.contains("(") || tv.name.length > existing.name.length) existing.name else tv.name
-                current.map { if (it.ipAddress == tv.ipAddress) replacement.copy(
-                    name = name, macAddress = tv.macAddress.ifBlank { existing.macAddress }
-                ) else it }
-            }
+        val current = _discoveredTvs.value.toMutableList()
+        val index = current.indexOfFirst { it.ipAddress == tv.ipAddress }
+        if (index >= 0) {
+            val existing = current[index]
+            val generic = tv.name.contains(tv.ipAddress) || tv.name == "Google TV"
+            val betterName = if (generic) existing.name else tv.name
+            val remotePort = if (existing.port == 6466 || tv.port == 6466) 6466 else tv.port
+            current[index] = tv.copy(name = betterName, port = remotePort)
+        } else {
+            current.add(tv)
         }
+        _discoveredTvs.value = current
     }
 }

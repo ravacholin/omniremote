@@ -17,21 +17,21 @@ class AndroidTvProtocolValidationTest {
 
     @Test fun rejectsMissingStatus() {
         assertThrows(IllegalArgumentException::class.java) {
-            AndroidTvProtocol.requirePairingResponse(response(null, 41), 41)
+            AndroidTvProtocol.validatePairingResponse(response(null, 41), 41)
         }
     }
     @Test fun rejectsErrorEvenWithExpectedMessage() {
         assertThrows(IllegalArgumentException::class.java) {
-            AndroidTvProtocol.requirePairingResponse(response(402, 41), 41)
+            AndroidTvProtocol.validatePairingResponse(response(402, 41), 41)
         }
     }
     @Test fun rejectsWrongHandshakeStage() {
         assertThrows(IllegalArgumentException::class.java) {
-            AndroidTvProtocol.requirePairingResponse(response(200, 11), 31)
+            AndroidTvProtocol.validatePairingResponse(response(200, 11), 31)
         }
     }
     @Test fun acceptsExpectedSuccessfulAck() {
-        AndroidTvProtocol.requirePairingResponse(response(200, 31), 31)
+        AndroidTvProtocol.validatePairingResponse(response(200, 31), 31)
     }
     @Test fun packetsRoundTripWithMultibyteLength() {
         val payload = ByteArray(300) { it.toByte() }
