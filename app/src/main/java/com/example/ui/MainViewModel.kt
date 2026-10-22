@@ -36,7 +36,6 @@ import kotlinx.coroutines.flow.flowOf
 
 enum class RemoteMode(val label: String) {
     DPAD("D-Pad"),
-    TOUCHPAD("Trackpad"),
     APPS("Apps"),
     NUMPAD("Numpad")
 }
