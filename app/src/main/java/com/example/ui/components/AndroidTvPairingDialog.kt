@@ -72,7 +72,7 @@ fun AndroidTvPairingDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag("android_tv_pairing_dialog"),
         containerColor = Color(0xFF0C0C0C),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(4.dp),
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -81,8 +81,8 @@ fun AndroidTvPairingDialog(
                 Box(
                     modifier = Modifier
                         .size(38.dp)
-                        .background(Color(0xFF181818), RoundedCornerShape(6.dp))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(6.dp)),
+                        .background(Color(0xFF181818), RoundedCornerShape(2.dp))
+                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -121,7 +121,7 @@ fun AndroidTvPairingDialog(
                 if (isLoading && errorMessage.isNullOrBlank()) {
                     Surface(
                         color = Color(0xFF121212),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(2.dp),
                         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
                     ) {
                         Row(
@@ -156,7 +156,7 @@ fun AndroidTvPairingDialog(
                 } else {
                     Surface(
                         color = Color(0xFF121212),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(2.dp),
                         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
                     ) {
                         Row(
@@ -226,7 +226,7 @@ fun AndroidTvPairingDialog(
                 AnimatedVisibility(visible = !errorMessage.isNullOrBlank()) {
                     Surface(
                         color = Color(0xFF161616),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(2.dp),
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF555555))
                     ) {
                         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -247,7 +247,7 @@ fun AndroidTvPairingDialog(
                                 Surface(
                                     onClick = { pinText = ""; onRetry() },
                                     color = Color.White,
-                                    shape = RoundedCornerShape(4.dp),
+                                    shape = RoundedCornerShape(2.dp),
                                     modifier = Modifier.align(Alignment.End).testTag("pairing_retry_button")
                                 ) {
                                     Text(
@@ -268,7 +268,7 @@ fun AndroidTvPairingDialog(
                 AnimatedVisibility(visible = !successMessage.isNullOrBlank()) {
                     Surface(
                         color = Color(0xFF141414),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(2.dp),
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White)
                     ) {
                         Row(
@@ -305,7 +305,7 @@ fun AndroidTvPairingDialog(
                 },
                 enabled = pinText.length == 6 && !isLoading,
                 color = if (pinText.length == 6 && !isLoading) Color.White else Color(0xFF222222),
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(2.dp),
                 modifier = Modifier.testTag("pairing_submit_button")
             ) {
                 Box(
@@ -333,7 +333,7 @@ fun AndroidTvPairingDialog(
         dismissButton = {
             Surface(
                 onClick = onDismiss,
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(2.dp),
                 color = Color.Transparent,
                 border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
             ) {

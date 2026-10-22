@@ -128,8 +128,8 @@ fun RemoteAppsGrid(
                     Spacer(modifier = Modifier.width(6.dp))
                     Box(
                         modifier = Modifier
-                            .background(deviceType.brandColor.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                            .border(0.5.dp, deviceType.brandColor.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
+                            .background(deviceType.brandColor.copy(alpha = 0.15f), RoundedCornerShape(2.dp))
+                            .border(0.5.dp, deviceType.brandColor.copy(alpha = 0.4f), RoundedCornerShape(2.dp))
                             .padding(horizontal = 4.dp, vertical = 1.dp)
                     ) {
                         Text(
@@ -159,7 +159,7 @@ fun RemoteAppsGrid(
                     containerColor = Color.White,
                     contentColor = Color.Black
                 ),
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(2.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.testTag("open_add_app_dialog_button")
             ) {
@@ -217,7 +217,7 @@ fun RemoteAppsGrid(
                 .fillMaxWidth()
                 .height(48.dp)
                 .testTag("app_search_input"),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(2.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color.White,
                 unfocusedBorderColor = RemoteBorderStrong,
@@ -267,7 +267,7 @@ fun RemoteAppsGrid(
                             fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold
                         )
                     },
-                    shape = RoundedCornerShape(6.dp),
+                    shape = RoundedCornerShape(2.dp),
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = Color.White,
                         selectedLabelColor = Color.Black,
@@ -357,16 +357,16 @@ fun TvAppGridCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(2.dp))
             .border(
                 width = if (app.isFavorite) 1.5.dp else 1.dp,
                 color = if (app.isFavorite) Color.White else RemoteBorderStrong,
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(2.dp)
             )
             .clickable { onLaunch() }
             .testTag("app_card_${app.id}"),
         color = Color(0xFF0C0C0C),
-        shape = RoundedCornerShape(8.dp)
+        shape = RoundedCornerShape(2.dp)
     ) {
         Column(
             modifier = Modifier
@@ -384,8 +384,8 @@ fun TvAppGridCard(
                 Box(
                     modifier = Modifier
                         .size(42.dp)
-                        .background(Color(0xFF181818), RoundedCornerShape(6.dp))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(6.dp)),
+                        .background(Color(0xFF181818), RoundedCornerShape(2.dp))
+                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -450,7 +450,7 @@ fun TvAppGridCard(
                 // Launch badge (Brutalist stark pill)
                 Surface(
                     color = Color.White,
-                    shape = RoundedCornerShape(4.dp),
+                    shape = RoundedCornerShape(2.dp),
                     modifier = Modifier
                         .clickable { onLaunch() }
                         .testTag("launch_pill_${app.id}")
@@ -522,7 +522,7 @@ fun EmptyAppsState(
             .fillMaxWidth()
             .heightIn(min = 220.dp),
         color = RemoteCardBg,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(4.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
     ) {
         Column(
@@ -535,14 +535,14 @@ fun EmptyAppsState(
             Box(
                 modifier = Modifier
                     .size(56.dp)
-                    .background(Color(0xFF1E293B), CircleShape)
+                    .background(RemoteSurfaceVariant, CircleShape)
                     .border(1.dp, RemoteBorder, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = if (isFavoritesFilter) Icons.Default.Star else Icons.Default.Tv,
                     contentDescription = null,
-                    tint = if (isFavoritesFilter) Color(0xFFF59E0B) else TextMuted,
+                    tint = if (isFavoritesFilter) Color.White else TextMuted,
                     modifier = Modifier.size(28.dp)
                 )
             }
@@ -576,7 +576,7 @@ fun EmptyAppsState(
                     Button(
                         onClick = onClearFilter,
                         colors = ButtonDefaults.buttonColors(containerColor = RemoteBtnDefault),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(2.dp)
                     ) {
                         Text("View All Apps", color = TextPrimary, fontSize = 12.sp)
                     }
@@ -585,7 +585,7 @@ fun EmptyAppsState(
                 Button(
                     onClick = onAddApp,
                     colors = ButtonDefaults.buttonColors(containerColor = deviceType.brandColor),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(2.dp)
                 ) {
                     Text("+ Add App", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }

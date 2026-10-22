@@ -168,8 +168,8 @@ fun AddTvAppDialog(
                     items(POPULAR_PRESETS) { preset ->
                         Surface(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .border(1.dp, RemoteBorder, RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(2.dp))
+                                .border(1.dp, RemoteBorder, RoundedCornerShape(2.dp))
                                 .clickable {
                                     appName = preset.name
                                     appIdentifier = if (deviceType == DeviceType.SAMSUNG_TIZEN) preset.samsungId else preset.androidPkg
@@ -306,7 +306,7 @@ fun AddTvAppDialog(
                 // Add to Favorites Switch
                 Surface(
                     color = RemoteDarkBg,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(4.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                 ) {
                     Row(
@@ -351,7 +351,7 @@ fun AddTvAppDialog(
                 },
                 enabled = appName.isNotBlank() && appIdentifier.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = deviceType.brandColor),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(2.dp),
                 modifier = Modifier.testTag("confirm_add_app_button")
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
@@ -360,7 +360,7 @@ fun AddTvAppDialog(
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss, shape = RoundedCornerShape(10.dp)) {
+            OutlinedButton(onClick = onDismiss, shape = RoundedCornerShape(2.dp)) {
                 Text("Cancel", color = TextSecondary)
             }
         }

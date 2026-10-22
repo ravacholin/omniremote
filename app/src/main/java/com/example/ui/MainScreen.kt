@@ -10,6 +10,10 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -226,8 +230,8 @@ fun MainScreen(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(8.dp)),
+                            .clip(RoundedCornerShape(2.dp))
+                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp)),
                         color = Color(0xFF0F0F0F)
                     ) {
                         Row(
@@ -243,7 +247,7 @@ fun MainScreen(
                                 strokeWidth = 1.5.dp
                             )
                             Text(
-                                text = "WAKE_ON_LAN // $status",
+                                text = status,
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                     color = TextPrimary,
@@ -261,8 +265,8 @@ fun MainScreen(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .border(1.dp, Color(0xFF555555), RoundedCornerShape(8.dp)),
+                                .clip(RoundedCornerShape(2.dp))
+                                .border(1.dp, Color(0xFF555555), RoundedCornerShape(2.dp)),
                             color = Color(0xFF0F0F0F)
                         ) {
                             Row(
@@ -274,7 +278,7 @@ fun MainScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "AUTH // PIN CONFIRMATION REQUIRED",
+                                        text = "Autoriza la conexión en tu TV",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                             color = TextSecondary,
@@ -296,7 +300,7 @@ fun MainScreen(
                                             containerColor = Color.White,
                                             contentColor = Color.Black
                                         ),
-                                        shape = RoundedCornerShape(6.dp),
+                                        shape = RoundedCornerShape(2.dp),
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
                                     ) {
                                         Text("CÓDIGO PIN", fontSize = 10.sp, fontWeight = FontWeight.Black)
@@ -309,8 +313,8 @@ fun MainScreen(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .border(1.dp, Color(0xFF444444), RoundedCornerShape(8.dp)),
+                                .clip(RoundedCornerShape(2.dp))
+                                .border(1.dp, Color(0xFF444444), RoundedCornerShape(2.dp)),
                             color = Color(0xFF0D0D0D)
                         ) {
                             Row(
@@ -322,7 +326,7 @@ fun MainScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "STATUS // DISCONNECTED",
+                                        text = "No se pudo conectar",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                             color = TextMuted,
@@ -345,7 +349,7 @@ fun MainScreen(
                                             containerColor = Color(0xFF222222),
                                             contentColor = Color.White
                                         ),
-                                        shape = RoundedCornerShape(6.dp),
+                                        shape = RoundedCornerShape(2.dp),
                                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444)),
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                     ) {
@@ -358,7 +362,7 @@ fun MainScreen(
                                                 containerColor = Color.White,
                                                 contentColor = Color.Black
                                             ),
-                                            shape = RoundedCornerShape(6.dp),
+                                            shape = RoundedCornerShape(2.dp),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                         ) {
                                             Text("VINCULAR", fontSize = 10.sp, fontWeight = FontWeight.Black)
@@ -370,11 +374,11 @@ fun MainScreen(
                                             containerColor = Color(0xFF181818),
                                             contentColor = Color.White
                                         ),
-                                        shape = RoundedCornerShape(6.dp),
+                                        shape = RoundedCornerShape(2.dp),
                                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                     ) {
-                                        Text("RETRY", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("REINTENTAR", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -385,8 +389,8 @@ fun MainScreen(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .border(1.dp, RemoteBorderStrong, RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
                                     .clickable { viewModel.openScanResultsScreen() },
                                 color = Color(0xFF0E0E0E)
                             ) {
@@ -397,7 +401,7 @@ fun MainScreen(
                                 ) {
                                     Column {
                                         Text(
-                                            text = "DEVICE // NOT CONNECTED",
+                                            text = "Tu mando empieza aquí",
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                                 color = TextSecondary,
@@ -405,7 +409,7 @@ fun MainScreen(
                                             )
                                         )
                                         Text(
-                                            text = "Tap to scan Wi-Fi network for Smart TVs",
+                                            text = "Busca una TV en tu red Wi-Fi",
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 color = TextMuted,
                                                 fontSize = 11.sp
@@ -413,7 +417,7 @@ fun MainScreen(
                                         )
                                     }
                                     Text(
-                                        text = "[SCAN ▶]",
+                                        text = "BUSCAR →",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                             color = Color.White,
@@ -427,8 +431,8 @@ fun MainScreen(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .border(1.dp, RemoteBorder, RoundedCornerShape(8.dp)),
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .border(1.dp, RemoteBorder, RoundedCornerShape(2.dp)),
                                 color = Color(0xFF0A0A0A)
                             ) {
                                 Row(
@@ -462,7 +466,7 @@ fun MainScreen(
                                                 containerColor = Color.White,
                                                 contentColor = Color.Black
                                             ),
-                                            shape = RoundedCornerShape(6.dp),
+                                            shape = RoundedCornerShape(2.dp),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                         ) {
                                             Text("ENCENDER", fontSize = 10.sp, fontWeight = FontWeight.Black)
@@ -473,7 +477,7 @@ fun MainScreen(
                                                 containerColor = Color(0xFF1C1C1C),
                                                 contentColor = Color.White
                                             ),
-                                            shape = RoundedCornerShape(6.dp),
+                                            shape = RoundedCornerShape(2.dp),
                                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                         ) {
@@ -492,8 +496,8 @@ fun MainScreen(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(1.dp, Color(0xFF444444), RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(2.dp))
+                            .border(1.dp, Color(0xFF444444), RoundedCornerShape(2.dp))
                             .clickable { viewModel.startAndroidTvPairing() },
                         color = Color(0xFF0F0F0F)
                     ) {
@@ -510,7 +514,7 @@ fun MainScreen(
                                 Icon(Icons.Default.Key, contentDescription = "Pair", tint = TextPrimary, modifier = Modifier.size(16.dp))
                                 Column {
                                     Text(
-                                        text = "GOOGLE TV // PARING CODE",
+                                        text = "Vincular Google TV",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                             color = TextSecondary,
@@ -532,7 +536,7 @@ fun MainScreen(
                                     containerColor = Color.White,
                                     contentColor = Color.Black
                                 ),
-                                shape = RoundedCornerShape(6.dp),
+                                shape = RoundedCornerShape(2.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)
                             ) {
                                 Text("VINCULAR", fontSize = 10.sp, fontWeight = FontWeight.Black)
@@ -545,9 +549,10 @@ fun MainScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0C0C0C), RoundedCornerShape(8.dp))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(8.dp))
-                        .padding(3.dp),
+                        .background(Color(0xFF0C0C0C), RoundedCornerShape(2.dp))
+                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+                        .padding(3.dp)
+                        .selectableGroup(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -676,7 +681,7 @@ fun MainScreen(
                         .fillMaxWidth()
                         .testTag("command_feedback_bar"),
                     color = Color(0xFF0C0C0C),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(2.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
                 ) {
                     Row(
@@ -707,7 +712,8 @@ fun MainScreen(
                                     fontSize = 10.sp,
                                     letterSpacing = 0.5.sp
                                 ),
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
@@ -816,37 +822,41 @@ fun RemoteModeTabButton(
 ) {
     Box(
         modifier = modifier
-            .height(38.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .height(52.dp)
+            .clip(RoundedCornerShape(2.dp))
             .background(if (isSelected) Color.White else Color.Transparent)
             .border(
                 width = if (isSelected) 1.dp else 0.dp,
                 color = if (isSelected) Color.White else Color.Transparent,
-                shape = RoundedCornerShape(6.dp)
+                shape = RoundedCornerShape(2.dp)
             )
-            .clickable { onClick() }
+            .selectable(selected = isSelected, role = Role.Tab, onClick = onClick)
             .testTag("tab_${mode.name.lowercase()}"),
         contentAlignment = Alignment.Center
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
         ) {
             Icon(
                 imageVector = icon,
-                contentDescription = mode.label,
-                tint = if (isSelected) Color.Black else TextMuted,
+                contentDescription = null,
+                tint = if (isSelected) Color.Black else TextSecondary,
                 modifier = Modifier.size(15.dp)
             )
-            Spacer(modifier = Modifier.width(5.dp))
             Text(
-                text = mode.label.uppercase(),
+                text = when (mode) {
+                    RemoteMode.DPAD -> "MANDO"
+                    RemoteMode.TOUCHPAD -> "TÁCTIL"
+                    RemoteMode.APPS -> "APPS"
+                    RemoteMode.NUMPAD -> "TECLADO"
+                },
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                     color = if (isSelected) Color.Black else TextSecondary,
                     fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                    fontSize = 10.sp,
-                    letterSpacing = 0.8.sp
+                    fontSize = 11.sp,
+                    letterSpacing = 0.5.sp
                 )
             )
         }

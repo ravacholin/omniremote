@@ -77,8 +77,8 @@ fun MacAddressConfigDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .clip(RoundedCornerShape(20.dp))
-                .border(1.dp, RemoteBorder, RoundedCornerShape(20.dp)),
+                .clip(RoundedCornerShape(4.dp))
+                .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp)),
             color = RemoteDarkBg
         ) {
             Column(
@@ -96,7 +96,7 @@ fun MacAddressConfigDialog(
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
-                                .background(Color(0xFF10B981).copy(alpha = 0.15f), RoundedCornerShape(10.dp)),
+                                .background(Color(0xFF10B981).copy(alpha = 0.15f), RoundedCornerShape(2.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -132,7 +132,7 @@ fun MacAddressConfigDialog(
                 // Explanatory Note
                 Surface(
                     color = Color(0xFF1E293B).copy(alpha = 0.6f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(4.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -204,7 +204,7 @@ fun MacAddressConfigDialog(
                         focusedContainerColor = RemoteCardBg,
                         unfocusedContainerColor = RemoteCardBg
                     ),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(2.dp)
                 )
 
                 if (statusMessage != null) {
@@ -241,7 +241,7 @@ fun MacAddressConfigDialog(
                     },
                     enabled = !isDetecting,
                     modifier = Modifier.fillMaxWidth().height(44.dp),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(2.dp)
                 ) {
                     if (isDetecting) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -272,7 +272,7 @@ fun MacAddressConfigDialog(
                         .height(48.dp)
                         .testTag("save_and_power_on_button"),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(2.dp)
                 ) {
                     Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))

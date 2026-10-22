@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -77,96 +78,64 @@ fun DeviceSelectorBar(
     val context = androidx.compose.ui.platform.LocalContext.current
     var expanded by remember { mutableStateOf(false) }
 
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("device_selector_bar"),
-        color = RemoteCardBg,
-        shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
+    val statusLabel = when (connectionState) {
+        is ConnectionState.Connected -> "Conectado"
+        is ConnectionState.Connecting -> "Conectando…"
+        is ConnectionState.WaitingAuth -> "Autorización pendiente"
+        is ConnectionState.Error -> "Error de conexión"
+        is ConnectionState.Disconnected -> "Sin conexión"
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth().testTag("device_selector_bar"),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Left: Device pill & switcher dropdown
-            Box {
-                Row(
+            Box(modifier = Modifier.weight(1f)) {
+                Column(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .fillMaxWidth()
+                        .heightIn(min = 64.dp)
+                        .clip(RoundedCornerShape(2.dp))
                         .clickable { expanded = true }
-                        .padding(horizontal = 6.dp, vertical = 4.dp)
-                        .testTag("device_dropdown_trigger"),
-                    verticalAlignment = Alignment.CenterVertically
+                        .testTag("device_dropdown_trigger")
+                        .padding(vertical = 4.dp),
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    // Pulsing status dot
-                    StatusIndicatorDot(connectionState)
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Column(modifier = Modifier.widthIn(max = 210.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = activeDevice?.name ?: "NO TV CONNECTED",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 14.sp,
-                                    letterSpacing = 0.5.sp,
-                                    color = TextPrimary
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Switch TV",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            activeDevice?.let { dev ->
-                                // Brand Pill with monospaced brutalist tag
-                                Box(
-                                    modifier = Modifier
-                                        .background(
-                                            color = Color(0xFF181818),
-                                            shape = RoundedCornerShape(3.dp)
-                                        )
-                                        .border(
-                                            width = 1.dp,
-                                            color = Color(0xFF383838),
-                                            shape = RoundedCornerShape(3.dp)
-                                        )
-                                        .padding(horizontal = 5.dp, vertical = 1.dp)
-                                ) {
-                                    Text(
-                                        text = dev.deviceType.brandTag,
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            color = TextPrimary,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 9.sp
-                                        )
-                                    )
-                                }
-
-                                Text(
-                                    text = "• ${dev.room.uppercase()}",
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        color = TextMuted,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                )
-                            }
-                        }
+                    Text(
+                        text = "OMNI / REMOTE",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextSecondary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = activeDevice?.name ?: "Añadir TV",
+                            modifier = Modifier.weight(1f, fill = false),
+                            style = MaterialTheme.typography.headlineMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Icon(Icons.Default.KeyboardArrowDown, "Cambiar TV", tint = TextSecondary)
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        StatusIndicatorDot(connectionState)
+                        Text(
+                            text = statusLabel + (activeDevice?.room?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
 
@@ -176,10 +145,10 @@ fun DeviceSelectorBar(
                     onDismissRequest = { expanded = false },
                     modifier = Modifier
                         .background(RemoteCardBg)
-                        .border(1.dp, RemoteBorder, RoundedCornerShape(12.dp))
+                        .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp))
                 ) {
                     Text(
-                        text = "SWITCH SMART TV",
+                        text = "TUS TELEVISORES",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.labelSmall.copy(
                             color = TextMuted,
@@ -240,7 +209,7 @@ fun DeviceSelectorBar(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Scan Network (NsdManager)...", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Buscar televisores", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             }
                         },
                         onClick = {
@@ -260,7 +229,7 @@ fun DeviceSelectorBar(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Add TV by IP / Setup...", color = TextSecondary, fontSize = 13.sp)
+                                Text("Añadir TV por dirección IP", color = TextSecondary, fontSize = 13.sp)
                             }
                         },
                         onClick = {
@@ -296,87 +265,58 @@ fun DeviceSelectorBar(
                 }
             }
 
-            // Right: Radar Scan button, Haptic toggle, Manage Devices button & Power button
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            IconButton(
+                onClick = onPowerClick,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White)
+                    .testTag("power_button")
             ) {
-                // Quick Scan Radar Button
-                IconButton(
-                    onClick = onOpenScan,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF141414))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(8.dp))
-                        .testTag("open_scan_radar_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Radar,
-                        contentDescription = "Scan Network for TVs",
-                        tint = TextPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                // Quick Haptic Feedback Toggle
-                IconButton(
-                    onClick = onToggleHaptic,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isHapticEnabled) Color(0xFF262626) else Color(0xFF101010))
-                        .border(
-                            1.dp,
-                            if (isHapticEnabled) Color(0xFF555555) else RemoteBorder,
-                            RoundedCornerShape(8.dp)
-                        )
-                        .testTag("toggle_haptic_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Vibration,
-                        contentDescription = if (isHapticEnabled) "Haptic Feedback: ON" else "Haptic Feedback: OFF",
-                        tint = if (isHapticEnabled) TextPrimary else TextMuted,
-                        modifier = Modifier.size(17.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = onOpenManager,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF141414))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(8.dp))
-                        .testTag("open_manager_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Device Manager",
-                        tint = TextSecondary,
-                        modifier = Modifier.size(17.dp)
-                    )
-                }
-
-                // Brutalist Minimalist High-Contrast Power button
-                IconButton(
-                    onClick = onPowerClick,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFFFFFFF))
-                        .border(1.dp, Color(0xFFFFFFFF), RoundedCornerShape(8.dp))
-                        .testTag("power_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PowerSettingsNew,
-                        contentDescription = "Power",
-                        tint = Color(0xFF000000),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                Icon(Icons.Default.PowerSettingsNew, "Encender o apagar TV", tint = Color.Black, modifier = Modifier.size(26.dp))
             }
         }
+        HorizontalDivider(color = RemoteBorderStrong)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            HeaderAction(Icons.Default.Radar, "Buscar TV", "open_scan_radar_button", onOpenScan, Modifier.weight(1f))
+            HeaderAction(
+                Icons.Default.Vibration,
+                if (isHapticEnabled) "Vibración sí" else "Vibración no",
+                "toggle_haptic_button",
+                onToggleHaptic,
+                Modifier.weight(1f),
+                isHapticEnabled
+            )
+            HeaderAction(Icons.Default.Settings, "Ajustes", "open_manager_button", onOpenManager, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun HeaderAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tag: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    active: Boolean = false
+) {
+    Column(
+        modifier = modifier
+            .heightIn(min = 56.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(if (active) RemoteBtnActive else RemoteSurface)
+            .clickable(onClick = onClick)
+            .testTag(tag)
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
+    ) {
+        Icon(icon, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(20.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium, color = TextSecondary, maxLines = 1)
     }
 }
 
@@ -403,7 +343,7 @@ fun StatusIndicatorDot(state: ConnectionState) {
 
     Box(
         modifier = Modifier
-            .size(10.dp)
+            .size(6.dp)
             .alpha(if (isPulsing) alphaAnim else 1f)
             .background(color, CircleShape)
             .border(1.5.dp, color.copy(alpha = 0.35f), CircleShape)

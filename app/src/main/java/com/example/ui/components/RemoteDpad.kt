@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -56,7 +55,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -91,9 +89,8 @@ fun RemoteDpad(
         contentAlignment = Alignment.Center
     ) {
         val availableHeight = maxHeight
-        val availableWidth = maxWidth
 
-        val isShortScreen = availableHeight < 490.dp
+        val isShortScreen = availableHeight < 550.dp
         val isTallScreen = availableHeight > 580.dp
 
         // Dynamic, responsive sizing that scales relative to available screen dimensions
@@ -101,7 +98,7 @@ fun RemoteDpad(
             isShortScreen -> 215.dp
             isTallScreen -> (availableHeight * 0.40f).coerceIn(255.dp, 290.dp)
             else -> 245.dp
-        }
+        }.coerceAtMost(maxWidth - 16.dp)
         val okDiameter = (dpadDiameter * 0.35f).coerceIn(74.dp, 96.dp)
         val arrowIconSize = if (dpadDiameter >= 260.dp) 38.dp else if (dpadDiameter >= 235.dp) 34.dp else 28.dp
         val arrowVerticalHeight = (dpadDiameter * 0.24f).coerceIn(48.dp, 64.dp)
@@ -111,16 +108,16 @@ fun RemoteDpad(
 
         // Top Navigation buttons responsive dimensions
         val navBtnSize = when {
-            isShortScreen -> 44.dp
+            isShortScreen -> 48.dp
             isTallScreen -> 54.dp
             else -> 48.dp
         }
         val navIconSize = if (navBtnSize >= 52.dp) 24.dp else if (navBtnSize >= 48.dp) 22.dp else 20.dp
 
         // Bottom Controls responsive dimensions
-        val rockerWidth = if (isTallScreen) 56.dp else if (isShortScreen) 48.dp else 52.dp
-        val rockerBtnSize = if (isTallScreen) 50.dp else if (isShortScreen) 42.dp else 46.dp
-        val rockerCenterHeight = if (isTallScreen) 34.dp else 30.dp
+        val rockerWidth = 56.dp
+        val rockerBtnSize = if (isTallScreen) 50.dp else 48.dp
+        val rockerCenterHeight = 48.dp
 
         val heroPlaySize = when {
             isTallScreen -> 68.dp
@@ -128,7 +125,7 @@ fun RemoteDpad(
             else -> 62.dp
         }
         val heroPlayIconSize = if (heroPlaySize >= 66.dp) 36.dp else if (heroPlaySize >= 60.dp) 32.dp else 28.dp
-        val mediaBtnSize = if (isTallScreen) 46.dp else 42.dp
+        val mediaBtnSize = 48.dp
         val mediaIconSize = if (isTallScreen) 22.dp else 20.dp
 
         val scrollModifier = if (isShortScreen) {
@@ -191,21 +188,13 @@ fun RemoteDpad(
                 Spacer(modifier = Modifier.weight(1f, fill = false).heightIn(max = 28.dp))
             }
 
-            // Circular D-Pad Controller with dynamic diameter
+            // Flat directional pad sized for the available width.
             Box(
                 modifier = Modifier
                     .size(dpadDiameter)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFF161616),
-                                Color(0xFF0C0C0C),
-                                Color(0xFF050505)
-                            )
-                        )
-                    )
-                    .border(1.5.dp, RemoteBorderStrong, CircleShape)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(RemoteSurfaceVariant)
+                    .border(1.5.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
                     .testTag("dpad_circle"),
                 contentAlignment = Alignment.Center
             ) {
@@ -213,8 +202,8 @@ fun RemoteDpad(
                 val upInteraction = remember { MutableInteractionSource() }
                 val upPressed by upInteraction.collectIsPressedAsState()
                 val upScale by animateFloatAsState(
-                    targetValue = if (upPressed) 0.90f else 1.0f,
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                    targetValue = if (upPressed) 0.96f else 1.0f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
                     label = "dpad_up_scale"
                 )
 
@@ -227,7 +216,7 @@ fun RemoteDpad(
                             scaleX = upScale
                             scaleY = upScale
                         }
-                        .clip(RoundedCornerShape(topStart = 40.dp, topEnd = 40.dp))
+                        .clip(RoundedCornerShape(2.dp))
                         .background(if (upPressed) Color.White.copy(alpha = 0.25f) else Color.Transparent)
                         .clickable(
                             interactionSource = upInteraction,
@@ -248,8 +237,8 @@ fun RemoteDpad(
                 val downInteraction = remember { MutableInteractionSource() }
                 val downPressed by downInteraction.collectIsPressedAsState()
                 val downScale by animateFloatAsState(
-                    targetValue = if (downPressed) 0.90f else 1.0f,
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                    targetValue = if (downPressed) 0.96f else 1.0f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
                     label = "dpad_down_scale"
                 )
 
@@ -262,7 +251,7 @@ fun RemoteDpad(
                             scaleX = downScale
                             scaleY = downScale
                         }
-                        .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
+                        .clip(RoundedCornerShape(2.dp))
                         .background(if (downPressed) Color.White.copy(alpha = 0.25f) else Color.Transparent)
                         .clickable(
                             interactionSource = downInteraction,
@@ -283,8 +272,8 @@ fun RemoteDpad(
                 val leftInteraction = remember { MutableInteractionSource() }
                 val leftPressed by leftInteraction.collectIsPressedAsState()
                 val leftScale by animateFloatAsState(
-                    targetValue = if (leftPressed) 0.90f else 1.0f,
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                    targetValue = if (leftPressed) 0.96f else 1.0f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
                     label = "dpad_left_scale"
                 )
 
@@ -297,7 +286,7 @@ fun RemoteDpad(
                             scaleX = leftScale
                             scaleY = leftScale
                         }
-                        .clip(RoundedCornerShape(topStart = 40.dp, bottomStart = 40.dp))
+                        .clip(RoundedCornerShape(2.dp))
                         .background(if (leftPressed) Color.White.copy(alpha = 0.25f) else Color.Transparent)
                         .clickable(
                             interactionSource = leftInteraction,
@@ -318,8 +307,8 @@ fun RemoteDpad(
                 val rightInteraction = remember { MutableInteractionSource() }
                 val rightPressed by rightInteraction.collectIsPressedAsState()
                 val rightScale by animateFloatAsState(
-                    targetValue = if (rightPressed) 0.90f else 1.0f,
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                    targetValue = if (rightPressed) 0.96f else 1.0f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
                     label = "dpad_right_scale"
                 )
 
@@ -332,7 +321,7 @@ fun RemoteDpad(
                             scaleX = rightScale
                             scaleY = rightScale
                         }
-                        .clip(RoundedCornerShape(topEnd = 40.dp, bottomEnd = 40.dp))
+                        .clip(RoundedCornerShape(2.dp))
                         .background(if (rightPressed) Color.White.copy(alpha = 0.25f) else Color.Transparent)
                         .clickable(
                             interactionSource = rightInteraction,
@@ -349,12 +338,12 @@ fun RemoteDpad(
                     )
                 }
 
-                // Center OK / SELECT Button (Brutalist Inverted Core)
+                // Inverted primary action.
                 val okInteraction = remember { MutableInteractionSource() }
                 val okPressed by okInteraction.collectIsPressedAsState()
                 val okScale by animateFloatAsState(
-                    targetValue = if (okPressed) 0.88f else 1.0f,
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                    targetValue = if (okPressed) 0.96f else 1.0f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
                     label = "ok_scale"
                 )
 
@@ -365,12 +354,12 @@ fun RemoteDpad(
                             scaleX = okScale
                             scaleY = okScale
                         }
-                        .clip(CircleShape)
-                        .background(if (okPressed) Color.White else Color(0xFF181818))
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(if (okPressed) BrutalistOffWhite else Color.White)
                         .border(
                             if (okPressed) 2.dp else 1.dp,
-                            if (okPressed) Color.White else Color(0xFF444444),
-                            CircleShape
+                            Color.White,
+                            RoundedCornerShape(2.dp)
                         )
                         .clickable(
                             interactionSource = okInteraction,
@@ -383,7 +372,7 @@ fun RemoteDpad(
                         text = "OK",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            color = if (okPressed) Color.Black else Color.White,
+                            color = Color.Black,
                             fontWeight = FontWeight.Black,
                             fontSize = if (okDiameter >= 90.dp) 20.sp else if (okDiameter >= 80.dp) 18.sp else 15.sp,
                             letterSpacing = 1.sp
@@ -425,26 +414,14 @@ fun RemoteDpad(
                 // Playback Control Pod with Prominent Hero Play/Pause Button
                 Surface(
                     color = Color(0xFF0C0C0C),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(4.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Rewind
-                        TactileMediaButton(
-                            icon = Icons.Default.FastRewind,
-                            contentDescription = "Rewind",
-                            testTag = "key_rewind",
-                            onClick = { handlePress(RemoteKey.REWIND) },
-                            accentColor = Color.White,
-                            size = mediaBtnSize,
-                            iconSize = mediaIconSize
-                        )
-
-                        // Hero Play/Pause Button (Iconic Brutalist High-Contrast Button)
                         HeroPlayPauseButton(
                             accentColor = Color.White,
                             isPlaying = isPlaying,
@@ -455,17 +432,26 @@ fun RemoteDpad(
                             size = heroPlaySize,
                             iconSize = heroPlayIconSize
                         )
-
-                        // Fast Forward
-                        TactileMediaButton(
-                            icon = Icons.Default.FastForward,
-                            contentDescription = "Fast Forward",
-                            testTag = "key_fast_forward",
-                            onClick = { handlePress(RemoteKey.FAST_FORWARD) },
-                            accentColor = Color.White,
-                            size = mediaBtnSize,
-                            iconSize = mediaIconSize
-                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TactileMediaButton(
+                                icon = Icons.Default.FastRewind,
+                                contentDescription = "Retroceder",
+                                testTag = "key_rewind",
+                                onClick = { handlePress(RemoteKey.REWIND) },
+                                accentColor = Color.White,
+                                size = mediaBtnSize,
+                                iconSize = mediaIconSize
+                            )
+                            TactileMediaButton(
+                                icon = Icons.Default.FastForward,
+                                contentDescription = "Avanzar",
+                                testTag = "key_fast_forward",
+                                onClick = { handlePress(RemoteKey.FAST_FORWARD) },
+                                accentColor = Color.White,
+                                size = mediaBtnSize,
+                                iconSize = mediaIconSize
+                            )
+                        }
                     }
                 }
 
@@ -538,9 +524,9 @@ fun HeroPlayPauseButton(
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1.0f,
+        targetValue = if (isPressed) 0.96f else 1.0f,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
+            dampingRatio = Spring.DampingRatioNoBouncy,
             stiffness = Spring.StiffnessMedium
         ),
         label = "hero_play_scale"
@@ -548,17 +534,17 @@ fun HeroPlayPauseButton(
 
     Box(
         modifier = modifier
-            .size(size)
+            .size(size.coerceAtLeast(48.dp))
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(2.dp))
             .background(if (isPressed) Color(0xFFE4E4E7) else Color.White)
             .border(
                 width = if (isPressed) 2.dp else 1.5.dp,
                 color = if (isPressed) Color(0xFF888888) else Color.White,
-                shape = CircleShape
+                shape = RoundedCornerShape(2.dp)
             )
             .clickable(
                 interactionSource = interactionSource,
@@ -595,21 +581,22 @@ fun MediaQuickActionPill(
 
     Surface(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(2.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
             ) { onClick() }
             .testTag(testTag),
         color = if (isPressed) Color.White else Color(0xFF101010),
-        shape = RoundedCornerShape(6.dp),
+        shape = RoundedCornerShape(2.dp),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             if (isPressed) Color.White else RemoteBorderStrong
         )
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
@@ -644,31 +631,31 @@ fun TactileMediaButton(
     onClick: () -> Unit,
     accentColor: Color,
     modifier: Modifier = Modifier,
-    size: Dp = 44.dp,
+    size: Dp = 48.dp,
     iconSize: Dp = 22.dp
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1.0f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        targetValue = if (isPressed) 0.96f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
         label = "media_btn_scale"
     )
 
     Box(
         modifier = modifier
-            .size(size)
+            .size(size.coerceAtLeast(48.dp))
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(2.dp))
             .background(if (isPressed) Color.White else Color(0xFF121212))
             .border(
                 1.dp,
                 if (isPressed) Color.White else RemoteBorderStrong,
-                CircleShape
+                RoundedCornerShape(2.dp)
             )
             .clickable(
                 interactionSource = interactionSource,
@@ -701,9 +688,9 @@ fun CircleRemoteButton(
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1.0f,
+        targetValue = if (isPressed) 0.96f else 1.0f,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
+            dampingRatio = Spring.DampingRatioNoBouncy,
             stiffness = Spring.StiffnessMedium
         ),
         label = "circle_btn_scale"
@@ -716,19 +703,19 @@ fun CircleRemoteButton(
     ) {
         Surface(
             modifier = Modifier
-                .size(size)
+                .size(size.coerceAtLeast(48.dp))
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
                 }
-                .clip(CircleShape)
+                .clip(RoundedCornerShape(2.dp))
                 .clickable(
                     interactionSource = interactionSource,
                     indication = null
                 ) { onClick() }
                 .testTag(testTag),
             color = if (isPressed) Color.White else RemoteBtnDefault,
-            shape = CircleShape,
+            shape = RoundedCornerShape(2.dp),
             border = androidx.compose.foundation.BorderStroke(
                 if (isPressed) 1.5.dp else 1.dp,
                 if (isPressed) Color.White else RemoteBorderStrong
@@ -775,7 +762,7 @@ fun RockerColumn(
 ) {
     Surface(
         color = Color(0xFF0C0C0C),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(4.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
     ) {
         Column(
@@ -787,19 +774,19 @@ fun RockerColumn(
             val topInteraction = remember { MutableInteractionSource() }
             val topPressed by topInteraction.collectIsPressedAsState()
             val topScale by animateFloatAsState(
-                targetValue = if (topPressed) 0.88f else 1.0f,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                targetValue = if (topPressed) 0.96f else 1.0f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
                 label = "rocker_top_scale"
             )
 
             Box(
                 modifier = Modifier
-                    .size(btnSize)
+                    .size(btnSize.coerceAtLeast(48.dp))
                     .graphicsLayer {
                         scaleX = topScale
                         scaleY = topScale
                     }
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(2.dp))
                     .background(if (topPressed) Color.White else Color.Transparent)
                     .clickable(
                         interactionSource = topInteraction,
@@ -819,21 +806,21 @@ fun RockerColumn(
             val centerInteraction = remember { MutableInteractionSource() }
             val centerPressed by centerInteraction.collectIsPressedAsState()
             val centerScale by animateFloatAsState(
-                targetValue = if (centerPressed) 0.90f else 1.0f,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                targetValue = if (centerPressed) 0.96f else 1.0f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
                 label = "rocker_center_scale"
             )
 
             Box(
                 modifier = Modifier
-                    .size(width = width - 8.dp, height = centerHeight)
+                    .size(width = (width - 8.dp).coerceAtLeast(48.dp), height = centerHeight.coerceAtLeast(48.dp))
                     .graphicsLayer {
                         scaleX = centerScale
                         scaleY = centerScale
                     }
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(2.dp))
                     .background(if (centerPressed) Color.White else Color(0xFF181818))
-                    .border(1.dp, if (centerPressed) Color.White else RemoteBorderStrong, RoundedCornerShape(6.dp))
+                    .border(1.dp, if (centerPressed) Color.White else RemoteBorderStrong, RoundedCornerShape(2.dp))
                     .clickable(
                         interactionSource = centerInteraction,
                         indication = null
@@ -864,19 +851,19 @@ fun RockerColumn(
             val bottomInteraction = remember { MutableInteractionSource() }
             val bottomPressed by bottomInteraction.collectIsPressedAsState()
             val bottomScale by animateFloatAsState(
-                targetValue = if (bottomPressed) 0.88f else 1.0f,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                targetValue = if (bottomPressed) 0.96f else 1.0f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
                 label = "rocker_bottom_scale"
             )
 
             Box(
                 modifier = Modifier
-                    .size(btnSize)
+                    .size(btnSize.coerceAtLeast(48.dp))
                     .graphicsLayer {
                         scaleX = bottomScale
                         scaleY = bottomScale
                     }
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(2.dp))
                     .background(if (bottomPressed) Color.White else Color.Transparent)
                     .clickable(
                         interactionSource = bottomInteraction,
@@ -907,8 +894,8 @@ fun IconButtonMini(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1.0f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        targetValue = if (isPressed) 0.96f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
         label = "mini_scale"
     )
 
@@ -919,9 +906,9 @@ fun IconButtonMini(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(2.dp))
             .background(if (isPressed) Color.White else Color(0xFF141414))
-            .border(1.dp, if (isPressed) Color.White else RemoteBorderStrong, CircleShape)
+            .border(1.dp, if (isPressed) Color.White else RemoteBorderStrong, RoundedCornerShape(2.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
