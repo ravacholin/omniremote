@@ -97,6 +97,7 @@ fun RemoteAppsGrid(
         "All",
         "Movies & TV",
         "Streaming",
+        "Live TV",
         "Music & Audio",
         "Tools",
         "Games"
@@ -112,47 +113,9 @@ fun RemoteAppsGrid(
         // Top Header: Device Scope & "+ Add App" Button
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "TV APPLICATIONS",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = TextMuted,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .background(deviceType.brandColor.copy(alpha = 0.15f), RoundedCornerShape(2.dp))
-                            .border(0.5.dp, deviceType.brandColor.copy(alpha = 0.4f), RoundedCornerShape(2.dp))
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = deviceType.shortName,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = deviceType.brandColor,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        )
-                    }
-                }
-                Text(
-                    text = "$favoritesCount favorites • $allAppsCount total on $deviceName",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = TextSecondary,
-                        fontSize = 11.sp
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
             Button(
                 onClick = { isAddDialogOpen = true },
                 colors = ButtonDefaults.buttonColors(
@@ -160,23 +123,16 @@ fun RemoteAppsGrid(
                     contentColor = Color.Black
                 ),
                 shape = RoundedCornerShape(2.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                modifier = Modifier.testTag("open_add_app_dialog_button")
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(48.dp).testTag("open_add_app_dialog_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
-                    contentDescription = null,
+                    contentDescription = "Añadir aplicación",
                     tint = Color.Black,
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(24.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "ADD APP",
-                    color = Color.Black,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    fontSize = 11.sp
-                )
+
             }
         }
 
@@ -352,7 +308,6 @@ fun TvAppGridCard(
     onToggleFavorite: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val appIcon = getAppIconVector(app.iconKey, app.appName)
 
     Surface(
         modifier = Modifier
@@ -380,21 +335,7 @@ fun TvAppGridCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                // Monochromatic App Icon Container
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(Color(0xFF181818), RoundedCornerShape(2.dp))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = appIcon,
-                        contentDescription = app.appName,
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
+                PixelAppIcon(app)
 
                 // Favorite Star Button
                 IconButton(

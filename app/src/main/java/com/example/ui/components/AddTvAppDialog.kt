@@ -54,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.DeviceType
+import com.example.data.model.StreamingAppCatalog
 import com.example.ui.theme.RemoteBorder
 import com.example.ui.theme.RemoteCardBg
 import com.example.ui.theme.RemoteDarkBg
@@ -70,11 +71,10 @@ data class AppPreset(
     val iconKey: String
 )
 
-val POPULAR_PRESETS = listOf(
-    AppPreset("Apple TV", "3201807016597", "com.apple.atve.androidtv.appletv", "Movies & TV", 0xFF2D3748, "tv"),
-    AppPreset("Max / HBO", "3201601007250", "com.wbd.stream", "Movies & TV", 0xFF7E22CE, "movie"),
+val POPULAR_PRESETS = StreamingAppCatalog.apps.map {
+    AppPreset(it.name, it.samsungId, it.androidPackage, it.category, it.colorHex, it.iconKey)
+} + listOf(
     AppPreset("Hulu", "3201601007625", "com.hulu.livingroomplus", "Movies & TV", 0xFF1CE783, "movie"),
-    AppPreset("Paramount+", "3201908019033", "com.cbs.app", "Movies & TV", 0xFF0064FF, "movie"),
     AppPreset("Peacock", "3202010022098", "com.peacocktv.peacockandroid", "Movies & TV", 0xFF000000, "movie"),
     AppPreset("Crunchyroll", "3201601007270", "com.crunchyroll.crunchyroid", "Movies & TV", 0xFFF47521, "movie"),
     AppPreset("Kodi", "org.xbmc.kodi", "org.xbmc.kodi", "Tools", 0xFF13B5EA, "tv"),

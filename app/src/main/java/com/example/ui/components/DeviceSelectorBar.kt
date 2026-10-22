@@ -27,12 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.Radar
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tv
-import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -106,11 +101,6 @@ fun DeviceSelectorBar(
                         .padding(vertical = 4.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Text(
-                        text = "OMNI / REMOTE",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextSecondary
-                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -122,7 +112,7 @@ fun DeviceSelectorBar(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Icon(Icons.Default.KeyboardArrowDown, "Cambiar TV", tint = TextSecondary)
+                        Icon(RemoteIcons.Down, "Cambiar TV", tint = TextSecondary)
                     }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -203,7 +193,7 @@ fun DeviceSelectorBar(
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Default.Radar,
+                                    imageVector = RemoteIcons.Search,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(18.dp)
@@ -273,7 +263,7 @@ fun DeviceSelectorBar(
                     .background(Color.White)
                     .testTag("power_button")
             ) {
-                Icon(Icons.Default.PowerSettingsNew, "Encender o apagar TV", tint = Color.Black, modifier = Modifier.size(26.dp))
+                Icon(RemoteIcons.Power, "Encender o apagar TV", tint = Color.Black, modifier = Modifier.size(26.dp))
             }
         }
         HorizontalDivider(color = RemoteBorderStrong)
@@ -281,16 +271,16 @@ fun DeviceSelectorBar(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            HeaderAction(Icons.Default.Radar, "Buscar TV", "open_scan_radar_button", onOpenScan, Modifier.weight(1f))
+            HeaderAction(RemoteIcons.Search, "Buscar TV", "open_scan_radar_button", onOpenScan, Modifier.weight(1f))
             HeaderAction(
-                Icons.Default.Vibration,
+                RemoteIcons.Vibration,
                 if (isHapticEnabled) "Vibración sí" else "Vibración no",
                 "toggle_haptic_button",
                 onToggleHaptic,
                 Modifier.weight(1f),
                 isHapticEnabled
             )
-            HeaderAction(Icons.Default.Settings, "Ajustes", "open_manager_button", onOpenManager, Modifier.weight(1f))
+            HeaderAction(RemoteIcons.Settings, "Ajustes", "open_manager_button", onOpenManager, Modifier.weight(1f))
         }
     }
 }
@@ -315,8 +305,7 @@ private fun HeaderAction(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
     ) {
-        Icon(icon, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(20.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium, color = TextSecondary, maxLines = 1)
+        Icon(icon, contentDescription = label, tint = TextPrimary, modifier = Modifier.size(24.dp))
     }
 }
 

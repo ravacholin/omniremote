@@ -29,22 +29,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.VolumeDown
-import androidx.compose.material.icons.automirrored.filled.VolumeMute
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.FastForward
-import androidx.compose.material.icons.filled.FastRewind
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Brightness6
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -156,7 +141,7 @@ fun RemoteDpad(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 CircleRemoteButton(
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    icon = RemoteIcons.Back,
                     label = "Back",
                     testTag = "key_back",
                     size = navBtnSize,
@@ -164,7 +149,7 @@ fun RemoteDpad(
                     onClick = { handlePress(RemoteKey.BACK) }
                 )
                 CircleRemoteButton(
-                    icon = Icons.Default.Home,
+                    icon = RemoteIcons.Home,
                     label = "Home",
                     testTag = "key_home",
                     accent = accentColor,
@@ -173,7 +158,7 @@ fun RemoteDpad(
                     onClick = { handlePress(RemoteKey.HOME) }
                 )
                 CircleRemoteButton(
-                    icon = Icons.Default.Menu,
+                    icon = RemoteIcons.Menu,
                     label = "Menu",
                     testTag = "key_menu",
                     size = navBtnSize,
@@ -235,7 +220,7 @@ fun RemoteDpad(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.KeyboardArrowUp,
+                        imageVector = RemoteIcons.Up,
                         contentDescription = "Up",
                         tint = if (upPressed) Color.White else TextPrimary,
                         modifier = Modifier.size(arrowIconSize)
@@ -270,7 +255,7 @@ fun RemoteDpad(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
+                        imageVector = RemoteIcons.Down,
                         contentDescription = "Down",
                         tint = if (downPressed) Color.White else TextPrimary,
                         modifier = Modifier.size(arrowIconSize)
@@ -305,7 +290,7 @@ fun RemoteDpad(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.KeyboardArrowLeft,
+                        imageVector = RemoteIcons.Left,
                         contentDescription = "Left",
                         tint = if (leftPressed) Color.White else TextPrimary,
                         modifier = Modifier.size(arrowIconSize)
@@ -340,7 +325,7 @@ fun RemoteDpad(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.KeyboardArrowRight,
+                        imageVector = RemoteIcons.Right,
                         contentDescription = "Right",
                         tint = if (rightPressed) Color.White else TextPrimary,
                         modifier = Modifier.size(arrowIconSize)
@@ -428,13 +413,13 @@ fun RemoteDpad(
             ) {
                 // Volume Rocker
                 RockerColumn(
-                    topIcon = Icons.AutoMirrored.Filled.VolumeUp,
+                    topIcon = RemoteIcons.VolumeUp,
                     topLabel = "VOL +",
                     onTopClick = { handlePress(RemoteKey.VOL_UP) },
-                    centerIcon = Icons.AutoMirrored.Filled.VolumeMute,
+                    centerIcon = RemoteIcons.Mute,
                     centerLabel = "Mute",
                     onCenterClick = { handlePress(RemoteKey.MUTE) },
-                    bottomIcon = Icons.AutoMirrored.Filled.VolumeDown,
+                    bottomIcon = RemoteIcons.VolumeDown,
                     bottomLabel = "VOL -",
                     onBottomClick = { handlePress(RemoteKey.VOL_DOWN) },
                     testTagPrefix = "vol",
@@ -467,7 +452,7 @@ fun RemoteDpad(
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             TactileMediaButton(
-                                icon = Icons.Default.FastRewind,
+                                icon = RemoteIcons.Rewind,
                                 contentDescription = "Retroceder",
                                 testTag = "key_rewind",
                                 onClick = { handlePress(RemoteKey.REWIND) },
@@ -476,7 +461,7 @@ fun RemoteDpad(
                                 iconSize = mediaIconSize
                             )
                             TactileMediaButton(
-                                icon = Icons.Default.FastForward,
+                                icon = RemoteIcons.Forward,
                                 contentDescription = "Avanzar",
                                 testTag = "key_fast_forward",
                                 onClick = { handlePress(RemoteKey.FAST_FORWARD) },
@@ -490,13 +475,13 @@ fun RemoteDpad(
 
                 // Channel Rocker
                 RockerColumn(
-                    topIcon = Icons.Default.KeyboardArrowUp,
+                    topIcon = RemoteIcons.Up,
                     topLabel = "CH +",
                     onTopClick = { handlePress(RemoteKey.CH_UP) },
                     centerIcon = null,
                     centerLabel = "CH",
                     onCenterClick = { handlePress(RemoteKey.NUM_PRE_CH) },
-                    bottomIcon = Icons.Default.KeyboardArrowDown,
+                    bottomIcon = RemoteIcons.Down,
                     bottomLabel = "CH -",
                     onBottomClick = { handlePress(RemoteKey.CH_DOWN) },
                     testTagPrefix = "ch",
@@ -515,21 +500,21 @@ fun RemoteDpad(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 MediaQuickActionPill(
-                    icon = Icons.Default.PlayArrow,
+                    icon = RemoteIcons.Play,
                     label = "PLAY",
                     onClick = { handlePress(RemoteKey.PLAY) },
                     accentColor = Color.White,
                     testTag = "key_explicit_play"
                 )
                 MediaQuickActionPill(
-                    icon = Icons.Default.Pause,
+                    icon = RemoteIcons.Pause,
                     label = "PAUSE",
                     onClick = { handlePress(RemoteKey.PAUSE) },
                     accentColor = Color(0xFFD4D4D8),
                     testTag = "key_explicit_pause"
                 )
                 MediaQuickActionPill(
-                    icon = Icons.Default.Stop,
+                    icon = RemoteIcons.Stop,
                     label = "STOP",
                     onClick = { handlePress(RemoteKey.STOP) },
                     accentColor = Color(0xFFA1A1AA),
@@ -589,7 +574,7 @@ fun HeroPlayPauseButton(
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+            imageVector = if (isPlaying) RemoteIcons.Pause else RemoteIcons.Play,
             contentDescription = if (isPlaying) "Pause" else "Play",
             tint = Color.Black,
             modifier = Modifier.size(iconSize)
@@ -629,26 +614,17 @@ fun MediaQuickActionPill(
         )
     ) {
         Row(
-            modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.size(48.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
+            horizontalArrangement = Arrangement.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
                 tint = if (isPressed) Color.Black else TextPrimary,
-                modifier = Modifier.size(13.dp)
+                modifier = Modifier.size(22.dp)
             )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp,
-                    color = if (isPressed) Color.Black else TextSecondary,
-                    letterSpacing = 0.5.sp
-                )
-            )
+
         }
     }
 }
@@ -763,16 +739,7 @@ fun CircleRemoteButton(
                 )
             }
         }
-        Text(
-            text = label.uppercase(),
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                fontSize = if (size >= 52.dp) 10.sp else 9.sp,
-                color = if (isPressed) Color.White else TextSecondary,
-                fontWeight = if (isPressed) FontWeight.Bold else FontWeight.Medium,
-                letterSpacing = 0.5.sp
-            )
-        )
+
     }
 }
 

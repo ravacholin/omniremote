@@ -97,6 +97,10 @@ class UnifiedTvController(
                 }
             }
         },
+        onCommandRejected = { message ->
+            val dev = activeDevice
+            if (dev?.deviceType == DeviceType.ANDROID_TV) addLog(dev.name, message, false)
+        },
         onPairingPromptNeeded = { ip ->
             scope.launch {
                 val dev = activeDevice ?: return@launch
@@ -293,15 +297,22 @@ class UnifiedTvController(
     fun launchTvApp(app: TvAppEntity) {
         val device = activeDevice ?: return
         scope.launch(Dispatchers.IO) {
+            var launchError: String? = null
+            var storeOpened = false
             val success = when (device.deviceType) {
                 DeviceType.SAMSUNG_TIZEN -> {
-                    samsungClient.launchAppById(device.ipAddress, app.appIdentifier).isSuccess
+                    val result = samsungClient.launchAppById(device.ipAddress, app.appIdentifier)
+                    launchError = result.exceptionOrNull()?.message
+                    result.isSuccess
                 }
-                DeviceType.ANDROID_TV -> {
-                    androidClient.launchAppByPackage(app.appIdentifier)
-                }
+                DeviceType.ANDROID_TV -> androidClient.launchAppByPackage(app.appIdentifier, app.deepLinkUrl) { storeOpened = true }
             }
-            addLog(device.name, "Launched ${app.appName}", success)
+            val message = when {
+                storeOpened -> "${app.appName}: selecciona Abrir en la pantalla de la TV."
+                success -> "Abrir ${app.appName}"
+                else -> launchError ?: "La TV no pudo abrir ${app.appName}. El mando sigue disponible."
+            }
+            addLog(device.name, message, success)
         }
     }
 

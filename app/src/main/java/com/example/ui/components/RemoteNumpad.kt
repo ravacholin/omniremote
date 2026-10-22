@@ -95,26 +95,6 @@ fun RemoteNumpad(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Keyboard,
-                        contentDescription = null,
-                        tint = TextPrimary,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "VIRTUAL KEYBOARD BEAM",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            color = TextMuted,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp,
-                            letterSpacing = 1.sp
-                        )
-                    )
-                }
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -128,7 +108,7 @@ fun RemoteNumpad(
                             .testTag("tv_text_input"),
                         placeholder = {
                             Text(
-                                "Type text or query...",
+                                "Escribir en la TV…",
                                 fontSize = 11.sp,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                 color = TextMuted
@@ -274,16 +254,7 @@ fun NumButton(
                     letterSpacing = 1.sp
                 )
             )
-            if (label != null) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        color = if (isPressed) Color(0xFF444444) else TextMuted
-                    )
-                )
-            }
+
         }
     }
 }
