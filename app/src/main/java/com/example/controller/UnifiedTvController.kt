@@ -103,7 +103,7 @@ class UnifiedTvController(
                 if (dev.ipAddress != ip || dev.deviceType != DeviceType.ANDROID_TV) return@launch
                 _connectionState.value = ConnectionState.WaitingAuth(
                     dev.name,
-                    "Google TV: Introduce el código de 6 caracteres que aparece en pantalla."
+                    "Google TV requiere vinculación. Pulsa Vincular para solicitar el código en la TV."
                 )
             }
         }
