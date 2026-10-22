@@ -42,7 +42,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +72,7 @@ import com.example.ui.theme.*
 fun RemoteDpad(
     deviceType: DeviceType,
     onKeyPress: (RemoteKey) -> Unit,
+    onBrightnessClick: () -> Unit,
     isPlaying: Boolean = true,
     onTogglePlayPause: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -141,7 +142,7 @@ fun RemoteDpad(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = if (isShortScreen) Arrangement.spacedBy(10.dp) else Arrangement.SpaceBetween
         ) {
-            // Top Navigation Helpers: Back, Home, Menu, Source
+            // Top Navigation Helpers: Back, Home, Menu, Brightness
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -175,12 +176,15 @@ fun RemoteDpad(
                     onClick = { handlePress(RemoteKey.MENU) }
                 )
                 CircleRemoteButton(
-                    icon = Icons.Default.Settings,
-                    label = "Source",
-                    testTag = "key_source",
+                    icon = Icons.Default.Brightness6,
+                    label = "Brightness",
+                    testTag = "brightness_button",
                     size = navBtnSize,
                     iconSize = navIconSize,
-                    onClick = { handlePress(RemoteKey.SOURCE) }
+                    onClick = {
+                        HapticUtil.triggerKeyHaptic(context)
+                        onBrightnessClick()
+                    }
                 )
             }
 

@@ -81,6 +81,8 @@ class AndroidTvClient(
     @Volatile
     private var remoteInput: InputStream? = null
     private var remoteReaderJob: Job? = null
+    @Volatile
+    private var negotiatedFeatures: Int = 0
 
     // Pending pairing session
     @Volatile
@@ -144,6 +146,7 @@ class AndroidTvClient(
                     AndroidTvProtocol.getFieldBytes(packet, 1)?.let { configure ->
                         features = (AndroidTvProtocol.getFieldVarint(configure, 1) ?: 0) and AndroidTvProtocol.REMOTE_FEATURES
                         require(features and 2 != 0) { "La TV no permite enviar teclas." }
+                        negotiatedFeatures = features
                     }
                     AndroidTvProtocol.buildRemoteResponse(packet, features)?.let { writeRemotePacket(out, it) }
                     require(!AndroidTvProtocol.hasField(packet, 3)) { "La TV rechazó el canal de control." }
@@ -348,6 +351,7 @@ class AndroidTvClient(
         remoteSocket = null
         remoteOutput = null
         remoteInput = null
+        negotiatedFeatures = 0
         isConnected = false
         remoteReaderJob?.cancel()
         remoteReaderJob = null
@@ -416,6 +420,23 @@ class AndroidTvClient(
                 .build()
             unsafeOkHttpClient.newCall(req).execute().use { it.isSuccessful }
         } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Sends an app-link request over the authenticated Remote v2 session. */
+    suspend fun launchAppLink(appLink: String): Boolean = withContext(Dispatchers.IO) {
+        if (appLink.isBlank() || activeIp.isBlank() || !isPaired) return@withContext false
+        if (!isConnected && !initRemoteV2Connection(activeIp)) return@withContext false
+        if (negotiatedFeatures and AndroidTvProtocol.APP_LINK_FEATURE == 0) return@withContext false
+        try {
+            val out = remoteOutput ?: return@withContext false
+            writeRemotePacket(out, AndroidTvProtocol.buildRemoteAppLinkLaunch(appLink))
+            true
+        } catch (e: Exception) {
+            closeRemoteSocket()
+            currentCoroutineContext().ensureActive()
+            onConnectionChanged?.invoke(false, "Could not send the app launch request. Reconnect the TV.")
             false
         }
     }

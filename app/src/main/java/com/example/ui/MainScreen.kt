@@ -624,6 +624,7 @@ fun MainScreen(
                             RemoteDpad(
                                 deviceType = currentType,
                                 onKeyPress = { key -> viewModel.sendKey(key) },
+                                onBrightnessClick = { viewModel.openBrightness() },
                                 isPlaying = isPlaying,
                                 onTogglePlayPause = { viewModel.togglePlayPause() },
                                 modifier = Modifier.fillMaxSize()

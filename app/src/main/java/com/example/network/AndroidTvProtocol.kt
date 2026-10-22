@@ -17,8 +17,9 @@ object AndroidTvProtocol {
 
     const val PORT_PAIRING = 6467
     const val PORT_REMOTE = 6466
-    // Ping, keys, power, volume. Do not advertise unimplemented voice/IME.
-    const val REMOTE_FEATURES = 1 or 2 or 32 or 64
+    // Ping, keys, power, volume and app links. Do not advertise voice/IME.
+    const val APP_LINK_FEATURE = 512
+    const val REMOTE_FEATURES = 1 or 2 or 32 or 64 or APP_LINK_FEATURE
 
     // RemoteDirection (port 6466)
     const val REMOTE_DIRECTION_UNKNOWN = 0
@@ -286,6 +287,15 @@ object AndroidTvProtocol {
         val remoteMsg = ByteArrayOutputStream()
         writeFieldBytes(remoteMsg, 10, keyInject.toByteArray()) // field 10 = remote_key_inject
         return remoteMsg.toByteArray()
+    }
+
+    /** RemoteMessage field 90 contains RemoteAppLinkLaunchRequest (app_link = 1). */
+    fun buildRemoteAppLinkLaunch(appLink: String): ByteArray {
+        val request = ByteArrayOutputStream()
+        writeFieldString(request, 1, appLink)
+        val message = ByteArrayOutputStream()
+        writeFieldBytes(message, 90, request.toByteArray())
+        return message.toByteArray()
     }
 
     /**
