@@ -192,25 +192,8 @@ class SamsungTvClient(
     }
 
     fun sendKey(key: RemoteKey): Boolean {
-        return when (key) {
-            RemoteKey.PAUSE -> {
-                // Ensure pause works on all Samsung Tizen apps (YouTube, Netflix, Prime, TV Plus)
-                val ok1 = sendRawKey("KEY_PAUSE")
-                val ok2 = sendRawKey("KEY_PLAYPAUSE")
-                ok1 || ok2
-            }
-            RemoteKey.PLAY -> {
-                val ok1 = sendRawKey("KEY_PLAY")
-                val ok2 = sendRawKey("KEY_PLAYPAUSE")
-                ok1 || ok2
-            }
-            RemoteKey.PLAY_PAUSE -> {
-                val ok1 = sendRawKey("KEY_PLAYPAUSE")
-                val ok2 = sendRawKey("KEY_PLAYBACK")
-                ok1 || ok2
-            }
-            else -> sendRawKey(key.samsungKey)
-        }
+        // A toggle after PLAY or PAUSE can immediately undo the requested action.
+        return sendRawKey(key.samsungKey)
     }
 
     private fun sendRawKey(samsungKey: String): Boolean {

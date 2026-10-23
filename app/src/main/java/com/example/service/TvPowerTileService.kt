@@ -1,5 +1,6 @@
 package com.example.service
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -41,9 +42,9 @@ class TvPowerTileService : TileService() {
                 withContext(Dispatchers.Main) {
                     val tile = qsTile ?: return@withContext
                     tile.label = "Encender TV"
-                    tile.subtitle = defaultTv?.name ?: "Wake-on-LAN"
                     tile.state = if (defaultTv != null) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        tile.subtitle = defaultTv?.name ?: "Wake-on-LAN"
                         tile.contentDescription = "Encender ${defaultTv?.name ?: "TV"} con Wake-on-LAN"
                     }
                     tile.updateTile()
@@ -54,6 +55,8 @@ class TvPowerTileService : TileService() {
         }
     }
 
+    // The Intent overload is required on API 24–33; API 34+ uses PendingIntent below.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
 
@@ -89,7 +92,9 @@ class TvPowerTileService : TileService() {
             // Provide visual feedback in the tile
             withContext(Dispatchers.Main) {
                 qsTile?.apply {
-                    subtitle = "Enviando señal..."
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        subtitle = "Enviando señal..."
+                    }
                     updateTile()
                 }
             }
@@ -109,10 +114,12 @@ class TvPowerTileService : TileService() {
                 ).show()
 
                 qsTile?.apply {
-                    subtitle = when {
-                        result.success -> "Señal enviada"
-                        result.resolvedMac == null -> "Falta MAC"
-                        else -> "Error de red"
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        subtitle = when {
+                            result.success -> "Señal enviada"
+                            result.resolvedMac == null -> "Falta MAC"
+                            else -> "Error de red"
+                        }
                     }
                     updateTile()
                 }
@@ -122,7 +129,9 @@ class TvPowerTileService : TileService() {
 
             withContext(Dispatchers.Main) {
                 qsTile?.apply {
-                    subtitle = defaultTv.name
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        subtitle = defaultTv.name
+                    }
                     updateTile()
                 }
             }

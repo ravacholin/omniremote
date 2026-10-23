@@ -26,7 +26,7 @@ class StreamingCatalogTest {
             for (type in DeviceType.entries) {
                 val deviceId = db.tvDeviceDao().insert(TvDeviceEntity(name = type.name, deviceType = type, ipAddress = "192.168.1.20"))
                 val dao = db.tvAppDao()
-                val repository = TvAppRepository(dao)
+                val repository = TvAppRepository(db)
                 // Existing user library: Disney already exists with its own name and preferences.
                 val disneyId = if (type == DeviceType.ANDROID_TV) "com.disney.disneyplus" else "3201901017640"
                 val savedId = dao.insert(TvAppEntity(deviceId = deviceId, appName = "My Disney", appIdentifier = disneyId,
@@ -63,7 +63,7 @@ class StreamingCatalogTest {
                 val dao = db.tvAppDao()
                 val savedMax = dao.insert(TvAppEntity(deviceId = deviceId, appName = "Max / HBO", appIdentifier = maxId, launchCount = 9, isFavorite = false))
                 val savedParamount = dao.insert(TvAppEntity(deviceId = deviceId, appName = "Paramount+", appIdentifier = paramountId, launchCount = 6, isFavorite = true))
-                TvAppRepository(dao).ensureDefaultAppsForDevice(deviceId, type)
+                TvAppRepository(db).ensureDefaultAppsForDevice(deviceId, type)
                 val max = dao.getAppById(savedMax)!!
                 val paramount = dao.getAppById(savedParamount)!!
                 assertEquals(if (type == DeviceType.ANDROID_TV) "com.wbd.stream" else "3202301029760", max.appIdentifier)

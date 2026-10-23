@@ -211,7 +211,7 @@ class UnifiedTvController(
         androidClient.cancelPairing()
     }
 
-    private fun disconnectCurrent() {
+    fun disconnectCurrent() {
         cancelBluetoothNavigation()
         connectionJob?.cancel()
         connectionJob = null

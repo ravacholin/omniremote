@@ -40,7 +40,7 @@ class TvDimmerAppsTest {
     fun `new Android TVs include TvDimmer in Tools without changing Samsung defaults`() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         try {
-            val repo = TvAppRepository(db.tvAppDao())
+            val repo = TvAppRepository(db)
             val androidId = db.tvDeviceDao().insert(device("Android", DeviceType.ANDROID_TV))
             val samsungId = db.tvDeviceDao().insert(device("Samsung", DeviceType.SAMSUNG_TIZEN))
             repo.ensureDefaultAppsForDevice(androidId, DeviceType.ANDROID_TV)
@@ -84,7 +84,7 @@ class TvDimmerAppsTest {
         }
 
         val db = AppDatabase.getInstance(context)
-        val repo = TvAppRepository(db.tvAppDao())
+        val repo = TvAppRepository(db)
         val apps = repo.getAppsForDevice(androidId).first()
         assertEquals(1, apps.count { it.appIdentifier == packageName })
         assertEquals(unrelated.copy(id = unrelatedId), apps.single { it.id == unrelatedId })
