@@ -8,43 +8,53 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
+/** Every edge in the app is square. */
+val Sharp = RoundedCornerShape(0.dp)
+
 private val DarkColorScheme = darkColorScheme(
-    primary = BrutalistWhite,
-    onPrimary = Color.Black,
-    primaryContainer = RemoteBtnActive,
-    onPrimaryContainer = BrutalistWhite,
-    secondary = BrutalistOffWhite,
-    onSecondary = Color.Black,
-    secondaryContainer = RemoteSurfaceVariant,
-    onSecondaryContainer = BrutalistWhite,
-    tertiary = BrutalistSilver,
-    background = RemoteDarkBg,
-    onBackground = TextPrimary,
-    surface = RemoteSurface,
-    onSurface = TextPrimary,
-    surfaceVariant = RemoteCardBg,
-    onSurfaceVariant = TextSecondary,
-    outline = RemoteBorder,
-    outlineVariant = RemoteBorderStrong,
-    error = PowerRedAccent,
-    onError = Color.Black
+    primary = Paper,
+    onPrimary = Void,
+    primaryContainer = Paper,
+    onPrimaryContainer = Void,
+    secondary = Ash,
+    onSecondary = Void,
+    secondaryContainer = Ink,
+    onSecondaryContainer = Paper,
+    tertiary = Ash,
+    background = Void,
+    onBackground = Paper,
+    surface = Void,
+    onSurface = Paper,
+    surfaceVariant = Ink,
+    onSurfaceVariant = Ash,
+    surfaceContainerLowest = Void,
+    surfaceContainerLow = Ink,
+    surfaceContainer = Ink,
+    surfaceContainerHigh = Ink,
+    surfaceContainerHighest = Ink,
+    surfaceTint = Color.Transparent,
+    outline = Hairline,
+    outlineVariant = Hairline,
+    error = Paper,
+    onError = Void,
+    scrim = Color(0xE6000000)
 )
 
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = true,
-    dynamicColor: Boolean = false, // Keep consistent cinema remote palette
+    dynamicColor: Boolean = false, // The palette is fixed monochrome
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
         colorScheme = DarkColorScheme,
         typography = Typography,
         shapes = Shapes(
-            extraSmall = RoundedCornerShape(2.dp),
-            small = RoundedCornerShape(2.dp),
-            medium = RoundedCornerShape(4.dp),
-            large = RoundedCornerShape(4.dp),
-            extraLarge = RoundedCornerShape(4.dp)
+            extraSmall = Sharp,
+            small = Sharp,
+            medium = Sharp,
+            large = Sharp,
+            extraLarge = Sharp
         ),
         content = content
     )

@@ -73,8 +73,8 @@ fun AndroidTvPairingDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag("android_tv_pairing_dialog"),
-        containerColor = Color(0xFF0C0C0C),
-        shape = RoundedCornerShape(4.dp),
+        containerColor = Ink,
+        shape = Sharp,
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -83,8 +83,8 @@ fun AndroidTvPairingDialog(
                 Box(
                     modifier = Modifier
                         .size(38.dp)
-                        .background(Color(0xFF181818), RoundedCornerShape(2.dp))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp)),
+                        .background(Ink, Sharp)
+                        .border(1.dp, RemoteBorderStrong, Sharp),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -122,8 +122,8 @@ fun AndroidTvPairingDialog(
             ) {
                 if (isLoading && errorMessage.isNullOrBlank()) {
                     Surface(
-                        color = Color(0xFF121212),
-                        shape = RoundedCornerShape(2.dp),
+                        color = Ink,
+                        shape = Sharp,
                         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
                     ) {
                         Row(
@@ -157,8 +157,8 @@ fun AndroidTvPairingDialog(
                     }
                 } else if (canEnterPin) {
                     Surface(
-                        color = Color(0xFF121212),
-                        shape = RoundedCornerShape(2.dp),
+                        color = Ink,
+                        shape = Sharp,
                         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
                     ) {
                         Row(
@@ -217,8 +217,8 @@ fun AndroidTvPairingDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.White,
                         unfocusedBorderColor = RemoteBorderStrong,
-                        focusedContainerColor = Color(0xFF141414),
-                        unfocusedContainerColor = Color(0xFF141414),
+                        focusedContainerColor = Ink,
+                        unfocusedContainerColor = Ink,
                         focusedLabelColor = Color.White,
                         unfocusedLabelColor = TextMuted,
                         cursorColor = Color.White
@@ -228,9 +228,9 @@ fun AndroidTvPairingDialog(
                 // Error State with Retry Button
                 AnimatedVisibility(visible = !errorMessage.isNullOrBlank()) {
                     Surface(
-                        color = Color(0xFF161616),
-                        shape = RoundedCornerShape(2.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF555555))
+                        color = Ink,
+                        shape = Sharp,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Hairline)
                     ) {
                         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
@@ -250,7 +250,7 @@ fun AndroidTvPairingDialog(
                                 Surface(
                                     onClick = { pinText = ""; onRetry() },
                                     color = Color.White,
-                                    shape = RoundedCornerShape(2.dp),
+                                    shape = Sharp,
                                     modifier = Modifier.align(Alignment.End).testTag("pairing_retry_button")
                                 ) {
                                     Text(
@@ -270,8 +270,8 @@ fun AndroidTvPairingDialog(
                 // Success State
                 AnimatedVisibility(visible = !successMessage.isNullOrBlank()) {
                     Surface(
-                        color = Color(0xFF141414),
-                        shape = RoundedCornerShape(2.dp),
+                        color = Ink,
+                        shape = Sharp,
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White)
                     ) {
                         Row(
@@ -307,8 +307,8 @@ fun AndroidTvPairingDialog(
                     onSubmitPin(pinText)
                 },
                 enabled = canSubmit,
-                color = if (canSubmit) Color.White else Color(0xFF222222),
-                shape = RoundedCornerShape(2.dp),
+                color = if (canSubmit) Color.White else Hairline,
+                shape = Sharp,
                 modifier = Modifier.testTag("pairing_submit_button")
             ) {
                 Box(
@@ -336,7 +336,7 @@ fun AndroidTvPairingDialog(
         dismissButton = {
             Surface(
                 onClick = onDismiss,
-                shape = RoundedCornerShape(2.dp),
+                shape = Sharp,
                 color = Color.Transparent,
                 border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
             ) {

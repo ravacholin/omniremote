@@ -170,7 +170,7 @@ fun ScanResultsScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = RemoteCardBg,
-                shape = RoundedCornerShape(4.dp),
+                shape = Sharp,
                 border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -233,7 +233,7 @@ fun ScanResultsScreen(
                             Button(
                                 onClick = onStartScan,
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(2.dp),
+                                shape = Sharp,
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.testTag("rescan_header_button")
                             ) {
@@ -263,8 +263,8 @@ fun ScanResultsScreen(
                         items(serviceTypes) { sType ->
                             Box(
                                 modifier = Modifier
-                                    .background(Color(0xFF0F172A), RoundedCornerShape(2.dp))
-                                    .border(0.5.dp, RemoteBorder, RoundedCornerShape(2.dp))
+                                    .background(Ink, Sharp)
+                                    .border(0.5.dp, RemoteBorder, Sharp)
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
@@ -311,7 +311,7 @@ fun ScanResultsScreen(
                         .fillMaxWidth()
                         .weight(1f),
                     color = RemoteCardBg,
-                    shape = RoundedCornerShape(4.dp),
+                    shape = Sharp,
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                 ) {
                     Column(
@@ -324,7 +324,7 @@ fun ScanResultsScreen(
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
-                                .background(Color(0xFF1E293B), CircleShape)
+                                .background(Ink, CircleShape)
                                 .border(1.dp, RemoteBorder, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
@@ -375,7 +375,7 @@ fun ScanResultsScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             OutlinedButton(
                                 onClick = onDirectIpClick,
-                                shape = RoundedCornerShape(2.dp)
+                                shape = Sharp
                             ) {
                                 Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -385,7 +385,7 @@ fun ScanResultsScreen(
                             Button(
                                 onClick = onStartScan,
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(2.dp)
+                                shape = Sharp
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -414,7 +414,7 @@ fun ScanResultsScreen(
                         OutlinedButton(
                             onClick = onDirectIpClick,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(4.dp)
+                            shape = Sharp
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
@@ -435,11 +435,11 @@ fun NsdDiscoveredTvCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(2.dp))
-            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+            .clip(Sharp)
+            .border(1.dp, RemoteBorderStrong, Sharp)
             .clickable { onConnect() }
             .testTag("discovered_tv_${tv.ipAddress.replace(".", "_")}"),
-        color = Color(0xFF0C0C0C)
+        color = Ink
     ) {
         Row(
             modifier = Modifier
@@ -456,8 +456,8 @@ fun NsdDiscoveredTvCard(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .background(Color(0xFF181818), RoundedCornerShape(2.dp))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp)),
+                        .background(Ink, Sharp)
+                        .border(1.dp, RemoteBorderStrong, Sharp),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -487,8 +487,8 @@ fun NsdDiscoveredTvCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .background(Color(0xFF1E1E1E), RoundedCornerShape(2.dp))
-                                .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+                                .background(Ink, Sharp)
+                                .border(1.dp, RemoteBorderStrong, Sharp)
                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Text(
@@ -533,7 +533,7 @@ fun NsdDiscoveredTvCard(
             Surface(
                 onClick = onConnect,
                 color = Color.White,
-                shape = RoundedCornerShape(2.dp),
+                shape = Sharp,
                 modifier = Modifier.testTag("connect_btn_${tv.ipAddress.replace(".", "_")}")
             ) {
                 Text(
