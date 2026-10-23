@@ -79,7 +79,8 @@ fun RemoteNumpad(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp, vertical = 4.dp)
             .testTag("remote_numpad_container"),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -88,7 +89,7 @@ fun RemoteNumpad(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color(0xFF0C0C0C),
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(0.dp),
             border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
         ) {
             Column(
@@ -109,8 +110,7 @@ fun RemoteNumpad(
                         placeholder = {
                             Text(
                                 "Escribir en la TV…",
-                                fontSize = 11.sp,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontSize = 14.sp,
                                 color = TextMuted
                             )
                         },
@@ -149,11 +149,11 @@ fun RemoteNumpad(
                             containerColor = Color.White,
                             contentColor = Color.Black
                         ),
-                        shape = RoundedCornerShape(2.dp)
+                        shape = RoundedCornerShape(0.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
+                            contentDescription = "Enviar texto a la TV",
                             tint = Color.Black,
                             modifier = Modifier.size(17.dp)
                         )
@@ -169,10 +169,10 @@ fun RemoteNumpad(
                 .padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            ColorButton(bgColor = Color(0xFFE4E4E7), textColor = Color.Black, label = "[A]", onClick = { handlePress(RemoteKey.COLOR_RED) }, testTag = "key_color_red")
-            ColorButton(bgColor = Color(0xFFA1A1AA), textColor = Color.Black, label = "[B]", onClick = { handlePress(RemoteKey.COLOR_GREEN) }, testTag = "key_color_green")
-            ColorButton(bgColor = Color(0xFF3F3F46), textColor = Color.White, label = "[C]", onClick = { handlePress(RemoteKey.COLOR_YELLOW) }, testTag = "key_color_yellow")
-            ColorButton(bgColor = Color(0xFF18181B), textColor = Color.White, label = "[D]", onClick = { handlePress(RemoteKey.COLOR_BLUE) }, testTag = "key_color_blue")
+            ColorButton(bgColor = RemoteSurface, textColor = TextPrimary, label = "A", onClick = { handlePress(RemoteKey.COLOR_RED) }, testTag = "key_color_red")
+            ColorButton(bgColor = RemoteSurface, textColor = TextPrimary, label = "B", onClick = { handlePress(RemoteKey.COLOR_GREEN) }, testTag = "key_color_green")
+            ColorButton(bgColor = RemoteSurface, textColor = TextPrimary, label = "C", onClick = { handlePress(RemoteKey.COLOR_YELLOW) }, testTag = "key_color_yellow")
+            ColorButton(bgColor = RemoteSurface, textColor = TextPrimary, label = "D", onClick = { handlePress(RemoteKey.COLOR_BLUE) }, testTag = "key_color_blue")
         }
 
         // 3x4 Number Keypad Grid
@@ -221,19 +221,19 @@ fun NumButton(
 
     Surface(
         modifier = Modifier
-            .size(width = 88.dp, height = 52.dp)
+            .size(width = 80.dp, height = 64.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(2.dp))
+            .clip(RoundedCornerShape(0.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
             ) { onClick() }
             .testTag(testTag),
         color = if (isPressed) Color.White else Color(0xFF101010),
-        shape = RoundedCornerShape(2.dp),
+        shape = RoundedCornerShape(0.dp),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             if (isPressed) Color.White else RemoteBorderStrong
@@ -247,14 +247,17 @@ fun NumButton(
             Text(
                 text = number,
                 style = MaterialTheme.typography.titleMedium.copy(
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    fontWeight = FontWeight.Black,
+                    fontWeight = FontWeight.Medium,
                     color = if (isPressed) Color.Black else Color.White,
-                    fontSize = if (number.length > 2) 12.sp else 18.sp,
-                    letterSpacing = 1.sp
+                    fontSize = if (number.length > 2) 11.sp else 24.sp,
+                    letterSpacing = 0.sp
                 )
             )
-
+            if (label != null) Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 0.5.sp),
+                color = if (isPressed) Color.Black else TextMuted
+            )
         }
     }
 }
@@ -277,14 +280,14 @@ fun ColorButton(
 
     Box(
         modifier = Modifier
-            .size(width = 68.dp, height = 48.dp)
+            .size(width = 56.dp, height = 48.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(2.dp))
+            .clip(RoundedCornerShape(0.dp))
             .background(if (isPressed) Color.White else bgColor)
-            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(0.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null

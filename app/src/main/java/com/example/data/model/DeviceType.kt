@@ -21,7 +21,7 @@ enum class DeviceType(
         shortName = "Google TV",
         brandTag = "GOOGLE // TV",
         defaultPort = 6466,
-        brandColorHex = 0xFFE4E4E7 // Architectural Platinum Silver
+        brandColorHex = 0xFFE5E5E5 // Architectural Platinum Silver
     );
 
     val brandColor: Color

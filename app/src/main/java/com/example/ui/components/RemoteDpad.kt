@@ -187,9 +187,9 @@ fun RemoteDpad(
             Box(
                 modifier = Modifier
                     .size(dpadDiameter)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(RemoteSurfaceVariant)
-                    .border(1.5.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(0.dp))
+                    .background(RemoteSurface)
+                    .border(1.dp, RemoteBorderStrong, RoundedCornerShape(0.dp))
                     .testTag("dpad_circle"),
                 contentAlignment = Alignment.Center
             ) {
@@ -211,7 +211,7 @@ fun RemoteDpad(
                             scaleX = upScale
                             scaleY = upScale
                         }
-                        .clip(RoundedCornerShape(2.dp))
+                        .clip(RoundedCornerShape(0.dp))
                         .background(if (upPressed) Color.White.copy(alpha = 0.25f) else Color.Transparent)
                         .clickable(
                             interactionSource = upInteraction,
@@ -246,7 +246,7 @@ fun RemoteDpad(
                             scaleX = downScale
                             scaleY = downScale
                         }
-                        .clip(RoundedCornerShape(2.dp))
+                        .clip(RoundedCornerShape(0.dp))
                         .background(if (downPressed) Color.White.copy(alpha = 0.25f) else Color.Transparent)
                         .clickable(
                             interactionSource = downInteraction,
@@ -281,7 +281,7 @@ fun RemoteDpad(
                             scaleX = leftScale
                             scaleY = leftScale
                         }
-                        .clip(RoundedCornerShape(2.dp))
+                        .clip(RoundedCornerShape(0.dp))
                         .background(if (leftPressed) Color.White.copy(alpha = 0.25f) else Color.Transparent)
                         .clickable(
                             interactionSource = leftInteraction,
@@ -316,7 +316,7 @@ fun RemoteDpad(
                             scaleX = rightScale
                             scaleY = rightScale
                         }
-                        .clip(RoundedCornerShape(2.dp))
+                        .clip(RoundedCornerShape(0.dp))
                         .background(if (rightPressed) Color.White.copy(alpha = 0.25f) else Color.Transparent)
                         .clickable(
                             interactionSource = rightInteraction,
@@ -349,12 +349,12 @@ fun RemoteDpad(
                             scaleX = okScale
                             scaleY = okScale
                         }
-                        .clip(RoundedCornerShape(2.dp))
+                        .clip(RoundedCornerShape(0.dp))
                         .background(if (okPressed) BrutalistOffWhite else Color.White)
                         .border(
                             if (okPressed) 2.dp else 1.dp,
                             Color.White,
-                            RoundedCornerShape(2.dp)
+                            RoundedCornerShape(0.dp)
                         )
                         .pointerInput(Unit) {
                             var dragOffset = Offset.Zero
@@ -433,7 +433,7 @@ fun RemoteDpad(
                 // Playback Control Pod with Prominent Hero Play/Pause Button
                 Surface(
                     color = Color(0xFF0C0C0C),
-                    shape = RoundedCornerShape(4.dp),
+                    shape = RoundedCornerShape(0.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
                 ) {
                     Column(
@@ -493,8 +493,7 @@ fun RemoteDpad(
                 )
             }
 
-            // Quick Access Explicit Media Controls: PLAY, PAUSE, STOP
-            // Brutalist monochromatic tactile pills
+            // Direct playback controls stay available beneath the main control group.
             Row(
                 modifier = Modifier.padding(top = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -502,23 +501,23 @@ fun RemoteDpad(
             ) {
                 MediaQuickActionPill(
                     icon = RemoteIcons.Play,
-                    label = "PLAY",
+                    label = "Play",
                     onClick = { handlePress(RemoteKey.PLAY) },
                     accentColor = Color.White,
                     testTag = "key_explicit_play"
                 )
                 MediaQuickActionPill(
                     icon = RemoteIcons.Pause,
-                    label = "PAUSE",
+                    label = "Pausa",
                     onClick = { handlePress(RemoteKey.PAUSE) },
-                    accentColor = Color(0xFFD4D4D8),
+                    accentColor = Color(0xFFD4D4D4),
                     testTag = "key_explicit_pause"
                 )
                 MediaQuickActionPill(
                     icon = RemoteIcons.Stop,
-                    label = "STOP",
+                    label = "Stop",
                     onClick = { handlePress(RemoteKey.STOP) },
-                    accentColor = Color(0xFFA1A1AA),
+                    accentColor = Color(0xFFA3A3A3),
                     testTag = "key_explicit_stop"
                 )
             }
@@ -558,12 +557,12 @@ fun HeroPlayPauseButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(2.dp))
-            .background(if (isPressed) Color(0xFFE4E4E7) else Color.White)
+            .clip(RoundedCornerShape(0.dp))
+            .background(if (isPressed) Color(0xFFE5E5E5) else Color.White)
             .border(
                 width = if (isPressed) 2.dp else 1.5.dp,
                 color = if (isPressed) Color(0xFF888888) else Color.White,
-                shape = RoundedCornerShape(2.dp)
+                shape = RoundedCornerShape(0.dp)
             )
             .clickable(
                 interactionSource = interactionSource,
@@ -601,31 +600,32 @@ fun MediaQuickActionPill(
     Surface(
         modifier = modifier
             .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(2.dp))
+            .clip(RoundedCornerShape(0.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
             ) { onClick() }
             .testTag(testTag),
         color = if (isPressed) Color.White else Color(0xFF101010),
-        shape = RoundedCornerShape(2.dp),
+        shape = RoundedCornerShape(0.dp),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             if (isPressed) Color.White else RemoteBorderStrong
         )
     ) {
         Row(
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
             Icon(
                 imageVector = icon,
-                contentDescription = label,
+                contentDescription = null,
                 tint = if (isPressed) Color.Black else TextPrimary,
                 modifier = Modifier.size(22.dp)
             )
-
+            Spacer(Modifier.width(6.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall, color = if (isPressed) Color.Black else TextSecondary)
         }
     }
 }
@@ -660,12 +660,12 @@ fun TactileMediaButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(2.dp))
+            .clip(RoundedCornerShape(0.dp))
             .background(if (isPressed) Color.White else Color(0xFF121212))
             .border(
                 1.dp,
                 if (isPressed) Color.White else RemoteBorderStrong,
-                RoundedCornerShape(2.dp)
+                RoundedCornerShape(0.dp)
             )
             .clickable(
                 interactionSource = interactionSource,
@@ -718,17 +718,17 @@ fun CircleRemoteButton(
                     scaleX = scale
                     scaleY = scale
                 }
-                .clip(RoundedCornerShape(2.dp))
+                .clip(RoundedCornerShape(0.dp))
                 .clickable(
                     interactionSource = interactionSource,
                     indication = null
                 ) { onClick() }
                 .testTag(testTag),
             color = if (isPressed) Color.White else RemoteBtnDefault,
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(0.dp),
             border = androidx.compose.foundation.BorderStroke(
                 if (isPressed) 1.5.dp else 1.dp,
-                if (isPressed) Color.White else RemoteBorderStrong
+                if (isPressed) Color.White else RemoteBorder
             )
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -740,7 +740,17 @@ fun CircleRemoteButton(
                 )
             }
         }
-
+        Text(
+            text = when (label) {
+                "Back" -> "Atrás"
+                "Home" -> "Inicio"
+                "Menu" -> "Menú"
+                "Brightness" -> "Brillo"
+                else -> label
+            },
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 0.sp),
+            color = TextSecondary
+        )
     }
 }
 
@@ -763,7 +773,7 @@ fun RockerColumn(
 ) {
     Surface(
         color = Color(0xFF0C0C0C),
-        shape = RoundedCornerShape(4.dp),
+        shape = RoundedCornerShape(0.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
     ) {
         Column(
@@ -772,6 +782,12 @@ fun RockerColumn(
                 .padding(vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Text(
+                text = if (testTagPrefix == "vol") "VOL" else "CANAL",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                color = TextMuted,
+                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+            )
             val topInteraction = remember { MutableInteractionSource() }
             val topPressed by topInteraction.collectIsPressedAsState()
             val topScale by animateFloatAsState(
@@ -787,7 +803,7 @@ fun RockerColumn(
                         scaleX = topScale
                         scaleY = topScale
                     }
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .background(if (topPressed) Color.White else Color.Transparent)
                     .clickable(
                         interactionSource = topInteraction,
@@ -819,9 +835,9 @@ fun RockerColumn(
                         scaleX = centerScale
                         scaleY = centerScale
                     }
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .background(if (centerPressed) Color.White else Color(0xFF181818))
-                    .border(1.dp, if (centerPressed) Color.White else RemoteBorderStrong, RoundedCornerShape(2.dp))
+                    .border(1.dp, if (centerPressed) Color.White else RemoteBorderStrong, RoundedCornerShape(0.dp))
                     .clickable(
                         interactionSource = centerInteraction,
                         indication = null
@@ -864,7 +880,7 @@ fun RockerColumn(
                         scaleX = bottomScale
                         scaleY = bottomScale
                     }
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .background(if (bottomPressed) Color.White else Color.Transparent)
                     .clickable(
                         interactionSource = bottomInteraction,
@@ -907,9 +923,9 @@ fun IconButtonMini(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(2.dp))
+            .clip(RoundedCornerShape(0.dp))
             .background(if (isPressed) Color.White else Color(0xFF141414))
-            .border(1.dp, if (isPressed) Color.White else RemoteBorderStrong, RoundedCornerShape(2.dp))
+            .border(1.dp, if (isPressed) Color.White else RemoteBorderStrong, RoundedCornerShape(0.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null

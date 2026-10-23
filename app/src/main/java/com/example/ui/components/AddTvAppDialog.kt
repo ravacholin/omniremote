@@ -58,6 +58,7 @@ import com.example.data.model.StreamingAppCatalog
 import com.example.ui.theme.RemoteBorder
 import com.example.ui.theme.RemoteCardBg
 import com.example.ui.theme.RemoteDarkBg
+import com.example.ui.theme.RemoteSurface
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -168,8 +169,8 @@ fun AddTvAppDialog(
                     items(POPULAR_PRESETS) { preset ->
                         Surface(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(2.dp))
-                                .border(1.dp, RemoteBorder, RoundedCornerShape(2.dp))
+                                .clip(RoundedCornerShape(0.dp))
+                                .border(1.dp, RemoteBorder, RoundedCornerShape(0.dp))
                                 .clickable {
                                     appName = preset.name
                                     appIdentifier = if (deviceType == DeviceType.SAMSUNG_TIZEN) preset.samsungId else preset.androidPkg
@@ -184,10 +185,11 @@ fun AddTvAppDialog(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .background(Color(preset.colorHex), CircleShape)
+                                Icon(
+                                    getAppIconVector(preset.iconKey, preset.name),
+                                    contentDescription = null,
+                                    tint = Color(preset.colorHex),
+                                    modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
@@ -273,7 +275,7 @@ fun AddTvAppDialog(
 
                 // Color Selection
                 Text(
-                    text = "BRAND COLOR ACCENT",
+                    text = "COLOR DEL ICONO",
                     style = MaterialTheme.typography.labelSmall.copy(
                         color = TextMuted,
                         fontWeight = FontWeight.Bold,
@@ -281,32 +283,39 @@ fun AddTvAppDialog(
                     )
                 )
 
-                Row(
+                LazyRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    APP_COLORS.take(7).forEach { colorLong ->
+                    items(APP_COLORS) { colorLong ->
                         val color = Color(colorLong)
                         val isSelected = selectedColor == colorLong
                         Box(
                             modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(color)
+                                .size(48.dp)
+                                .background(RemoteSurface)
                                 .border(
                                     width = if (isSelected) 2.5.dp else 1.dp,
                                     color = if (isSelected) Color.White else RemoteBorder,
-                                    shape = CircleShape
+                                    shape = RoundedCornerShape(0.dp)
                                 )
-                                .clickable { selectedColor = colorLong }
-                        )
+                                .clickable { selectedColor = colorLong },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                getAppIconVector(iconKey, appName),
+                                contentDescription = "Color del icono ${APP_COLORS.indexOf(colorLong) + 1}",
+                                tint = color,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
 
                 // Add to Favorites Switch
                 Surface(
                     color = RemoteDarkBg,
-                    shape = RoundedCornerShape(4.dp),
+                    shape = RoundedCornerShape(0.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                 ) {
                     Row(
@@ -320,12 +329,12 @@ fun AddTvAppDialog(
                             Icon(
                                 imageVector = if (isFavorite) Icons.Default.Star else Icons.Outlined.StarOutline,
                                 contentDescription = null,
-                                tint = if (isFavorite) Color(0xFFF59E0B) else TextMuted,
+                                tint = if (isFavorite) Color.White else TextMuted,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Mark as Favorite (⭐)",
+                                text = "Guardar en favoritas",
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     color = TextPrimary,
                                     fontWeight = FontWeight.Medium
@@ -335,7 +344,7 @@ fun AddTvAppDialog(
                         Switch(
                             checked = isFavorite,
                             onCheckedChange = { isFavorite = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFF59E0B))
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White)
                         )
                     }
                 }
@@ -351,7 +360,7 @@ fun AddTvAppDialog(
                 },
                 enabled = appName.isNotBlank() && appIdentifier.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = deviceType.brandColor),
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(0.dp),
                 modifier = Modifier.testTag("confirm_add_app_button")
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
@@ -360,7 +369,7 @@ fun AddTvAppDialog(
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss, shape = RoundedCornerShape(2.dp)) {
+            OutlinedButton(onClick = onDismiss, shape = RoundedCornerShape(0.dp)) {
                 Text("Cancel", color = TextSecondary)
             }
         }

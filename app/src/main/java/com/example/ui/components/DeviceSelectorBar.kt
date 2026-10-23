@@ -95,12 +95,18 @@ fun DeviceSelectorBar(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 64.dp)
-                        .clip(RoundedCornerShape(2.dp))
+                        .clip(RoundedCornerShape(0.dp))
                         .clickable { expanded = true }
                         .testTag("device_dropdown_trigger")
                         .padding(vertical = 4.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
+                    Text(
+                        text = "OMNI / REMOTE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -135,7 +141,7 @@ fun DeviceSelectorBar(
                     onDismissRequest = { expanded = false },
                     modifier = Modifier
                         .background(RemoteCardBg)
-                        .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp))
+                        .border(1.dp, RemoteBorder, RoundedCornerShape(0.dp))
                 ) {
                     Text(
                         text = "TUS TELEVISORES",
@@ -259,14 +265,14 @@ fun DeviceSelectorBar(
                 onClick = onPowerClick,
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .background(Color.White)
                     .testTag("power_button")
             ) {
                 Icon(RemoteIcons.Power, "Encender o apagar TV", tint = Color.Black, modifier = Modifier.size(26.dp))
             }
         }
-        HorizontalDivider(color = RemoteBorderStrong)
+        HorizontalDivider(color = RemoteBorder)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -297,15 +303,23 @@ private fun HeaderAction(
     Column(
         modifier = modifier
             .heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(if (active) RemoteBtnActive else RemoteSurface)
+            .clip(RoundedCornerShape(0.dp))
+            .background(if (active) RemoteSurfaceVariant else Color.Transparent)
+            .border(1.dp, if (active) RemoteBorderStrong else RemoteBorder, RoundedCornerShape(0.dp))
             .clickable(onClick = onClick)
             .testTag(tag)
             .padding(horizontal = 4.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
     ) {
-        Icon(icon, contentDescription = label, tint = TextPrimary, modifier = Modifier.size(24.dp))
+        Icon(icon, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(18.dp))
+        Text(
+            text = label,
+            color = if (active) TextPrimary else TextSecondary,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 0.sp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
