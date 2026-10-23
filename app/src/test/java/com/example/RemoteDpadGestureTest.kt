@@ -1,5 +1,9 @@
 package com.example
 
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
@@ -56,6 +60,27 @@ class RemoteDpadGestureTest {
         }
     }
 
+    @Test fun swipeFromArrowNavigatesInsteadOfClickingArrow() {
+        showDpad()
+        compose.onNodeWithTag("key_dpad_up").performTouchInput {
+            down(center)
+            moveTo(center + Offset(100f, 0f), delayMillis = 100)
+            up()
+        }
+        compose.runOnIdle { assertEquals(listOf(RemoteKey.RIGHT), keys) }
+    }
+
+    @Test fun swipeFromPadBackgroundNavigates() {
+        showDpad()
+        compose.onNodeWithTag("dpad_circle").performTouchInput {
+            val start = Offset(width * 0.25f, height * 0.25f)
+            down(start)
+            moveTo(start + Offset(100f, 0f), delayMillis = 100)
+            up()
+        }
+        compose.runOnIdle { assertEquals(listOf(RemoteKey.RIGHT), keys) }
+    }
+
     @Test fun tappingOkAndArrowsKeepsDpadActions() {
         showDpad()
         compose.onNodeWithTag("key_dpad_enter").performTouchInput { click() }
@@ -68,6 +93,29 @@ class RemoteDpadGestureTest {
         }
     }
 
+    @Test fun touchTapsOnArrowsKeepTheirDirections() {
+        showDpad()
+        for ((tag, key) in listOf(
+            "key_dpad_up" to RemoteKey.UP,
+            "key_dpad_down" to RemoteKey.DOWN,
+            "key_dpad_left" to RemoteKey.LEFT,
+            "key_dpad_right" to RemoteKey.RIGHT
+        )) {
+            compose.onNodeWithTag(tag).performTouchInput { click() }
+            compose.runOnIdle { assertEquals(listOf(key), keys.toList()); keys.clear() }
+        }
+    }
+
+    @Test fun smallFingerMovementStillTapsOk() {
+        showDpad()
+        compose.onNodeWithTag("key_dpad_enter").performTouchInput {
+            down(center)
+            moveTo(center + Offset(1f, 1f), delayMillis = 100)
+            up()
+        }
+        compose.runOnIdle { assertEquals(listOf(RemoteKey.ENTER), keys) }
+    }
+
     @Test fun cancelledSwipeSendsNoCommand() {
         showDpad()
         compose.onNodeWithTag("key_dpad_enter").performTouchInput {
@@ -76,6 +124,31 @@ class RemoteDpadGestureTest {
             cancel()
         }
         compose.runOnIdle { assertEquals(emptyList<RemoteKey>(), keys) }
+    }
+
+    @Test fun swipeInsideScrollableMenuDoesNotScrollOrClick() {
+        val scroll = ScrollState(0)
+        compose.setContent {
+            Box(Modifier.size(360.dp, 480.dp)) {
+                Column(Modifier.verticalScroll(scroll)) {
+                    RemoteDpad(
+                        DeviceType.SAMSUNG_TIZEN,
+                        onKeyPress = { keys.add(it) },
+                        onBrightnessClick = {},
+                        modifier = Modifier.height(650.dp)
+                    )
+                }
+            }
+        }
+        compose.onNodeWithTag("key_dpad_enter").performTouchInput {
+            down(center)
+            moveTo(center + Offset(0f, -100f), delayMillis = 100)
+            up()
+        }
+        compose.runOnIdle {
+            assertEquals(listOf(RemoteKey.UP), keys)
+            assertEquals(0, scroll.value)
+        }
     }
 
     @Test fun swipeOnShortScreenDoesNotScrollOrSelect() {

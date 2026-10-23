@@ -2,7 +2,8 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -111,7 +113,41 @@ fun RemoteDpad(
                 modifier = Modifier
                     .size(padSize)
                     .hairlineGrid()
-                    .testTag("dpad_circle"),
+                    .testTag("dpad_circle")
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(
+                                requireUnconsumed = false,
+                                pass = PointerEventPass.Initial
+                            )
+                            var swiping = false
+                            // Observe before child clicks and surrounding scroll containers.
+                            // Leave taps alone; once dragging, cancel the child click.
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: break
+                                if (change.isConsumed) break
+                                val displacement = change.position - down.position
+                                if (displacement.getDistance() > viewConfiguration.touchSlop) {
+                                    swiping = true
+                                }
+                                if (swiping) change.consume()
+                                if (!change.pressed) {
+                                    if (swiping && displacement != Offset.Zero) {
+                                        val key = if (abs(displacement.x) > abs(displacement.y)) {
+                                            if (displacement.x > 0) RemoteKey.RIGHT else RemoteKey.LEFT
+                                        } else {
+                                            if (displacement.y > 0) RemoteKey.DOWN else RemoteKey.UP
+                                        }
+                                        HapticUtil.triggerKeyHaptic(context)
+                                        currentOnKeyPress(key)
+                                    }
+                                    break
+                                }
+                            }
+                        }
+                    },
                 verticalArrangement = Arrangement.spacedBy(GridGap)
             ) {
                 val arrowSize = if (padSize >= 260.dp) 30.dp else 26.dp
@@ -129,30 +165,6 @@ fun RemoteDpad(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .pointerInput(Unit) {
-                                var dragOffset = Offset.Zero
-                                // The drag detector consumes movement after touch slop, cancelling
-                                // OK's click and keeping the surrounding column from scrolling.
-                                detectDragGestures(
-                                    onDragStart = { dragOffset = Offset.Zero },
-                                    onDragCancel = { dragOffset = Offset.Zero },
-                                    onDragEnd = {
-                                        if (dragOffset != Offset.Zero) {
-                                            val key = if (abs(dragOffset.x) > abs(dragOffset.y)) {
-                                                if (dragOffset.x > 0) RemoteKey.RIGHT else RemoteKey.LEFT
-                                            } else {
-                                                if (dragOffset.y > 0) RemoteKey.DOWN else RemoteKey.UP
-                                            }
-                                            HapticUtil.triggerKeyHaptic(context)
-                                            currentOnKeyPress(key)
-                                        }
-                                    },
-                                    onDrag = { change, amount ->
-                                        change.consume()
-                                        dragOffset += amount
-                                    }
-                                )
-                            }
                     ) { tint ->
                         Text(
                             text = "OK",
