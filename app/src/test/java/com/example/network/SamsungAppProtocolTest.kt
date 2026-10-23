@@ -10,6 +10,18 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class SamsungAppProtocolTest {
+    @Test fun `Flow prefers current app over legacy Cablevision regardless of TV ordering`() {
+        val legacy = SamsungInstalledApp("legacy-flow", "Cablevisión Flow", 2)
+        val current = SamsungInstalledApp("current-flow", "Flow", 2)
+        val personal = SamsungInstalledApp("personal-flow", "Personal Flow", 2)
+        for (apps in listOf(listOf(legacy, personal, current), listOf(current, legacy, personal))) {
+            val selected = SamsungAppProtocol.find(apps, "Flow")!!
+            val payload = JSONObject(SamsungAppProtocol.launch(selected))
+            assertEquals("current-flow", payload.getJSONObject("params").getJSONObject("data").getString("appId"))
+        }
+        assertEquals("personal-flow", SamsungAppProtocol.find(listOf(legacy, personal), "Flow")!!.id)
+    }
+
     @Test fun `Flow resolves its real TV-specific ID and does not match Samsung Flow`() {
         val apps = SamsungAppProtocol.installedApps(JSONObject("""{"event":"ed.installedApp.get","data":{"data":[
           {"appId":"wrong","name":"Samsung Flow","app_type":1},
