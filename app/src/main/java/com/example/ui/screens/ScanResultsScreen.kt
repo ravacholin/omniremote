@@ -112,14 +112,14 @@ fun ScanResultsScreen(
                 title = {
                     Column {
                         Text(
-                            text = "Network TV Scan Results",
+                            text = "Buscar televisores",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                         )
                         Text(
-                            text = "NsdManager • mDNS / DNS-SD Service Discovery",
+                            text = "Conecta la TV y el teléfono a la misma red Wi-Fi",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = MaterialTheme.colorScheme.primary,
                                 fontSize = 11.sp
@@ -131,7 +131,7 @@ fun ScanResultsScreen(
                     IconButton(onClick = onBackClick, modifier = Modifier.testTag("scan_back_button")) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = "Volver",
                             tint = TextPrimary
                         )
                     }
@@ -149,7 +149,7 @@ fun ScanResultsScreen(
                         IconButton(onClick = onStartScan, modifier = Modifier.testTag("rescan_nsd_button")) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
-                                contentDescription = "Rescan",
+                                contentDescription = "Buscar otra vez",
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -170,7 +170,7 @@ fun ScanResultsScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = RemoteCardBg,
-                shape = RoundedCornerShape(4.dp),
+                shape = RoundedCornerShape(0.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -207,14 +207,14 @@ fun ScanResultsScreen(
 
                             Column {
                                 Text(
-                                    text = if (isScanning) "Discovering TV Services..." else "Scan Complete",
+                                    text = if (isScanning) "Buscando televisores…" else "Búsqueda finalizada",
                                     style = MaterialTheme.typography.titleSmall.copy(
                                         fontWeight = FontWeight.Bold,
                                         color = TextPrimary
                                     )
                                 )
                                 Text(
-                                    text = "Wi-Fi IP: ${localIp ?: "Detecting..."} • Found ${discoveredTvs.size} TV(s)",
+                                    text = "${discoveredTvs.size} TV encontradas · IP ${localIp ?: "Detectando…"}",
                                     style = MaterialTheme.typography.bodySmall.copy(
                                         color = if (discoveredTvs.isNotEmpty()) StatusGreen else TextSecondary,
                                         fontSize = 11.sp
@@ -233,13 +233,13 @@ fun ScanResultsScreen(
                             Button(
                                 onClick = onStartScan,
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(2.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.testTag("rescan_header_button")
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Rescan", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                Text("Buscar otra vez", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                             }
                         }
                     }
@@ -248,7 +248,7 @@ fun ScanResultsScreen(
 
                     // NSD Active Protocols Pills Row
                     Text(
-                        text = "ACTIVE mDNS DISCOVERY LISTENERS",
+                        text = "SERVICIOS DE RED",
                         style = MaterialTheme.typography.labelSmall.copy(
                             color = TextMuted,
                             fontWeight = FontWeight.Bold,
@@ -263,8 +263,8 @@ fun ScanResultsScreen(
                         items(serviceTypes) { sType ->
                             Box(
                                 modifier = Modifier
-                                    .background(Color(0xFF0F172A), RoundedCornerShape(2.dp))
-                                    .border(0.5.dp, RemoteBorder, RoundedCornerShape(2.dp))
+                                    .background(RemoteSurface, RoundedCornerShape(0.dp))
+                                    .border(0.5.dp, RemoteBorder, RoundedCornerShape(0.dp))
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
@@ -287,7 +287,7 @@ fun ScanResultsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "DETECTED SMART TVS (${discoveredTvs.size})",
+                    text = "TELEVISORES ENCONTRADOS (${discoveredTvs.size})",
                     style = MaterialTheme.typography.labelSmall.copy(
                         color = TextMuted,
                         fontWeight = FontWeight.Bold,
@@ -296,7 +296,7 @@ fun ScanResultsScreen(
                 )
 
                 Text(
-                    text = "Tap to connect & control",
+                    text = "Toca una TV para conectar",
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = TextSecondary,
                         fontSize = 11.sp
@@ -311,7 +311,7 @@ fun ScanResultsScreen(
                         .fillMaxWidth()
                         .weight(1f),
                     color = RemoteCardBg,
-                    shape = RoundedCornerShape(4.dp),
+                    shape = RoundedCornerShape(0.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                 ) {
                     Column(
@@ -324,7 +324,7 @@ fun ScanResultsScreen(
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
-                                .background(Color(0xFF1E293B), CircleShape)
+                                .background(RemoteSurfaceVariant, CircleShape)
                                 .border(1.dp, RemoteBorder, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
@@ -347,7 +347,7 @@ fun ScanResultsScreen(
                         Spacer(modifier = Modifier.height(14.dp))
 
                         Text(
-                            text = if (isScanning) "Listening for Samsung & Android TVs..." else "No TV Services Broadcasted",
+                            text = if (isScanning) "Buscando tu TV…" else "Todavía no encontramos tu TV",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
@@ -358,9 +358,9 @@ fun ScanResultsScreen(
 
                         Text(
                             text = if (isScanning)
-                                "Querying mDNS service records across your local Wi-Fi network. Make sure your TV is turned on."
+                                "Enciende la TV y comprueba que esté conectada a la misma red Wi-Fi."
                             else
-                                "No mDNS TV services were discovered yet. Some routers filter multicast packets between devices. You can connect directly by entering your TV's IP address.",
+                                "Comprueba que tu TV esté encendida y en la misma red Wi-Fi. También puedes añadirla con su dirección IP.",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = TextMuted,
                                 fontSize = 12.sp,
@@ -375,21 +375,21 @@ fun ScanResultsScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             OutlinedButton(
                                 onClick = onDirectIpClick,
-                                shape = RoundedCornerShape(2.dp)
+                                shape = RoundedCornerShape(0.dp)
                             ) {
                                 Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Enter IP Directly")
+                                Text("Usar IP")
                             }
 
                             Button(
                                 onClick = onStartScan,
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(2.dp)
+                                shape = RoundedCornerShape(0.dp)
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Rescan", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("Buscar otra vez", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -414,7 +414,7 @@ fun ScanResultsScreen(
                         OutlinedButton(
                             onClick = onDirectIpClick,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(0.dp)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
@@ -435,8 +435,8 @@ fun NsdDiscoveredTvCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(2.dp))
-            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+            .clip(RoundedCornerShape(0.dp))
+            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(0.dp))
             .clickable { onConnect() }
             .testTag("discovered_tv_${tv.ipAddress.replace(".", "_")}"),
         color = Color(0xFF0C0C0C)
@@ -456,8 +456,8 @@ fun NsdDiscoveredTvCard(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .background(Color(0xFF181818), RoundedCornerShape(2.dp))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp)),
+                        .background(Color(0xFF181818), RoundedCornerShape(0.dp))
+                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(0.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -487,8 +487,8 @@ fun NsdDiscoveredTvCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .background(Color(0xFF1E1E1E), RoundedCornerShape(2.dp))
-                                .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+                                .background(Color(0xFF1E1E1E), RoundedCornerShape(0.dp))
+                                .border(1.dp, RemoteBorderStrong, RoundedCornerShape(0.dp))
                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Text(
@@ -533,11 +533,11 @@ fun NsdDiscoveredTvCard(
             Surface(
                 onClick = onConnect,
                 color = Color.White,
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(0.dp),
                 modifier = Modifier.testTag("connect_btn_${tv.ipAddress.replace(".", "_")}")
             ) {
                 Text(
-                    text = "CONNECT",
+                    text = "CONECTAR",
                     color = Color.Black,
                     fontWeight = FontWeight.Black,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,

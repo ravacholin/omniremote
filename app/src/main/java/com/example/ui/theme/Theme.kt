@@ -27,7 +27,24 @@ private val DarkColorScheme = darkColorScheme(
     outline = RemoteBorder,
     outlineVariant = RemoteBorderStrong,
     error = PowerRedAccent,
-    onError = Color.Black
+    onError = Color.Black,
+    errorContainer = RemoteSurfaceVariant,
+    onErrorContainer = TextPrimary,
+    onTertiary = Color.Black,
+    tertiaryContainer = RemoteSurfaceVariant,
+    onTertiaryContainer = TextPrimary,
+    surfaceTint = Color.Transparent,
+    inverseSurface = BrutalistOffWhite,
+    inverseOnSurface = BrutalistBlack,
+    inversePrimary = BrutalistCharcoal,
+    scrim = Color.Black,
+    surfaceBright = RemoteCardBgElevated,
+    surfaceDim = RemoteDarkBg,
+    surfaceContainerLowest = RemoteDarkBg,
+    surfaceContainerLow = RemoteSurface,
+    surfaceContainer = RemoteCardBg,
+    surfaceContainerHigh = RemoteSurfaceVariant,
+    surfaceContainerHighest = RemoteCardBgElevated
 )
 
 @Composable
@@ -40,11 +57,11 @@ fun MyApplicationTheme(
         colorScheme = DarkColorScheme,
         typography = Typography,
         shapes = Shapes(
-            extraSmall = RoundedCornerShape(2.dp),
-            small = RoundedCornerShape(2.dp),
-            medium = RoundedCornerShape(4.dp),
-            large = RoundedCornerShape(4.dp),
-            extraLarge = RoundedCornerShape(4.dp)
+            extraSmall = RoundedCornerShape(0.dp),
+            small = RoundedCornerShape(0.dp),
+            medium = RoundedCornerShape(0.dp),
+            large = RoundedCornerShape(0.dp),
+            extraLarge = RoundedCornerShape(0.dp)
         ),
         content = content
     )

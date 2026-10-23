@@ -51,6 +51,7 @@ import com.example.ui.theme.PowerRed
 import com.example.ui.theme.RemoteDarkBg
 import com.example.ui.theme.RemoteBorder
 import com.example.ui.theme.RemoteCardBg
+import com.example.ui.theme.RemoteSurfaceVariant
 import com.example.ui.theme.StatusGreen
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
@@ -77,8 +78,8 @@ fun MacAddressConfigDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .clip(RoundedCornerShape(4.dp))
-                .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp)),
+                .clip(RoundedCornerShape(0.dp))
+                .border(1.dp, RemoteBorder, RoundedCornerShape(0.dp)),
             color = RemoteDarkBg
         ) {
             Column(
@@ -96,13 +97,13 @@ fun MacAddressConfigDialog(
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
-                                .background(Color(0xFF10B981).copy(alpha = 0.15f), RoundedCornerShape(2.dp)),
+                                .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(0.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Bolt,
                                 contentDescription = null,
-                                tint = Color(0xFF10B981),
+                                tint = Color.White,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -131,8 +132,8 @@ fun MacAddressConfigDialog(
 
                 // Explanatory Note
                 Surface(
-                    color = Color(0xFF1E293B).copy(alpha = 0.6f),
-                    shape = RoundedCornerShape(4.dp),
+                    color = RemoteSurfaceVariant.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(0.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -204,7 +205,7 @@ fun MacAddressConfigDialog(
                         focusedContainerColor = RemoteCardBg,
                         unfocusedContainerColor = RemoteCardBg
                     ),
-                    shape = RoundedCornerShape(2.dp)
+                    shape = RoundedCornerShape(0.dp)
                 )
 
                 if (statusMessage != null) {
@@ -241,7 +242,7 @@ fun MacAddressConfigDialog(
                     },
                     enabled = !isDetecting,
                     modifier = Modifier.fillMaxWidth().height(44.dp),
-                    shape = RoundedCornerShape(2.dp)
+                    shape = RoundedCornerShape(0.dp)
                 ) {
                     if (isDetecting) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -271,12 +272,12 @@ fun MacAddressConfigDialog(
                         .fillMaxWidth()
                         .height(48.dp)
                         .testTag("save_and_power_on_button"),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                    shape = RoundedCornerShape(2.dp)
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                    shape = RoundedCornerShape(0.dp)
                 ) {
-                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Guardar y Encender TV", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Guardar y Encender TV", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
         }

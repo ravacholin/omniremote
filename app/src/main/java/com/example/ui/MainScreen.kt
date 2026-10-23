@@ -171,9 +171,9 @@ fun MainScreen(
 
             // Responsive horizontal padding based on phone/tablet screen width
             val contentHorizontalPadding = when {
-                screenWidth < 360.dp -> 10.dp
-                screenWidth < 480.dp -> 14.dp
-                else -> 18.dp
+                screenWidth < 360.dp -> 16.dp
+                screenWidth < 480.dp -> 20.dp
+                else -> 24.dp
             }
 
             // Compact mode if screen is unusually short (e.g. landscape or small split-screen window)
@@ -187,8 +187,8 @@ fun MainScreen(
 
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
                     .widthIn(max = 560.dp)
+                    .fillMaxSize()
                     .then(scrollModifier)
                     .padding(horizontal = contentHorizontalPadding, vertical = if (isShortScreen) 4.dp else 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -224,8 +224,8 @@ fun MainScreen(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(2.dp))
-                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp)),
+                            .clip(RoundedCornerShape(0.dp))
+                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(0.dp)),
                         color = Color(0xFF0F0F0F)
                     ) {
                         Row(
@@ -259,8 +259,8 @@ fun MainScreen(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(2.dp))
-                                .border(1.dp, Color(0xFF555555), RoundedCornerShape(2.dp)),
+                                .clip(RoundedCornerShape(0.dp))
+                                .border(1.dp, Color(0xFF555555), RoundedCornerShape(0.dp)),
                             color = Color(0xFF0F0F0F)
                         ) {
                             Row(
@@ -294,7 +294,7 @@ fun MainScreen(
                                             containerColor = Color.White,
                                             contentColor = Color.Black
                                         ),
-                                        shape = RoundedCornerShape(2.dp),
+                                        shape = RoundedCornerShape(0.dp),
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
                                     ) {
                                         Text("CÓDIGO PIN", fontSize = 10.sp, fontWeight = FontWeight.Black)
@@ -307,8 +307,8 @@ fun MainScreen(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(2.dp))
-                                .border(1.dp, Color(0xFF444444), RoundedCornerShape(2.dp)),
+                                .clip(RoundedCornerShape(0.dp))
+                                .border(1.dp, Color(0xFF444444), RoundedCornerShape(0.dp)),
                             color = Color(0xFF0D0D0D)
                         ) {
                             Row(
@@ -343,7 +343,7 @@ fun MainScreen(
                                             containerColor = Color(0xFF222222),
                                             contentColor = Color.White
                                         ),
-                                        shape = RoundedCornerShape(2.dp),
+                                        shape = RoundedCornerShape(0.dp),
                                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444)),
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                     ) {
@@ -356,7 +356,7 @@ fun MainScreen(
                                                 containerColor = Color.White,
                                                 contentColor = Color.Black
                                             ),
-                                            shape = RoundedCornerShape(2.dp),
+                                            shape = RoundedCornerShape(0.dp),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                         ) {
                                             Text("VINCULAR", fontSize = 10.sp, fontWeight = FontWeight.Black)
@@ -368,7 +368,7 @@ fun MainScreen(
                                             containerColor = Color(0xFF181818),
                                             contentColor = Color.White
                                         ),
-                                        shape = RoundedCornerShape(2.dp),
+                                        shape = RoundedCornerShape(0.dp),
                                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                     ) {
@@ -383,8 +383,8 @@ fun MainScreen(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+                                    .clip(RoundedCornerShape(0.dp))
+                                    .border(1.dp, RemoteBorderStrong, RoundedCornerShape(0.dp))
                                     .clickable { viewModel.openScanResultsScreen() },
                                 color = Color(0xFF0E0E0E)
                             ) {
@@ -425,8 +425,8 @@ fun MainScreen(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .border(1.dp, RemoteBorder, RoundedCornerShape(2.dp)),
+                                    .clip(RoundedCornerShape(0.dp))
+                                    .border(1.dp, RemoteBorder, RoundedCornerShape(0.dp)),
                                 color = Color(0xFF0A0A0A)
                             ) {
                                 Row(
@@ -438,7 +438,7 @@ fun MainScreen(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "STANDBY // ${activeDevice?.name?.uppercase()}",
+                                            text = "TV en reposo",
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                                 color = TextMuted,
@@ -460,7 +460,7 @@ fun MainScreen(
                                                 containerColor = Color.White,
                                                 contentColor = Color.Black
                                             ),
-                                            shape = RoundedCornerShape(2.dp),
+                                            shape = RoundedCornerShape(0.dp),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                         ) {
                                             Text("ENCENDER", fontSize = 10.sp, fontWeight = FontWeight.Black)
@@ -471,7 +471,7 @@ fun MainScreen(
                                                 containerColor = Color(0xFF1C1C1C),
                                                 contentColor = Color.White
                                             ),
-                                            shape = RoundedCornerShape(2.dp),
+                                            shape = RoundedCornerShape(0.dp),
                                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                         ) {
@@ -490,8 +490,8 @@ fun MainScreen(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(2.dp))
-                            .border(1.dp, Color(0xFF444444), RoundedCornerShape(2.dp))
+                            .clip(RoundedCornerShape(0.dp))
+                            .border(1.dp, Color(0xFF444444), RoundedCornerShape(0.dp))
                             .clickable { viewModel.startAndroidTvPairing() },
                         color = Color(0xFF0F0F0F)
                     ) {
@@ -530,7 +530,7 @@ fun MainScreen(
                                     containerColor = Color.White,
                                     contentColor = Color.Black
                                 ),
-                                shape = RoundedCornerShape(2.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)
                             ) {
                                 Text("VINCULAR", fontSize = 10.sp, fontWeight = FontWeight.Black)
@@ -543,9 +543,9 @@ fun MainScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0C0C0C), RoundedCornerShape(2.dp))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
-                        .padding(3.dp)
+                        .background(RemoteDarkBg, RoundedCornerShape(0.dp))
+                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(0.dp))
+                        .padding(4.dp)
                         .selectableGroup(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -587,7 +587,8 @@ fun MainScreen(
 
                 // Main Interactive Remote Body: dynamically fills the remaining screen height
                 val bodyModifier = if (isShortScreen) {
-                    Modifier.fillMaxWidth()
+                    // Every mode receives a bounded viewport, including the lazy app grid.
+                    Modifier.fillMaxWidth().height(560.dp)
                 } else {
                     Modifier
                         .fillMaxWidth()
@@ -651,8 +652,8 @@ fun MainScreen(
                         .fillMaxWidth()
                         .testTag("command_feedback_bar"),
                     color = Color(0xFF0C0C0C),
-                    shape = RoundedCornerShape(2.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
+                    shape = RoundedCornerShape(0.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                 ) {
                     Row(
                         modifier = Modifier
@@ -669,13 +670,13 @@ fun MainScreen(
                                 modifier = Modifier
                                     .size(5.dp)
                                     .background(
-                                        if (latestLog.success) Color.White else Color(0xFFA1A1AA),
+                                        if (latestLog.success) Color.White else TextMuted,
                                         CircleShape
                                     )
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = latestLog.command,
+                                text = if (latestLog.success) "Comando enviado" else "No se pudo enviar · Revisa la conexión",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                     color = TextPrimary,
@@ -780,29 +781,37 @@ fun RemoteModeTabButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    val label = when (mode) {
+        RemoteMode.DPAD -> "Control"
+        RemoteMode.APPS -> "Apps"
+        RemoteMode.NUMPAD -> "Teclado"
+    }
+    val foreground = if (isSelected) Color.Black else TextSecondary
+    val background by androidx.compose.animation.animateColorAsState(
+        if (isSelected) Color.White else Color.Transparent, label = "tab_background"
+    )
+    Row(
         modifier = modifier
             .height(52.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(if (isSelected) Color.White else Color.Transparent)
-            .border(
-                width = if (isSelected) 1.dp else 0.dp,
-                color = if (isSelected) Color.White else Color.Transparent,
-                shape = RoundedCornerShape(2.dp)
-            )
+            .clip(RoundedCornerShape(0.dp))
+            .background(background)
             .selectable(selected = isSelected, role = Role.Tab, onClick = onClick)
             .testTag("tab_${mode.name.lowercase()}"),
-        contentAlignment = Alignment.Center
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = when (mode) {
-                RemoteMode.DPAD -> "Mando"
-                RemoteMode.APPS -> "Aplicaciones"
-                RemoteMode.NUMPAD -> "Teclado"
-            },
-            tint = if (isSelected) Color.Black else TextSecondary,
-            modifier = Modifier.size(24.dp)
+            contentDescription = null,
+            tint = foreground,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = label,
+            color = foreground,
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

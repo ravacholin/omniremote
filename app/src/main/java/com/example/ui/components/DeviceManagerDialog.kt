@@ -156,7 +156,7 @@ fun DeviceManagerDialog(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "TV Connection Manager",
+                        text = "Tus televisores",
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
@@ -187,13 +187,13 @@ fun DeviceManagerDialog(
                     )
                 },
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(0.dp))
+                    .border(1.dp, RemoteBorder, RoundedCornerShape(0.dp))
             ) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("My TVs (${allDevices.size})", fontSize = 11.sp, maxLines = 1) }
+                    text = { Text("TV (${allDevices.size})", fontSize = 11.sp, maxLines = 1) }
                 )
                 Tab(
                     selected = selectedTab == 1,
@@ -203,22 +203,22 @@ fun DeviceManagerDialog(
                             onStartScan(subnetInput)
                         }
                     },
-                    text = { Text("Scan", fontSize = 11.sp, maxLines = 1) }
+                    text = { Text("Buscar", fontSize = 11.sp, maxLines = 1) }
                 )
                 Tab(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
-                    text = { Text("Direct IP", fontSize = 11.sp, maxLines = 1) }
+                    text = { Text("IP", fontSize = 11.sp, maxLines = 1) }
                 )
                 Tab(
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
-                    text = { Text("Settings", fontSize = 11.sp, maxLines = 1) }
+                    text = { Text("Ajustes", fontSize = 11.sp, maxLines = 1) }
                 )
                 Tab(
                     selected = selectedTab == 4,
                     onClick = { selectedTab = 4 },
-                    text = { Text("Guide", fontSize = 11.sp, maxLines = 1) }
+                    text = { Text("Ayuda", fontSize = 11.sp, maxLines = 1) }
                 )
             }
 
@@ -243,7 +243,7 @@ fun DeviceManagerDialog(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "No Connected TVs",
+                                text = "Añade tu primera TV",
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = TextPrimary
@@ -251,7 +251,7 @@ fun DeviceManagerDialog(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Scan your local Wi-Fi or enter your TV's IP address directly to connect.",
+                                text = "Busca tu TV en la red Wi-Fi o añádela con su dirección IP.",
                                 style = MaterialTheme.typography.bodySmall.copy(color = TextMuted),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 modifier = Modifier.padding(horizontal = 24.dp)
@@ -264,7 +264,7 @@ fun DeviceManagerDialog(
                                         onStartScan(subnetInput)
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                    shape = RoundedCornerShape(2.dp)
+                                    shape = RoundedCornerShape(0.dp)
                                 ) {
                                     Icon(Icons.Default.Search, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -272,7 +272,7 @@ fun DeviceManagerDialog(
                                 }
                                 OutlinedButton(
                                     onClick = { selectedTab = 2 },
-                                    shape = RoundedCornerShape(2.dp)
+                                    shape = RoundedCornerShape(0.dp)
                                 ) {
                                     Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -319,7 +319,7 @@ fun DeviceManagerDialog(
                                         },
                                         modifier = Modifier.weight(1f),
                                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                        shape = RoundedCornerShape(4.dp)
+                                        shape = RoundedCornerShape(0.dp)
                                     ) {
                                         Icon(Icons.Default.Search, contentDescription = null, tint = Color.Black)
                                         Spacer(modifier = Modifier.width(6.dp))
@@ -329,7 +329,7 @@ fun DeviceManagerDialog(
                                     OutlinedButton(
                                         onClick = { selectedTab = 2 },
                                         modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(4.dp)
+                                        shape = RoundedCornerShape(0.dp)
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null)
                                         Spacer(modifier = Modifier.width(6.dp))
@@ -351,8 +351,8 @@ fun DeviceManagerDialog(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(4.dp))
-                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                                .clip(RoundedCornerShape(0.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(0.dp))
                                 .clickable {
                                     onDismiss()
                                     onOpenNsdScanScreen()
@@ -388,14 +388,14 @@ fun DeviceManagerDialog(
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column {
                                         Text(
-                                            text = "Full mDNS Network TV Scanner",
+                                            text = "Buscar en tu red",
                                             style = MaterialTheme.typography.titleSmall.copy(
                                                 fontWeight = FontWeight.Bold,
                                                 color = TextPrimary
                                             )
                                         )
                                         Text(
-                                            text = "Continuous NsdManager discovery for Samsung & Android TVs",
+                                            text = "Encuentra televisores Samsung, Android TV y Google TV",
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 color = TextMuted,
                                                 fontSize = 11.sp
@@ -415,7 +415,7 @@ fun DeviceManagerDialog(
                         // Subnet Controls & Rescan
                         Surface(
                             color = RemoteCardBg,
-                            shape = RoundedCornerShape(4.dp),
+                            shape = RoundedCornerShape(0.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
@@ -444,7 +444,7 @@ fun DeviceManagerDialog(
                                     Button(
                                         onClick = { onStartScan(subnetInput) },
                                         enabled = !isScanning,
-                                        shape = RoundedCornerShape(2.dp),
+                                        shape = RoundedCornerShape(0.dp),
                                         modifier = Modifier
                                             .height(52.dp)
                                             .testTag("rescan_network_button")
@@ -458,7 +458,7 @@ fun DeviceManagerDialog(
                                         } else {
                                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                             Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Scan")
+                                            Text("Buscar")
                                         }
                                     }
                                 }
@@ -524,7 +524,7 @@ fun DeviceManagerDialog(
                                         selectedTab = 2
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                    shape = RoundedCornerShape(2.dp)
+                                    shape = RoundedCornerShape(0.dp)
                                 ) {
                                     Text("Enter TV IP Directly", color = Color.Black, fontWeight = FontWeight.Bold)
                                 }
@@ -537,7 +537,7 @@ fun DeviceManagerDialog(
                                 items(discoveredList) { discovered ->
                                     Surface(
                                         color = RemoteCardBg,
-                                        shape = RoundedCornerShape(4.dp),
+                                        shape = RoundedCornerShape(0.dp),
                                         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                                     ) {
                                         Row(
@@ -590,7 +590,7 @@ fun DeviceManagerDialog(
                                                     onSaveDevice(newEntity)
                                                     onDismiss()
                                                 },
-                                                shape = RoundedCornerShape(2.dp),
+                                                shape = RoundedCornerShape(0.dp),
                                                 colors = ButtonDefaults.buttonColors(containerColor = discovered.deviceType.brandColor),
                                                 modifier = Modifier.testTag("connect_discovered_${discovered.ipAddress.replace(".", "_")}")
                                             ) {
@@ -752,7 +752,7 @@ fun DeviceManagerDialog(
                                         }
                                     },
                                     modifier = Modifier.testTag("test_ping_button"),
-                                    shape = RoundedCornerShape(2.dp)
+                                    shape = RoundedCornerShape(0.dp)
                                 ) {
                                     if (isPinging) {
                                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -799,7 +799,7 @@ fun DeviceManagerDialog(
                                     .height(50.dp)
                                     .testTag("save_device_button"),
                                 colors = ButtonDefaults.buttonColors(containerColor = formType.brandColor),
-                                shape = RoundedCornerShape(4.dp)
+                                shape = RoundedCornerShape(0.dp)
                             ) {
                                 Text("Connect to TV Now", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
@@ -818,8 +818,8 @@ fun DeviceManagerDialog(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(4.dp)),
+                                    .clip(RoundedCornerShape(0.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(0.dp)),
                                 color = RemoteCardBg
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -881,7 +881,7 @@ fun DeviceManagerDialog(
                                                     android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                                                 }
                                             },
-                                            shape = RoundedCornerShape(2.dp),
+                                            shape = RoundedCornerShape(0.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                             modifier = Modifier.weight(1f).testTag("add_qs_remote_tile_button")
                                         ) {
@@ -896,10 +896,10 @@ fun DeviceManagerDialog(
                                                     android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                                                 }
                                             },
-                                            shape = RoundedCornerShape(2.dp),
+                                            shape = RoundedCornerShape(0.dp),
                                             modifier = Modifier.weight(1f).testTag("add_qs_power_tile_button")
                                         ) {
-                                            Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                                            Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text("Encender TV", fontSize = 11.sp)
                                         }
@@ -909,12 +909,12 @@ fun DeviceManagerDialog(
 
                                     Surface(
                                         color = RemoteDarkBg.copy(alpha = 0.6f),
-                                        shape = RoundedCornerShape(2.dp),
+                                        shape = RoundedCornerShape(0.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Column(modifier = Modifier.padding(10.dp)) {
                                             Text(
-                                                text = "📱 Cómo agregarlo manualmente:",
+                                                text = "Cómo agregarlo manualmente:",
                                                 style = MaterialTheme.typography.labelSmall.copy(
                                                     color = TextPrimary,
                                                     fontWeight = FontWeight.Bold,
@@ -923,7 +923,7 @@ fun DeviceManagerDialog(
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
-                                                text = "1. Desliza hacia abajo dos veces la barra de notificaciones.\n2. Toca el lápiz ✏️ de edición.\n3. Busca 'Control TV' o 'Encender TV' y arrástralo a la sección activa.",
+                                                text = "1. Desliza hacia abajo dos veces la barra de notificaciones.\n2. Toca el botón de edición.\n3. Busca 'Control TV' o 'Encender TV' y arrástralo a la sección activa.",
                                                 style = MaterialTheme.typography.bodySmall.copy(
                                                     color = TextMuted,
                                                     fontSize = 11.sp,
@@ -941,8 +941,8 @@ fun DeviceManagerDialog(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp)),
+                                    .clip(RoundedCornerShape(0.dp))
+                                    .border(1.dp, RemoteBorder, RoundedCornerShape(0.dp)),
                                 color = RemoteCardBg
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -969,7 +969,7 @@ fun DeviceManagerDialog(
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.Vibration,
-                                                    contentDescription = "Haptic Feedback",
+                                                    contentDescription = "Vibración",
                                                     tint = if (isHapticEnabled)
                                                         MaterialTheme.colorScheme.primary
                                                     else
@@ -980,7 +980,7 @@ fun DeviceManagerDialog(
                                             Spacer(modifier = Modifier.width(12.dp))
                                             Column {
                                                 Text(
-                                                    text = "Haptic Feedback",
+                                                    text = "Vibración",
                                                     style = MaterialTheme.typography.titleMedium.copy(
                                                         fontWeight = FontWeight.Bold,
                                                         color = TextPrimary,
@@ -988,7 +988,7 @@ fun DeviceManagerDialog(
                                                     )
                                                 )
                                                 Text(
-                                                    text = if (isHapticEnabled) "Enabled • Physical confirmation on" else "Disabled • Silent touch",
+                                                    text = if (isHapticEnabled) "Activada · Respuesta al tocar" else "Desactivada",
                                                     style = MaterialTheme.typography.bodySmall.copy(
                                                         color = if (isHapticEnabled) StatusGreen else TextMuted,
                                                         fontWeight = FontWeight.Medium,
@@ -1032,7 +1032,7 @@ fun DeviceManagerDialog(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .testTag("test_haptic_button"),
-                                            shape = RoundedCornerShape(2.dp),
+                                            shape = RoundedCornerShape(0.dp),
                                             colors = ButtonDefaults.outlinedButtonColors(
                                                 contentColor = MaterialTheme.colorScheme.primary
                                             ),
@@ -1048,7 +1048,7 @@ fun DeviceManagerDialog(
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(
-                                                text = "Test Physical Confirmation Pulse",
+                                                text = "Probar vibración",
                                                 fontWeight = FontWeight.SemiBold,
                                                 fontSize = 12.sp
                                             )
@@ -1063,8 +1063,8 @@ fun DeviceManagerDialog(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp)),
+                                    .clip(RoundedCornerShape(0.dp))
+                                    .border(1.dp, RemoteBorder, RoundedCornerShape(0.dp)),
                                 color = RemoteCardBg
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -1120,7 +1120,7 @@ fun DeviceManagerDialog(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .testTag("clear_tokens_button"),
-                                        shape = RoundedCornerShape(2.dp),
+                                        shape = RoundedCornerShape(0.dp),
                                         colors = ButtonDefaults.outlinedButtonColors(
                                             contentColor = TextSecondary
                                         ),
@@ -1143,8 +1143,8 @@ fun DeviceManagerDialog(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp)),
+                                    .clip(RoundedCornerShape(0.dp))
+                                    .border(1.dp, RemoteBorder, RoundedCornerShape(0.dp)),
                                 color = RemoteCardBg
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -1238,7 +1238,7 @@ fun DeviceManagerDialog(
                                 brandColor = MaterialTheme.colorScheme.primary,
                                 steps = listOf(
                                     "Swipe down twice from the top of your Android screen to open Quick Settings.",
-                                    "Tap the Edit button (pencil icon ✏️).",
+                                    "Tap the Edit button (pencil icon).",
                                     "Find 'Control TV' and 'Encender TV' in the list of available tiles.",
                                     "Drag them to your top active tiles.",
                                     "Now you can open the remote in 1 tap or turn on your TV via Wake-on-LAN straight from the notification shade!"
@@ -1266,11 +1266,11 @@ fun TvDeviceCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(2.dp))
+            .clip(RoundedCornerShape(0.dp))
             .border(
                 width = if (isActive) 1.5.dp else 1.dp,
                 color = if (isActive) Color.White else RemoteBorderStrong,
-                shape = RoundedCornerShape(2.dp)
+                shape = RoundedCornerShape(0.dp)
             )
             .clickable { onSelect() }
             .testTag("device_card_${device.id}"),
@@ -1305,7 +1305,7 @@ fun TvDeviceCard(
                 if (isActive) {
                     Box(
                         modifier = Modifier
-                            .background(Color.White, RoundedCornerShape(2.dp))
+                            .background(Color.White, RoundedCornerShape(0.dp))
                             .padding(horizontal = 7.dp, vertical = 2.dp)
                     ) {
                         Text(
@@ -1342,9 +1342,9 @@ fun TvDeviceCard(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(2.dp))
+                            .clip(RoundedCornerShape(0.dp))
                             .background(Color(0xFF1A1A1A))
-                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(0.dp))
                             .clickable { onEditMac(device) }
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
@@ -1362,15 +1362,15 @@ fun TvDeviceCard(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(2.dp))
+                            .clip(RoundedCornerShape(0.dp))
                             .background(Color(0xFF1E1E1E))
-                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(0.dp))
                             .clickable { onEditMac(device) }
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = "[NO MAC]",
-                            color = Color(0xFFA1A1AA),
+                            color = Color(0xFFA3A3A3),
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold
@@ -1391,7 +1391,7 @@ fun TvDeviceCard(
                     if (!device.isDefault) {
                         Surface(
                             onClick = onSetDefault,
-                            shape = RoundedCornerShape(2.dp),
+                            shape = RoundedCornerShape(0.dp),
                             color = Color(0xFF141414),
                             border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong),
                             modifier = Modifier.testTag("set_default_${device.id}")
@@ -1427,7 +1427,7 @@ fun TvDeviceCard(
 
                     Surface(
                         onClick = onWakeOnLan,
-                        shape = RoundedCornerShape(2.dp),
+                        shape = RoundedCornerShape(0.dp),
                         color = Color(0xFF141414),
                         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong),
                         modifier = Modifier.testTag("wake_device_${device.id}")
@@ -1456,7 +1456,7 @@ fun TvDeviceCard(
                     if (device.deviceType == DeviceType.ANDROID_TV && onPair != null) {
                         Surface(
                             onClick = onPair,
-                            shape = RoundedCornerShape(2.dp),
+                            shape = RoundedCornerShape(0.dp),
                             color = Color.White,
                             modifier = Modifier.testTag("pair_device_${device.id}")
                         ) {
@@ -1487,7 +1487,7 @@ fun TvDeviceCard(
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Delete",
-                        tint = Color(0xFFA1A1AA),
+                        tint = Color(0xFFA3A3A3),
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -1504,7 +1504,7 @@ fun GuideCard(
 ) {
     Surface(
         color = RemoteCardBg,
-        shape = RoundedCornerShape(4.dp),
+        shape = RoundedCornerShape(0.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
