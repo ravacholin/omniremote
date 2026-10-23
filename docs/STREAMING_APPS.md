@@ -14,7 +14,7 @@ El catálogo se comparte entre los accesos predeterminados y el diálogo para a�
 
 Android envía `RemoteAppLinkLaunchRequest` (campo protobuf 90, enlace en campo 1) por la conexión Remote Service v2 autenticada, anunciando APP_LINK (512). Apple TV usa `https://tv.apple.com`, Paramount+ usa `https://www.paramountplus.com/`, HBO Max usa `https://play.hbomax.com` (alternativa `https://play.max.com`) y Disney+ usa `https://www.disneyplus.com`. Se reparan también los enlaces `market://launch` guardados por APK anteriores.
 
-Flow conserva el lanzamiento por paquete para TVs que lo admiten. Si la TV lo rechaza, se abre la ficha oficial de Google Play y el mando indica «Flow: selecciona Abrir en la pantalla de la TV». La misma alternativa se ofrece para los otros servicios si sus enlaces son rechazados. No se pulsa Enter automáticamente porque la ficha podría mostrar Instalar en lugar de Abrir. No se encontró un enlace directo universal verificable de Flow para todos los Android TV.
+Flow abre directamente la ficha oficial de Google Play: el enlace anterior `market://launch` no es un deep link verificado de Flow. Se abre la ficha y el mando indica «Flow: selecciona Abrir en la pantalla de la TV». La misma alternativa se ofrece para los otros servicios si sus enlaces son rechazados. No se pulsa Enter automáticamente porque la ficha podría mostrar Instalar en lugar de Abrir. No se encontró un enlace directo universal verificable de Flow para todos los Android TV.
 
 `RemoteError` después de iniciar la sesión describe una orden rechazada: no se cierra el socket ni se pide vincular otra vez. El rechazo se asocia al enlace solicitado; las peticiones de apertura se serializan. Un rechazo durante la negociación sigue siendo fatal, y EOF o un fallo de transporte siguen produciendo una desconexión. El protocolo no ofrece confirmación positiva de apertura: se espera una ventana de 900 ms para recibir un rechazo inmediato y no se presenta el silencio como comprobación de que la app esté en primer plano. Los errores tardíos se muestran como errores de la orden, conservando el mando conectado.
 
@@ -45,3 +45,7 @@ El APK anterior confundía RemoteError con pérdida de conexión. La prueba TLS 
 - [Home Assistant: apertura de apps y limitaciones actuales](https://www.home-assistant.io/integrations/androidtv_remote/)
 
 Validación local: compilación y pruebas JVM/Robolectric, incluida transmisión de un lanzamiento por TLS contra un servidor de prueba. No hay TV física conectada para comprobar la apertura real ni las variantes del firmware Samsung.
+
+## Reparación de Brightness, Flow y TVDimmer (v1.3)
+
+Brightness comparte ahora el lanzamiento serializado y la indicación «selecciona Abrir» de Apps. Flow y TVDimmer usan sus fichas oficiales de Google Play sin enviar primero esquemas no verificados. También se corrigen los enlaces antiguos guardados para estas apps. Las pruebas TLS comprueban las URLs de ambas fichas, la indicación de confirmación manual y que RemoteError conserva el mando conectado; EOF real sigue notificando desconexión. No se ha reproducido el cierre de conexión de la captura en un FlowBox físico.

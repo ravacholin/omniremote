@@ -24,7 +24,7 @@ object StreamingAppCatalog {
     val apps = listOf(
         // Flow's Tizen ID is resolved from the paired TV's installed app list.
         StreamingAppDefinition("Flow", "name:Flow", "ar.com.flow.androidtv", "Live TV", 0xFF00E6C3, "flow",
-            "market://launch?id=ar.com.flow.androidtv"),
+            "https://play.google.com/store/apps/details?id=ar.com.flow.androidtv"),
         StreamingAppDefinition("HBO Max", "3202301029760", "com.wbd.stream", "Movies & TV", 0xFF527BFF, "max",
             "https://play.hbomax.com", oldSamsungIds = setOf("3201601007230", "3201601007250"),
             oldAndroidIds = setOf("com.hbo.hbonow")),
@@ -44,6 +44,7 @@ object StreamingAppCatalog {
             "com.amazon.amazonvideo.livingroom" -> "https://app.primevideo.com"
             "com.plexapp.android" -> "plex://"
             "tv.twitch.android.app" -> "twitch://home"
+            "com.tribalapps.tvdimmer" -> "https://play.google.com/store/apps/details?id=$packageName"
             else -> "market://launch?id=$packageName"
         }
 
@@ -51,7 +52,8 @@ object StreamingAppCatalog {
         val canonical = androidLaunchLink(packageName)
         val legacy = "market://launch?id=$packageName"
         // Repair links already stored by older APKs, even before the library refreshes.
-        val preferred = if (savedLink.isBlank() || savedLink == legacy) canonical else savedLink
+        val obsoleteDimmerLink = packageName == "com.tribalapps.tvdimmer" && savedLink == "android-app://$packageName"
+        val preferred = if (savedLink.isBlank() || savedLink == legacy || obsoleteDimmerLink) canonical else savedLink
         if (apps.none { it.androidPackage == packageName } || preferred != canonical) return listOf(preferred)
         return buildList {
             add(preferred)

@@ -292,10 +292,8 @@ class UnifiedTvController(
             addLog(device.name, "TVDimmer needs a valid Android package name in Apps.", false)
             return
         }
-        scope.launch(Dispatchers.IO) {
-            val sent = androidClient.launchAppLink("android-app://$packageName")
-            addLog(device.name, if (sent) "TVDimmer launch request sent" else "Could not launch TVDimmer. Check the TV connection and app installation.", sent)
-        }
+        // Use the same checked launch and on-TV Open guidance as the Apps grid.
+        launchTvApp(dimmer)
     }
 
     fun launchApp(shortcut: TvAppShortcut) {
