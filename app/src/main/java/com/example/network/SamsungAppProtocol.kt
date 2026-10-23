@@ -19,8 +19,13 @@ internal object SamsungAppProtocol {
 
     fun find(apps: List<SamsungInstalledApp>, name: String): SamsungInstalledApp? {
         fun normalize(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD).lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+        // Samsung may return legacy and current Flow installations together.
+        // Provider name priority must win over the order returned by the TV.
+        if (normalize(name) in setOf("flow", "flowargentina")) {
+            return listOf("flow", "personalflow", "flowtv", "cablevisionflow")
+                .firstNotNullOfOrNull { alias -> apps.firstOrNull { normalize(it.name) == alias } }
+        }
         val aliases = when (normalize(name)) {
-            "flow", "flowargentina" -> setOf("flow", "cablevisionflow", "personalflow", "flowtv")
             "max", "hbomax", "maxhbo" -> setOf("max", "hbomax")
             "paramount", "paramountplus" -> setOf("paramount", "paramountplus")
             "disney", "disneyplus" -> setOf("disney", "disneyplus")

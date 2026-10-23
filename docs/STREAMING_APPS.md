@@ -49,3 +49,12 @@ Validación local: compilación y pruebas JVM/Robolectric, incluida transmisión
 ## Reparación de Brightness, Flow y TVDimmer (v1.3)
 
 Brightness comparte ahora el lanzamiento serializado y la indicación «selecciona Abrir» de Apps. Flow y TVDimmer usan sus fichas oficiales de Google Play sin enviar primero esquemas no verificados. También se corrigen los enlaces antiguos guardados para estas apps. Las pruebas TLS comprueban las URLs de ambas fichas, la indicación de confirmación manual y que RemoteError conserva el mando conectado; EOF real sigue notificando desconexión. No se ha reproducido el cierre de conexión de la captura en un FlowBox físico.
+
+## Flow en Samsung (v1.4)
+
+La búsqueda prioriza `Flow`, después `Personal Flow`, `Flow TV` y finalmente
+`Cablevisión Flow`. Antes se elegía la primera coincidencia de la lista de la TV,
+por lo que una instalación antigua podía adelantarse a la actual. La prueba de
+regresión comprueba ambos órdenes y el ID enviado en `ed.apps.launch`.
+La lista instalada no incluye versiones: esta prioridad distingue nombres,
+no comprueba qué versión está instalada. Queda pendiente validar en una TV física.
