@@ -38,6 +38,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -71,6 +72,10 @@ import com.example.ui.components.DeviceManagerDialog
 import com.example.ui.components.DeviceSelectorBar
 import com.example.ui.components.RemoteIcons
 import com.example.ui.components.HapticUtil
+import com.example.ui.components.GridGap
+import com.example.ui.components.MonoLabel
+import com.example.ui.components.Notice
+import com.example.ui.components.NoticeAction
 import com.example.ui.components.RemoteAppsGrid
 import com.example.ui.components.RemoteDpad
 import com.example.ui.components.RemoteNumpad
@@ -151,7 +156,6 @@ fun MainScreen(
     }
 
     val currentType = activeDevice?.deviceType ?: DeviceType.SAMSUNG_TIZEN
-    val brandAccent = currentType.brandColor
 
     Scaffold(
         modifier = modifier
@@ -171,9 +175,9 @@ fun MainScreen(
 
             // Responsive horizontal padding based on phone/tablet screen width
             val contentHorizontalPadding = when {
-                screenWidth < 360.dp -> 10.dp
-                screenWidth < 480.dp -> 14.dp
-                else -> 18.dp
+                screenWidth < 360.dp -> 14.dp
+                screenWidth < 480.dp -> 20.dp
+                else -> 24.dp
             }
 
             // Compact mode if screen is unusually short (e.g. landscape or small split-screen window)
@@ -192,7 +196,7 @@ fun MainScreen(
                     .then(scrollModifier)
                     .padding(horizontal = contentHorizontalPadding, vertical = if (isShortScreen) 4.dp else 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(if (isShortScreen) 8.dp else 10.dp)
+                verticalArrangement = Arrangement.spacedBy(if (isShortScreen) 10.dp else 16.dp)
             ) {
                 // Header: Device Selector Bar with seamless switcher & power button
                 DeviceSelectorBar(
@@ -219,370 +223,92 @@ fun MainScreen(
                     }
                 )
 
-                // Power-On Status Banner (Wake-on-LAN in progress)
+                // Power-On Status (Wake-on-LAN in progress)
                 powerOnStatusMessage?.let { status ->
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(2.dp))
-                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp)),
-                        color = Color(0xFF0F0F0F)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
+                    Notice(
+                        label = "Encendiendo",
+                        message = status,
+                        leading = {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                color = Color.White,
-                                strokeWidth = 1.5.dp
-                            )
-                            Text(
-                                text = status,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                    color = TextPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
-                                )
+                                modifier = Modifier.size(12.dp),
+                                color = Paper,
+                                strokeWidth = 1.dp
                             )
                         }
-                    }
+                    )
                 }
 
-                // Connection State Banner (Auth prompt / Error / No TV)
+                // Connection state (auth prompt / error / no TV)
+                val isAndroidTv = activeDevice?.deviceType == DeviceType.ANDROID_TV
                 when (val state = connectionState) {
-                    is ConnectionState.WaitingAuth -> {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(2.dp))
-                                .border(1.dp, Color(0xFF555555), RoundedCornerShape(2.dp)),
-                            color = Color(0xFF0F0F0F)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Autoriza la conexión en tu TV",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                            color = TextSecondary,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    )
-                                    Text(
-                                        text = state.message,
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            color = TextPrimary,
-                                            fontSize = 11.sp
-                                        )
-                                    )
-                                }
-                                if (activeDevice?.deviceType == DeviceType.ANDROID_TV) {
-                                    Button(
-                                        onClick = { viewModel.startAndroidTvPairing() },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color.White,
-                                            contentColor = Color.Black
-                                        ),
-                                        shape = RoundedCornerShape(2.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                                    ) {
-                                        Text("CÓDIGO PIN", fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                    }
-                                }
-                            }
+                    is ConnectionState.WaitingAuth -> Notice(
+                        label = "Autorizá en tu TV",
+                        message = state.message,
+                        actions = if (isAndroidTv) {
+                            listOf(NoticeAction("PIN", primary = true) { viewModel.startAndroidTvPairing() })
+                        } else emptyList()
+                    )
+                    is ConnectionState.Error -> Notice(
+                        label = "Sin conexión",
+                        message = state.message,
+                        actions = buildList {
+                            add(NoticeAction("Encender") { viewModel.powerOnTv() })
+                            if (isAndroidTv) add(NoticeAction("Vincular") { viewModel.startAndroidTvPairing() })
+                            add(NoticeAction("Reintentar", primary = !isAndroidTv) { viewModel.retryConnection() })
                         }
-                    }
-                    is ConnectionState.Error -> {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(2.dp))
-                                .border(1.dp, Color(0xFF444444), RoundedCornerShape(2.dp)),
-                            color = Color(0xFF0D0D0D)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "No se pudo conectar",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                            color = TextMuted,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    )
-                                    Text(
-                                        text = state.message,
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            color = TextSecondary,
-                                            fontSize = 11.sp
-                                        ),
-                                        maxLines = 1
-                                    )
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Button(
-                                        onClick = { viewModel.powerOnTv() },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFF222222),
-                                            contentColor = Color.White
-                                        ),
-                                        shape = RoundedCornerShape(2.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444)),
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                    ) {
-                                        Text("ENCENDER", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                    if (activeDevice?.deviceType == DeviceType.ANDROID_TV) {
-                                        Button(
-                                            onClick = { viewModel.startAndroidTvPairing() },
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = Color.White,
-                                                contentColor = Color.Black
-                                            ),
-                                            shape = RoundedCornerShape(2.dp),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("VINCULAR", fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                        }
-                                    }
-                                    Button(
-                                        onClick = { viewModel.retryConnection() },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFF181818),
-                                            contentColor = Color.White
-                                        ),
-                                        shape = RoundedCornerShape(2.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                    ) {
-                                        Text("REINTENTAR", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    is ConnectionState.Disconnected -> {
-                        if (activeDevice == null) {
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
-                                    .clickable { viewModel.openScanResultsScreen() },
-                                color = Color(0xFF0E0E0E)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column {
-                                        Text(
-                                            text = "Tu mando empieza aquí",
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                                color = TextSecondary,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        )
-                                        Text(
-                                            text = "Busca una TV en tu red Wi-Fi",
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                color = TextMuted,
-                                                fontSize = 11.sp
-                                            )
-                                        )
-                                    }
-                                    Text(
-                                        text = "BUSCAR →",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Black,
-                                            fontSize = 11.sp
-                                        )
-                                    )
-                                }
-                            }
-                        } else {
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .border(1.dp, RemoteBorder, RoundedCornerShape(2.dp)),
-                                color = Color(0xFF0A0A0A)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "STANDBY // ${activeDevice?.name?.uppercase()}",
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                                color = TextMuted,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        )
-                                        Text(
-                                            text = "Dispositivo en reposo",
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                color = TextSecondary,
-                                                fontSize = 11.sp
-                                            )
-                                        )
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Button(
-                                            onClick = { viewModel.powerOnTv() },
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = Color.White,
-                                                contentColor = Color.Black
-                                            ),
-                                            shape = RoundedCornerShape(2.dp),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("ENCENDER", fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                        }
-                                        Button(
-                                            onClick = { viewModel.retryConnection() },
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = Color(0xFF1C1C1C),
-                                                contentColor = Color.White
-                                            ),
-                                            shape = RoundedCornerShape(2.dp),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("CONECTAR", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    )
+                    is ConnectionState.Disconnected -> if (activeDevice == null) {
+                        Notice(
+                            label = "Empezá acá",
+                            message = "Buscá una TV en tu red Wi-Fi",
+                            actions = listOf(NoticeAction("Buscar", primary = true) { viewModel.openScanResultsScreen() }),
+                            onClick = { viewModel.openScanResultsScreen() }
+                        )
+                    } else {
+                        Notice(
+                            label = "En reposo",
+                            message = activeDevice?.name ?: "",
+                            actions = listOf(
+                                NoticeAction("Encender", primary = true) { viewModel.powerOnTv() },
+                                NoticeAction("Conectar") { viewModel.retryConnection() }
+                            )
+                        )
                     }
                     else -> {}
                 }
 
-                // Android TV 1-Touch Pairing Prompt
-                if (activeDevice?.deviceType == DeviceType.ANDROID_TV && !isAndroidTvPaired && connectionState !is ConnectionState.WaitingAuth) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(2.dp))
-                            .border(1.dp, Color(0xFF444444), RoundedCornerShape(2.dp))
-                            .clickable { viewModel.startAndroidTvPairing() },
-                        color = Color(0xFF0F0F0F)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.Key, contentDescription = "Pair", tint = TextPrimary, modifier = Modifier.size(16.dp))
-                                Column {
-                                    Text(
-                                        text = "Vincular Google TV",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                            color = TextSecondary,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    )
-                                    Text(
-                                        text = "Vincular con el código PIN en pantalla",
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            color = TextPrimary,
-                                            fontSize = 11.sp
-                                        )
-                                    )
-                                }
-                            }
-                            Button(
-                                onClick = { viewModel.startAndroidTvPairing() },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color.White,
-                                    contentColor = Color.Black
-                                ),
-                                shape = RoundedCornerShape(2.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)
-                            ) {
-                                Text("VINCULAR", fontSize = 10.sp, fontWeight = FontWeight.Black)
-                            }
-                        }
-                    }
+                // Android TV 1-touch pairing prompt
+                if (isAndroidTv && !isAndroidTvPaired && connectionState !is ConnectionState.WaitingAuth) {
+                    Notice(
+                        label = "Vincular Google TV",
+                        message = "Con el código PIN que aparece en pantalla",
+                        actions = listOf(NoticeAction("Vincular", primary = true) { viewModel.startAndroidTvPairing() }),
+                        onClick = { viewModel.startAndroidTvPairing() }
+                    )
                 }
 
                 // Navigation and gestures share the D-pad; apps and numpad have their own tabs.
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0C0C0C), RoundedCornerShape(2.dp))
-                        .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
-                        .padding(3.dp)
-                        .selectableGroup(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RemoteModeTabButton(
-                        mode = RemoteMode.DPAD,
-                        icon = RemoteIcons.Dpad,
-                        isSelected = activeTab == RemoteMode.DPAD,
-                        brandAccent = brandAccent,
-                        onClick = {
-                            HapticUtil.triggerKeyHaptic(context)
-                            viewModel.setActiveTab(RemoteMode.DPAD)
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    RemoteModeTabButton(
-                        mode = RemoteMode.APPS,
-                        icon = RemoteIcons.Apps,
-                        isSelected = activeTab == RemoteMode.APPS,
-                        brandAccent = brandAccent,
-                        onClick = {
-                            HapticUtil.triggerKeyHaptic(context)
-                            viewModel.setActiveTab(RemoteMode.APPS)
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    RemoteModeTabButton(
-                        mode = RemoteMode.NUMPAD,
-                        icon = RemoteIcons.Keyboard,
-                        isSelected = activeTab == RemoteMode.NUMPAD,
-                        brandAccent = brandAccent,
-                        onClick = {
-                            HapticUtil.triggerKeyHaptic(context)
-                            viewModel.setActiveTab(RemoteMode.NUMPAD)
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectableGroup(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RemoteMode.entries.forEachIndexed { index, mode ->
+                            RemoteModeTabButton(
+                                mode = mode,
+                                index = index + 1,
+                                isSelected = activeTab == mode,
+                                onClick = {
+                                    HapticUtil.triggerKeyHaptic(context)
+                                    viewModel.setActiveTab(mode)
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = Hairline, thickness = GridGap)
                 }
 
                 // Main Interactive Remote Body: dynamically fills the remaining screen height
@@ -644,49 +370,25 @@ fun MainScreen(
                     }
                 }
 
-                // Real-time Command Feedback Bar anchored cleanly at bottom
+                // Last command, set as a single typographic line.
                 val latestLog = recentLogs.firstOrNull()
-                if (latestLog != null) Surface(
+                if (latestLog != null) Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("command_feedback_bar"),
-                    color = Color(0xFF0C0C0C),
-                    shape = RoundedCornerShape(2.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(5.dp)
-                                    .background(
-                                        if (latestLog.success) Color.White else Color(0xFFA1A1AA),
-                                        CircleShape
-                                    )
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = latestLog.command,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                    color = TextPrimary,
-                                    fontSize = 10.sp,
-                                    letterSpacing = 0.5.sp
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
+                            .size(4.dp)
+                            .background(if (latestLog.success) Paper else Graphite)
+                    )
+                    MonoLabel(
+                        text = latestLog.command,
+                        modifier = Modifier.weight(1f),
+                        color = if (latestLog.success) TextSecondary else TextMuted
+                    )
                 }
             }
         }
@@ -774,35 +476,38 @@ fun MainScreen(
 @Composable
 fun RemoteModeTabButton(
     mode: RemoteMode,
-    icon: ImageVector,
+    index: Int,
     isSelected: Boolean,
-    brandAccent: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val title = when (mode) {
+        RemoteMode.DPAD -> "Mando"
+        RemoteMode.APPS -> "Apps"
+        RemoteMode.NUMPAD -> "Teclado"
+    }
     Box(
         modifier = modifier
-            .height(52.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(if (isSelected) Color.White else Color.Transparent)
-            .border(
-                width = if (isSelected) 1.dp else 0.dp,
-                color = if (isSelected) Color.White else Color.Transparent,
-                shape = RoundedCornerShape(2.dp)
-            )
+            .height(48.dp)
             .selectable(selected = isSelected, role = Role.Tab, onClick = onClick)
             .testTag("tab_${mode.name.lowercase()}"),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.BottomStart
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = when (mode) {
-                RemoteMode.DPAD -> "Mando"
-                RemoteMode.APPS -> "Aplicaciones"
-                RemoteMode.NUMPAD -> "Teclado"
-            },
-            tint = if (isSelected) Color.Black else TextSecondary,
-            modifier = Modifier.size(24.dp)
-        )
+        Row(
+            modifier = Modifier.align(Alignment.CenterStart),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MonoLabel("%02d".format(index), color = if (isSelected) TextSecondary else Graphite)
+            MonoLabel(title, color = if (isSelected) TextPrimary else TextMuted)
+        }
+        if (isSelected) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(Paper)
+            )
+        }
     }
 }

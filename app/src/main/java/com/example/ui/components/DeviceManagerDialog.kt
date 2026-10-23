@@ -187,8 +187,8 @@ fun DeviceManagerDialog(
                     )
                 },
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp))
+                    .clip(Sharp)
+                    .border(1.dp, RemoteBorder, Sharp)
             ) {
                 Tab(
                     selected = selectedTab == 0,
@@ -264,7 +264,7 @@ fun DeviceManagerDialog(
                                         onStartScan(subnetInput)
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                    shape = RoundedCornerShape(2.dp)
+                                    shape = Sharp
                                 ) {
                                     Icon(Icons.Default.Search, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -272,7 +272,7 @@ fun DeviceManagerDialog(
                                 }
                                 OutlinedButton(
                                     onClick = { selectedTab = 2 },
-                                    shape = RoundedCornerShape(2.dp)
+                                    shape = Sharp
                                 ) {
                                     Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -319,7 +319,7 @@ fun DeviceManagerDialog(
                                         },
                                         modifier = Modifier.weight(1f),
                                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                        shape = RoundedCornerShape(4.dp)
+                                        shape = Sharp
                                     ) {
                                         Icon(Icons.Default.Search, contentDescription = null, tint = Color.Black)
                                         Spacer(modifier = Modifier.width(6.dp))
@@ -329,7 +329,7 @@ fun DeviceManagerDialog(
                                     OutlinedButton(
                                         onClick = { selectedTab = 2 },
                                         modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(4.dp)
+                                        shape = Sharp
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null)
                                         Spacer(modifier = Modifier.width(6.dp))
@@ -351,8 +351,8 @@ fun DeviceManagerDialog(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(4.dp))
-                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                                .clip(Sharp)
+                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), Sharp)
                                 .clickable {
                                     onDismiss()
                                     onOpenNsdScanScreen()
@@ -415,7 +415,7 @@ fun DeviceManagerDialog(
                         // Subnet Controls & Rescan
                         Surface(
                             color = RemoteCardBg,
-                            shape = RoundedCornerShape(4.dp),
+                            shape = Sharp,
                             border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
@@ -444,7 +444,7 @@ fun DeviceManagerDialog(
                                     Button(
                                         onClick = { onStartScan(subnetInput) },
                                         enabled = !isScanning,
-                                        shape = RoundedCornerShape(2.dp),
+                                        shape = Sharp,
                                         modifier = Modifier
                                             .height(52.dp)
                                             .testTag("rescan_network_button")
@@ -524,7 +524,7 @@ fun DeviceManagerDialog(
                                         selectedTab = 2
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                    shape = RoundedCornerShape(2.dp)
+                                    shape = Sharp
                                 ) {
                                     Text("Enter TV IP Directly", color = Color.Black, fontWeight = FontWeight.Bold)
                                 }
@@ -537,7 +537,7 @@ fun DeviceManagerDialog(
                                 items(discoveredList) { discovered ->
                                     Surface(
                                         color = RemoteCardBg,
-                                        shape = RoundedCornerShape(4.dp),
+                                        shape = Sharp,
                                         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                                     ) {
                                         Row(
@@ -590,7 +590,7 @@ fun DeviceManagerDialog(
                                                     onSaveDevice(newEntity)
                                                     onDismiss()
                                                 },
-                                                shape = RoundedCornerShape(2.dp),
+                                                shape = Sharp,
                                                 colors = ButtonDefaults.buttonColors(containerColor = discovered.deviceType.brandColor),
                                                 modifier = Modifier.testTag("connect_discovered_${discovered.ipAddress.replace(".", "_")}")
                                             ) {
@@ -752,7 +752,7 @@ fun DeviceManagerDialog(
                                         }
                                     },
                                     modifier = Modifier.testTag("test_ping_button"),
-                                    shape = RoundedCornerShape(2.dp)
+                                    shape = Sharp
                                 ) {
                                     if (isPinging) {
                                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -799,7 +799,7 @@ fun DeviceManagerDialog(
                                     .height(50.dp)
                                     .testTag("save_device_button"),
                                 colors = ButtonDefaults.buttonColors(containerColor = formType.brandColor),
-                                shape = RoundedCornerShape(4.dp)
+                                shape = Sharp
                             ) {
                                 Text("Connect to TV Now", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
@@ -818,8 +818,8 @@ fun DeviceManagerDialog(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(4.dp)),
+                                    .clip(Sharp)
+                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), Sharp),
                                 color = RemoteCardBg
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -881,7 +881,7 @@ fun DeviceManagerDialog(
                                                     android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                                                 }
                                             },
-                                            shape = RoundedCornerShape(2.dp),
+                                            shape = Sharp,
                                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                             modifier = Modifier.weight(1f).testTag("add_qs_remote_tile_button")
                                         ) {
@@ -896,10 +896,10 @@ fun DeviceManagerDialog(
                                                     android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                                                 }
                                             },
-                                            shape = RoundedCornerShape(2.dp),
+                                            shape = Sharp,
                                             modifier = Modifier.weight(1f).testTag("add_qs_power_tile_button")
                                         ) {
-                                            Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                                            Icon(Icons.Default.Bolt, contentDescription = null, tint = Paper, modifier = Modifier.size(16.dp))
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text("Encender TV", fontSize = 11.sp)
                                         }
@@ -909,7 +909,7 @@ fun DeviceManagerDialog(
 
                                     Surface(
                                         color = RemoteDarkBg.copy(alpha = 0.6f),
-                                        shape = RoundedCornerShape(2.dp),
+                                        shape = Sharp,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Column(modifier = Modifier.padding(10.dp)) {
@@ -941,8 +941,8 @@ fun DeviceManagerDialog(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp)),
+                                    .clip(Sharp)
+                                    .border(1.dp, RemoteBorder, Sharp),
                                 color = RemoteCardBg
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -1032,7 +1032,7 @@ fun DeviceManagerDialog(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .testTag("test_haptic_button"),
-                                            shape = RoundedCornerShape(2.dp),
+                                            shape = Sharp,
                                             colors = ButtonDefaults.outlinedButtonColors(
                                                 contentColor = MaterialTheme.colorScheme.primary
                                             ),
@@ -1063,8 +1063,8 @@ fun DeviceManagerDialog(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp)),
+                                    .clip(Sharp)
+                                    .border(1.dp, RemoteBorder, Sharp),
                                 color = RemoteCardBg
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -1120,7 +1120,7 @@ fun DeviceManagerDialog(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .testTag("clear_tokens_button"),
-                                        shape = RoundedCornerShape(2.dp),
+                                        shape = Sharp,
                                         colors = ButtonDefaults.outlinedButtonColors(
                                             contentColor = TextSecondary
                                         ),
@@ -1143,8 +1143,8 @@ fun DeviceManagerDialog(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp)),
+                                    .clip(Sharp)
+                                    .border(1.dp, RemoteBorder, Sharp),
                                 color = RemoteCardBg
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -1266,15 +1266,15 @@ fun TvDeviceCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(2.dp))
+            .clip(Sharp)
             .border(
                 width = if (isActive) 1.5.dp else 1.dp,
                 color = if (isActive) Color.White else RemoteBorderStrong,
-                shape = RoundedCornerShape(2.dp)
+                shape = Sharp
             )
             .clickable { onSelect() }
             .testTag("device_card_${device.id}"),
-        color = Color(0xFF0C0C0C)
+        color = Ink
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -1287,7 +1287,7 @@ fun TvDeviceCard(
                         modifier = Modifier
                             .size(8.dp)
                             .background(
-                                color = if (isActive) Color.White else Color(0xFF555555),
+                                color = if (isActive) Color.White else Hairline,
                                 shape = CircleShape
                             )
                     )
@@ -1305,7 +1305,7 @@ fun TvDeviceCard(
                 if (isActive) {
                     Box(
                         modifier = Modifier
-                            .background(Color.White, RoundedCornerShape(2.dp))
+                            .background(Color.White, Sharp)
                             .padding(horizontal = 7.dp, vertical = 2.dp)
                     ) {
                         Text(
@@ -1342,9 +1342,9 @@ fun TvDeviceCard(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color(0xFF1A1A1A))
-                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+                            .clip(Sharp)
+                            .background(Ink)
+                            .border(1.dp, RemoteBorderStrong, Sharp)
                             .clickable { onEditMac(device) }
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
@@ -1362,15 +1362,15 @@ fun TvDeviceCard(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color(0xFF1E1E1E))
-                            .border(1.dp, RemoteBorderStrong, RoundedCornerShape(2.dp))
+                            .clip(Sharp)
+                            .background(Ink)
+                            .border(1.dp, RemoteBorderStrong, Sharp)
                             .clickable { onEditMac(device) }
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = "[NO MAC]",
-                            color = Color(0xFFA1A1AA),
+                            color = Ash,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold
@@ -1391,8 +1391,8 @@ fun TvDeviceCard(
                     if (!device.isDefault) {
                         Surface(
                             onClick = onSetDefault,
-                            shape = RoundedCornerShape(2.dp),
-                            color = Color(0xFF141414),
+                            shape = Sharp,
+                            color = Ink,
                             border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong),
                             modifier = Modifier.testTag("set_default_${device.id}")
                         ) {
@@ -1427,8 +1427,8 @@ fun TvDeviceCard(
 
                     Surface(
                         onClick = onWakeOnLan,
-                        shape = RoundedCornerShape(2.dp),
-                        color = Color(0xFF141414),
+                        shape = Sharp,
+                        color = Ink,
                         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong),
                         modifier = Modifier.testTag("wake_device_${device.id}")
                     ) {
@@ -1456,7 +1456,7 @@ fun TvDeviceCard(
                     if (device.deviceType == DeviceType.ANDROID_TV && onPair != null) {
                         Surface(
                             onClick = onPair,
-                            shape = RoundedCornerShape(2.dp),
+                            shape = Sharp,
                             color = Color.White,
                             modifier = Modifier.testTag("pair_device_${device.id}")
                         ) {
@@ -1487,7 +1487,7 @@ fun TvDeviceCard(
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Delete",
-                        tint = Color(0xFFA1A1AA),
+                        tint = Ash,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -1504,7 +1504,7 @@ fun GuideCard(
 ) {
     Surface(
         color = RemoteCardBg,
-        shape = RoundedCornerShape(4.dp),
+        shape = Sharp,
         border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {

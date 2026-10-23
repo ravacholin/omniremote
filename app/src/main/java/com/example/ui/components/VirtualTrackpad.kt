@@ -168,8 +168,8 @@ fun VirtualTrackpad(
         ) {
             // Live Gesture HUD
             Surface(
-                color = Color(0xFF101010),
-                shape = RoundedCornerShape(2.dp),
+                color = Ink,
+                shape = Sharp,
                 border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong),
                 modifier = Modifier.testTag("trackpad_hud")
             ) {
@@ -199,8 +199,8 @@ fun VirtualTrackpad(
 
             // Sensitivity Switcher Pill
             Surface(
-                color = Color(0xFF0C0C0C),
-                shape = RoundedCornerShape(2.dp),
+                color = Ink,
+                shape = Sharp,
                 border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorderStrong)
             ) {
                 Row(
@@ -213,7 +213,7 @@ fun VirtualTrackpad(
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(2.dp))
+                                .clip(Sharp)
                                 .background(if (isSelected) Color.White else Color.Transparent)
                                 .selectable(selected = isSelected, role = Role.RadioButton, onClick = { sensitivity = sens })
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -242,8 +242,8 @@ fun VirtualTrackpad(
                 .fillMaxWidth()
                 .weight(1f)
                 .heightIn(min = 220.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .border(1.5.dp, RemoteBorderStrong, RoundedCornerShape(4.dp))
+                .clip(Sharp)
+                .border(1.5.dp, RemoteBorderStrong, Sharp)
                 .pointerInput(sensitivity) {
                     awaitEachGesture {
                         val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = false)
@@ -340,8 +340,8 @@ fun VirtualTrackpad(
                     }
                 }
                 .testTag("trackpad_surface"),
-            color = Color(0xFF090909),
-            shape = RoundedCornerShape(4.dp)
+            color = Ink,
+            shape = Sharp
         ) {
             Box(
                 modifier = Modifier
@@ -411,7 +411,7 @@ fun VirtualTrackpad(
                         .size(96.dp)
                         .border(
                             width = 1.dp,
-                            color = if (activeDirection == NavigationCommand.SELECT) Color.White else Color(0xFF222222),
+                            color = if (activeDirection == NavigationCommand.SELECT) Color.White else Hairline,
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center

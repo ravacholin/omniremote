@@ -83,23 +83,39 @@ fun DeviceSelectorBar(
 
     Column(
         modifier = modifier.fillMaxWidth().testTag("device_selector_bar"),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
+        // Masthead: wordmark on the left, utilities on the right.
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            MonoLabel("Omni/Remote", modifier = Modifier.weight(1f), color = TextPrimary)
+            HeaderAction(RemoteIcons.Search, "Buscar TV", "open_scan_radar_button", onOpenScan)
+            HeaderAction(
+                RemoteIcons.Vibration,
+                if (isHapticEnabled) "Vibración sí" else "Vibración no",
+                "toggle_haptic_button",
+                onToggleHaptic,
+                active = isHapticEnabled
+            )
+            HeaderAction(RemoteIcons.Settings, "Ajustes", "open_manager_button", onOpenManager)
+        }
+        HorizontalDivider(color = Hairline, thickness = GridGap)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 14.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Box(modifier = Modifier.weight(1f)) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 64.dp)
-                        .clip(RoundedCornerShape(2.dp))
                         .clickable { expanded = true }
-                        .testTag("device_dropdown_trigger")
-                        .padding(vertical = 4.dp),
-                    verticalArrangement = Arrangement.Center
+                        .testTag("device_dropdown_trigger"),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -109,22 +125,21 @@ fun DeviceSelectorBar(
                             text = activeDevice?.name ?: "Añadir TV",
                             modifier = Modifier.weight(1f, fill = false),
                             style = MaterialTheme.typography.headlineMedium,
+                            color = TextPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Icon(RemoteIcons.Down, "Cambiar TV", tint = TextSecondary)
+                        Spacer(Modifier.width(6.dp))
+                        Icon(RemoteIcons.Down, "Cambiar TV", tint = TextMuted, modifier = Modifier.size(18.dp))
                     }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         StatusIndicatorDot(connectionState)
-                        Text(
+                        MonoLabel(
                             text = statusLabel + (activeDevice?.room?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            color = TextSecondary
                         )
                     }
                 }
@@ -134,8 +149,8 @@ fun DeviceSelectorBar(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
                     modifier = Modifier
-                        .background(RemoteCardBg)
-                        .border(1.dp, RemoteBorder, RoundedCornerShape(4.dp))
+                        .background(Ink)
+                        .border(GridGap, Hairline, Sharp)
                 ) {
                     Text(
                         text = "TUS TELEVISORES",
@@ -255,32 +270,15 @@ fun DeviceSelectorBar(
                 }
             }
 
-            IconButton(
+            IconKey(
+                icon = RemoteIcons.Power,
+                contentDescription = "Encender o apagar TV",
                 onClick = onPowerClick,
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(Color.White)
-                    .testTag("power_button")
-            ) {
-                Icon(RemoteIcons.Power, "Encender o apagar TV", tint = Color.Black, modifier = Modifier.size(26.dp))
-            }
-        }
-        HorizontalDivider(color = RemoteBorderStrong)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            HeaderAction(RemoteIcons.Search, "Buscar TV", "open_scan_radar_button", onOpenScan, Modifier.weight(1f))
-            HeaderAction(
-                RemoteIcons.Vibration,
-                if (isHapticEnabled) "Vibración sí" else "Vibración no",
-                "toggle_haptic_button",
-                onToggleHaptic,
-                Modifier.weight(1f),
-                isHapticEnabled
+                modifier = Modifier.size(56.dp),
+                testTag = "power_button",
+                inverted = true,
+                iconSize = 24.dp
             )
-            HeaderAction(RemoteIcons.Settings, "Ajustes", "open_manager_button", onOpenManager, Modifier.weight(1f))
         }
     }
 }
@@ -291,21 +289,16 @@ private fun HeaderAction(
     label: String,
     tag: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
     active: Boolean = false
 ) {
-    Column(
-        modifier = modifier
-            .heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(if (active) RemoteBtnActive else RemoteSurface)
+    Box(
+        modifier = Modifier
+            .size(48.dp)
             .clickable(onClick = onClick)
-            .testTag(tag)
-            .padding(horizontal = 4.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
+            .testTag(tag),
+        contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = label, tint = TextPrimary, modifier = Modifier.size(24.dp))
+        Icon(icon, contentDescription = label, tint = if (active) TextPrimary else TextMuted, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -334,7 +327,6 @@ fun StatusIndicatorDot(state: ConnectionState) {
         modifier = Modifier
             .size(6.dp)
             .alpha(if (isPulsing) alphaAnim else 1f)
-            .background(color, CircleShape)
-            .border(1.5.dp, color.copy(alpha = 0.35f), CircleShape)
+            .background(color)
     )
 }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -110,44 +111,12 @@ fun RemoteAppsGrid(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Top Header: Device Scope & "+ Add App" Button
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(
-                onClick = { isAddDialogOpen = true },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color.Black
-                ),
-                shape = RoundedCornerShape(2.dp),
-                contentPadding = PaddingValues(0.dp),
-                modifier = Modifier.size(48.dp).testTag("open_add_app_dialog_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Añadir aplicación",
-                    tint = Color.Black,
-                    modifier = Modifier.size(24.dp)
-                )
-
-            }
-        }
-
-        // Search Field
+        // Search field with the add key fused to its right edge
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChanged,
-            placeholder = {
-                Text(
-                    "Search TV apps...",
-                    fontSize = 11.sp,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    color = TextMuted
-                )
-            },
+            placeholder = { MonoLabel("Buscar apps") },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
@@ -170,25 +139,34 @@ fun RemoteAppsGrid(
             },
             singleLine = true,
             modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
+                .weight(1f)
+                .height(56.dp)
                 .testTag("app_search_input"),
-            shape = RoundedCornerShape(2.dp),
+            shape = Sharp,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color.White,
                 unfocusedBorderColor = RemoteBorderStrong,
                 focusedTextColor = TextPrimary,
                 unfocusedTextColor = TextPrimary,
                 cursorColor = Color.White,
-                focusedContainerColor = Color(0xFF0C0C0C),
-                unfocusedContainerColor = Color(0xFF0C0C0C)
+                focusedContainerColor = Void,
+                unfocusedContainerColor = Void
             )
         )
+        IconKey(
+            icon = Icons.Default.Add,
+            contentDescription = "Añadir aplicación",
+            onClick = { isAddDialogOpen = true },
+            modifier = Modifier.size(56.dp),
+            testTag = "open_add_app_dialog_button",
+            inverted = true
+        )
+        }
 
         // Category Filter Chips (Brutalist Inverted Pills)
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(GridGap)
         ) {
             items(categories) { cat ->
                 val isSelected = selectedCategory == cat
@@ -216,19 +194,14 @@ fun RemoteAppsGrid(
                             "All" -> "ALL ($allAppsCount)"
                             else -> cat.uppercase()
                         }
-                        Text(
-                            text = labelText,
-                            fontSize = 10.sp,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold
-                        )
+                        Text(text = labelText, style = MaterialTheme.typography.labelSmall)
                     },
-                    shape = RoundedCornerShape(2.dp),
+                    shape = Sharp,
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = Color.White,
                         selectedLabelColor = Color.Black,
-                        containerColor = Color(0xFF0C0C0C),
-                        labelColor = TextSecondary
+                        containerColor = Void,
+                        labelColor = TextMuted
                     ),
                     border = FilterChipDefaults.filterChipBorder(
                         enabled = true,
@@ -312,16 +285,16 @@ fun TvAppGridCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(2.dp))
+            .clip(Sharp)
             .border(
                 width = if (app.isFavorite) 1.5.dp else 1.dp,
                 color = if (app.isFavorite) Color.White else RemoteBorderStrong,
-                shape = RoundedCornerShape(2.dp)
+                shape = Sharp
             )
             .clickable { onLaunch() }
             .testTag("app_card_${app.id}"),
-        color = Color(0xFF0C0C0C),
-        shape = RoundedCornerShape(2.dp)
+        color = Ink,
+        shape = Sharp
     ) {
         Column(
             modifier = Modifier
@@ -391,7 +364,7 @@ fun TvAppGridCard(
                 // Launch badge (Brutalist stark pill)
                 Surface(
                     color = Color.White,
-                    shape = RoundedCornerShape(2.dp),
+                    shape = Sharp,
                     modifier = Modifier
                         .clickable { onLaunch() }
                         .testTag("launch_pill_${app.id}")
@@ -429,7 +402,7 @@ fun TvAppGridCard(
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "Delete app",
-                            tint = Color(0xFFA1A1AA),
+                            tint = Ash,
                             modifier = Modifier.size(14.dp)
                         )
                     }
@@ -458,79 +431,33 @@ fun EmptyAppsState(
     onAddApp: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 220.dp),
-        color = RemoteCardBg,
-        shape = RoundedCornerShape(4.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
+            .heightIn(min = 220.dp)
+            .border(GridGap, Hairline)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        MonoLabel(if (isFavoritesFilter) "Favoritos · 0" else if (searchQuery.isNotEmpty()) "Búsqueda · 0" else "Apps · 0")
+        Text(
+            text = if (isFavoritesFilter) "Todavía no hay favoritos." else if (searchQuery.isNotEmpty()) "Nada coincide con \u201c$searchQuery\u201d." else "Sin apps guardadas.",
+            style = MaterialTheme.typography.headlineSmall,
+            color = TextPrimary
+        )
+        Text(
+            text = if (isFavoritesFilter) "Marcá la estrella de cualquier app para fijarla acá." else "Agregá tus apps para abrirlas en ${deviceType.shortName} con un toque.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary
+        )
+        Row(
+            modifier = Modifier.padding(top = 6.dp).hairlineGrid(),
+            horizontalArrangement = Arrangement.spacedBy(GridGap)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .background(RemoteSurfaceVariant, CircleShape)
-                    .border(1.dp, RemoteBorder, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (isFavoritesFilter) Icons.Default.Star else Icons.Default.Tv,
-                    contentDescription = null,
-                    tint = if (isFavoritesFilter) Color.White else TextMuted,
-                    modifier = Modifier.size(28.dp)
-                )
+            if (isFavoritesFilter || searchQuery.isNotEmpty()) {
+                LabelKey("Ver todas", onClick = onClearFilter, modifier = Modifier.widthIn(min = 120.dp))
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = if (isFavoritesFilter) "No Favorite Apps Yet" else if (searchQuery.isNotEmpty()) "No Apps Match \"$searchQuery\"" else "No Apps Stored",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = if (isFavoritesFilter) "Tap the star (⭐) on any app card to bookmark it to your favorites list!" else "Add your favorite streaming or utility apps to quick-launch them on ${deviceType.shortName}.",
-                style = MaterialTheme.typography.bodySmall.copy(
-                    color = TextMuted,
-                    fontSize = 11.sp
-                ),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (isFavoritesFilter || searchQuery.isNotEmpty()) {
-                    Button(
-                        onClick = onClearFilter,
-                        colors = ButtonDefaults.buttonColors(containerColor = RemoteBtnDefault),
-                        shape = RoundedCornerShape(2.dp)
-                    ) {
-                        Text("View All Apps", color = TextPrimary, fontSize = 12.sp)
-                    }
-                }
-
-                Button(
-                    onClick = onAddApp,
-                    colors = ButtonDefaults.buttonColors(containerColor = deviceType.brandColor),
-                    shape = RoundedCornerShape(2.dp)
-                ) {
-                    Text("+ Add App", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-            }
+            LabelKey("+ Añadir app", onClick = onAddApp, inverted = true, modifier = Modifier.widthIn(min = 140.dp))
         }
     }
 }

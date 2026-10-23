@@ -61,6 +61,7 @@ import com.example.ui.theme.RemoteDarkBg
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.*
 
 data class AppPreset(
     val name: String,
@@ -168,8 +169,8 @@ fun AddTvAppDialog(
                     items(POPULAR_PRESETS) { preset ->
                         Surface(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(2.dp))
-                                .border(1.dp, RemoteBorder, RoundedCornerShape(2.dp))
+                                .clip(Sharp)
+                                .border(1.dp, RemoteBorder, Sharp)
                                 .clickable {
                                     appName = preset.name
                                     appIdentifier = if (deviceType == DeviceType.SAMSUNG_TIZEN) preset.samsungId else preset.androidPkg
@@ -306,7 +307,7 @@ fun AddTvAppDialog(
                 // Add to Favorites Switch
                 Surface(
                     color = RemoteDarkBg,
-                    shape = RoundedCornerShape(4.dp),
+                    shape = Sharp,
                     border = androidx.compose.foundation.BorderStroke(1.dp, RemoteBorder)
                 ) {
                     Row(
@@ -320,7 +321,7 @@ fun AddTvAppDialog(
                             Icon(
                                 imageVector = if (isFavorite) Icons.Default.Star else Icons.Outlined.StarOutline,
                                 contentDescription = null,
-                                tint = if (isFavorite) Color(0xFFF59E0B) else TextMuted,
+                                tint = if (isFavorite) Paper else TextMuted,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -335,7 +336,7 @@ fun AddTvAppDialog(
                         Switch(
                             checked = isFavorite,
                             onCheckedChange = { isFavorite = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFF59E0B))
+                            colors = SwitchDefaults.colors(checkedThumbColor = Void, checkedTrackColor = Paper)
                         )
                     }
                 }
@@ -351,7 +352,7 @@ fun AddTvAppDialog(
                 },
                 enabled = appName.isNotBlank() && appIdentifier.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = deviceType.brandColor),
-                shape = RoundedCornerShape(2.dp),
+                shape = Sharp,
                 modifier = Modifier.testTag("confirm_add_app_button")
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
@@ -360,7 +361,7 @@ fun AddTvAppDialog(
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss, shape = RoundedCornerShape(2.dp)) {
+            OutlinedButton(onClick = onDismiss, shape = Sharp) {
                 Text("Cancel", color = TextSecondary)
             }
         }
