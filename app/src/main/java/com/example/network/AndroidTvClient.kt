@@ -205,6 +205,7 @@ class AndroidTvClient(
                         while (remoteSocket === socket) handle(AndroidTvProtocol.readPacket(input))
                     } catch (e: Exception) {
                         if (remoteSocket === socket) {
+                            Log.w(tag, "Remote v2 reader failed; closing the control session", e)
                             closeRemoteSocket()
                             onConnectionChanged?.invoke(false, "Se perdió la conexión con la TV. Vuelve a conectar.")
                         }

@@ -96,7 +96,7 @@ class AndroidTvSessionTest {
                 val appLink = AndroidTvProtocol.getFieldBytes(
                     AndroidTvProtocol.getFieldBytes(appRequest, 90)!!, 1
                 )!!.toString(Charsets.UTF_8)
-                assertEquals("android-app://com.example.dimmer", appLink)
+                assertEquals("https://play.google.com/store/apps/details?id=com.tribalapps.tvdimmer", appLink)
                 val appPacket = AndroidTvProtocol.readPacket(input)
                 val launch = AndroidTvProtocol.getFieldBytes(appPacket, 90)!!
                 assertEquals("https://www.disneyplus.com", AndroidTvProtocol.getFieldBytes(launch, 1)!!.toString(Charsets.UTF_8))
@@ -105,8 +105,6 @@ class AndroidTvSessionTest {
                     val appLink = AndroidTvProtocol.getFieldBytes(packet, 90)!!
                     assertEquals(expected, AndroidTvProtocol.getFieldBytes(appLink, 1)!!.toString(Charsets.UTF_8))
                 }
-                val flowRequest = AndroidTvProtocol.readPacket(input)
-                AndroidTvProtocol.writePacket(output, bytes(3, byteArrayOf(8, 1) + bytes(2, flowRequest)))
                 val flowStore = AndroidTvProtocol.getFieldBytes(AndroidTvProtocol.readPacket(input), 90)!!
                 assertEquals("https://play.google.com/store/apps/details?id=ar.com.flow.androidtv",
                     AndroidTvProtocol.getFieldBytes(flowStore, 1)!!.toString(Charsets.UTF_8))
@@ -141,7 +139,9 @@ class AndroidTvSessionTest {
             assertTrue(client.isConnected)
             assertTrue(store.isAndroidTvPaired("127.0.0.1"))
             assertTrue(client.sendKey(RemoteKey.HOME))
-            assertTrue(client.launchAppLink("android-app://com.example.dimmer"))
+            var dimmerStoreOpened = false
+            assertTrue(client.launchAppByPackage("com.tribalapps.tvdimmer") { dimmerStoreOpened = true })
+            assertTrue("TvDimmer must report that Open needs selecting on the TV", dimmerStoreOpened)
             assertTrue(client.launchAppByPackage("com.disney.disneyplus"))
             for (pkg in listOf("com.apple.atve.androidtv.appletv", "com.cbs.ca", "com.wbd.stream")) {
                 assertTrue(client.launchAppByPackage(pkg, "market://launch?id=$pkg"))

@@ -8,11 +8,15 @@ once to saved Android TVs, preserving existing shortcuts and custom dimmer entri
 The brightness button uses the saved TVDimmer entry regardless of the current Apps
 search or favorites filter. TVDimmer must still be installed on the TV.
 
-The shortcut sends an app-link launch request over the paired Android TV Remote
-Service v2 connection. A sent request is not confirmation that the TV opened the
-app: TVDimmer must be installed and the TV must support app-link launches. There
-is no ADB or developer-mode requirement for this shortcut. Connection or setup
-problems appear in the existing command feedback bar.
+Brightness and the Apps grid now share the same serialized launch path over the
+paired Android TV Remote Service v2 connection. Neither sends the unregistered
+`android-app://com.tribalapps.tvdimmer` or `market://launch` URI. Without a verified
+TVDimmer deep link, both open its official Google Play page and show
+«TvDimmer - NightCompanion: selecciona Abrir en la pantalla de la TV».
+Select Open on the TV to launch the installed app. No Enter key is sent automatically:
+the page may show Install instead. Explicit custom deep links are preserved.
+There is no ADB or developer-mode requirement. Sending a request does not confirm
+that the TV resolved it or opened TVDimmer; physical FlowBox testing is still required.
 
 On Samsung Tizen the same button is labeled **Bluetooth** and sends a normal-menu
 navigation sequence targeting the user's **UN50RU7100GCFV (2019)**:
@@ -25,7 +29,7 @@ physical hardware and may need adjustment for menu layout or timing differences.
 ## Validation on hardware
 
 1. Connect to an Android TV with TVDimmer installed and its entry saved in Apps.
-2. Tap Brightness and check that TVDimmer opens on the TV, including after reconnecting.
+2. Tap Brightness, select Open on its Google Play page and check that TVDimmer opens, including after reconnecting.
 3. Check the sun icon and Brightness accessibility label on small and large screens.
 4. Remove the app entry and tap Brightness; check the setup guidance.
 5. Select the Samsung RU7100, tap Bluetooth, and check that the speaker list opens.
