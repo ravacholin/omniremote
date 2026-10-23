@@ -1,5 +1,6 @@
 package com.example.service
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -35,9 +36,9 @@ class TvRemoteTileService : TileService() {
                 withContext(Dispatchers.Main) {
                     val tile = qsTile ?: return@withContext
                     tile.label = "Control TV"
-                    tile.subtitle = defaultTv?.name ?: "Abrir control"
                     tile.state = if (defaultTv != null) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        tile.subtitle = defaultTv?.name ?: "Abrir control"
                         tile.contentDescription = "Abrir control remoto OmniRemote para ${defaultTv?.name ?: "TV"}"
                     }
                     tile.updateTile()
@@ -48,6 +49,8 @@ class TvRemoteTileService : TileService() {
         }
     }
 
+    // The Intent overload is required on API 24–33; API 34+ uses PendingIntent below.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
 

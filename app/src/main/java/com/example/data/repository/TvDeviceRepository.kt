@@ -22,27 +22,13 @@ class TvDeviceRepository(private val dao: TvDeviceDao) {
     suspend fun getDefaultDevice(): TvDeviceEntity? = dao.getDefaultDevice()
 
     suspend fun saveDevice(device: TvDeviceEntity): Long {
-        val existing = if (device.id == 0L) dao.getDeviceByIp(device.ipAddress) else dao.getDeviceById(device.id)
-        val finalToken = if (device.authToken.isNotBlank()) device.authToken else (existing?.authToken ?: "")
-        val finalMac = if (device.macAddress.isNotBlank()) device.macAddress else (existing?.macAddress ?: "")
-        val targetId = if (device.id == 0L && existing != null) existing.id else device.id
-
-        return if (targetId == 0L) {
-            val id = dao.insert(device.copy(isDemoMode = false, authToken = finalToken, macAddress = finalMac))
-            dao.setDefaultDevice(id)
-            id
-        } else {
-            val updated = device.copy(id = targetId, isDemoMode = false, authToken = finalToken, macAddress = finalMac)
-            dao.update(updated)
-            targetId
-        }
+        return dao.saveDevice(device.copy(ipAddress = device.ipAddress.trim()))
     }
 
-    suspend fun deleteDevice(device: TvDeviceEntity) = dao.delete(device)
+    suspend fun deleteDevice(device: TvDeviceEntity) = dao.deleteAndSelectDefault(device)
 
     suspend fun setDefaultDevice(id: Long) {
-        dao.clearDefaultFlags()
-        dao.setDefaultDevice(id)
+        dao.selectDefaultDevice(id)
     }
 
     suspend fun updateAuthToken(id: Long, token: String) {

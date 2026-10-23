@@ -45,7 +45,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val database = AppDatabase.getInstance(application)
     private val repository = TvDeviceRepository(database.tvDeviceDao())
-    private val appRepository = TvAppRepository(database.tvAppDao())
+    private val appRepository = TvAppRepository(database)
     private val scanner = TvScanner(application)
     val tokenStore = com.example.data.local.TvTokenStore.getInstance(application)
     val nsdDiscoveryService = com.example.network.NsdTvDiscoveryService(application)
@@ -556,13 +556,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteDevice(device: TvDeviceEntity) {
-        viewModelScope.launch(Dispatchers.IO) {
-            repository.deleteDevice(device)
+        viewModelScope.launch {
+            val remaining = withContext(Dispatchers.IO) {
+                repository.deleteDevice(device)
+                repository.getDefaultDevice()
+            }
             if (_activeDevice.value?.id == device.id) {
-                val remaining = repository.getDefaultDevice()
-                _activeDevice.value = remaining
                 if (remaining != null) {
-                    controller.setActiveDevice(remaining)
+                    selectDevice(remaining)
+                } else {
+                    controller.disconnectCurrent()
+                    _activeDevice.value = null
                 }
             }
         }

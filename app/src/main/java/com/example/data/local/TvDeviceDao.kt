@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.example.data.model.TvDeviceEntity
 import kotlinx.coroutines.flow.Flow
@@ -22,6 +23,42 @@ interface TvDeviceDao {
 
     @Query("SELECT * FROM tv_devices WHERE isDefault = 1 LIMIT 1")
     suspend fun getDefaultDevice(): TvDeviceEntity?
+
+    @Query("SELECT * FROM tv_devices ORDER BY isDefault DESC, lastConnected DESC, id ASC LIMIT 1")
+    suspend fun getPreferredDevice(): TvDeviceEntity?
+
+    // Serialize identity lookup and writes so concurrent discovery cannot create duplicates.
+    @Transaction
+    suspend fun saveDevice(device: TvDeviceEntity): Long {
+        val existing = if (device.id == 0L) getDeviceByIp(device.ipAddress) else getDeviceById(device.id)
+        // A delayed update for a deleted TV must not change the remaining default.
+        if (device.id != 0L && existing == null) return device.id
+        val saved = device.copy(
+            id = existing?.id ?: device.id,
+            authToken = device.authToken.ifBlank { existing?.authToken.orEmpty() },
+            macAddress = device.macAddress.ifBlank { existing?.macAddress.orEmpty() },
+            isDefault = device.isDefault || existing?.isDefault == true || getDefaultDevice() == null,
+            isDemoMode = false
+        )
+        if (saved.isDefault) clearDefaultFlags()
+        return if (saved.id == 0L) insert(saved) else {
+            update(saved)
+            saved.id
+        }
+    }
+
+    @Transaction
+    suspend fun selectDefaultDevice(id: Long) {
+        if (getDeviceById(id) == null) return
+        clearDefaultFlags()
+        setDefaultDevice(id)
+    }
+
+    @Transaction
+    suspend fun deleteAndSelectDefault(device: TvDeviceEntity) {
+        delete(device)
+        getPreferredDevice()?.let { selectDefaultDevice(it.id) }
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(device: TvDeviceEntity): Long

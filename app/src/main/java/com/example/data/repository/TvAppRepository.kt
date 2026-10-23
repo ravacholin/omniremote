@@ -1,6 +1,7 @@
 package com.example.data.repository
 
-import com.example.data.local.TvAppDao
+import androidx.room.withTransaction
+import com.example.data.local.AppDatabase
 import com.example.data.model.DeviceType
 import com.example.data.model.TvAppEntity
 import kotlinx.coroutines.flow.Flow
@@ -9,7 +10,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.example.data.model.StreamingAppCatalog
 
-class TvAppRepository(private val dao: TvAppDao) {
+class TvAppRepository(private val database: AppDatabase) {
+    private val dao = database.tvAppDao()
     private val catalogMutex = Mutex()
 
     fun getAppsForDevice(deviceId: Long): Flow<List<TvAppEntity>> =
@@ -19,30 +21,35 @@ class TvAppRepository(private val dao: TvAppDao) {
         dao.getFavoriteAppsForDevice(deviceId)
 
     suspend fun ensureDefaultAppsForDevice(deviceId: Long, deviceType: DeviceType) = catalogMutex.withLock {
-        if (dao.getAppCountForDevice(deviceId) == 0) {
-            val streamingIds = StreamingAppCatalog.apps.map { it.forDevice(deviceId, deviceType, 0).appIdentifier }.toSet()
-            val baseApps = when (deviceType) {
-                DeviceType.SAMSUNG_TIZEN -> getSamsungDefaultApps(deviceId)
-                DeviceType.ANDROID_TV -> getAndroidTvDefaultApps(deviceId)
+        database.withTransaction {
+            // Discovery callbacks may outlive a TV deleted by the user.
+            if (database.tvDeviceDao().getDeviceById(deviceId) == null) return@withTransaction
+            if (dao.getAppCountForDevice(deviceId) == 0) {
+                val streamingIds = StreamingAppCatalog.apps.map { it.forDevice(deviceId, deviceType, 0).appIdentifier }.toSet()
+                val baseApps = when (deviceType) {
+                    DeviceType.SAMSUNG_TIZEN -> getSamsungDefaultApps(deviceId)
+                    DeviceType.ANDROID_TV -> getAndroidTvDefaultApps(deviceId)
+                }
+                dao.insertAll(baseApps.filter { it.appIdentifier !in streamingIds })
             }
-            dao.insertAll(baseApps.filter { it.appIdentifier !in streamingIds })
-        }
-        val existing = dao.getAppsForDevice(deviceId).first().toMutableList()
-        StreamingAppCatalog.apps.forEachIndexed { index, definition ->
-            val preset = definition.forDevice(deviceId, deviceType, index + 10)
-            val oldIds = if (deviceType == DeviceType.ANDROID_TV) definition.oldAndroidIds else definition.oldSamsungIds
-            val current = existing.firstOrNull { it.appIdentifier == preset.appIdentifier }
-                ?: existing.firstOrNull { it.appIdentifier in oldIds &&
-                    (it.appName.equals(definition.name, true) ||
-                        (definition.iconKey == "max" && it.appName.lowercase().let { name -> name == "max" || name == "max / hbo" || name == "hbo max" })) }
-            if (current == null) {
-                val id = dao.insert(preset)
-                existing.add(preset.copy(id = id))
-            } else {
-                // Preserve names, favorites, ordering and usage while correcting launch metadata.
-                dao.update(current.copy(appIdentifier = preset.appIdentifier,
-                    deepLinkUrl = preset.deepLinkUrl, iconKey = preset.iconKey))
+            val existing = dao.getAppsForDevice(deviceId).first().toMutableList()
+            StreamingAppCatalog.apps.forEachIndexed { index, definition ->
+                val preset = definition.forDevice(deviceId, deviceType, index + 10)
+                val oldIds = if (deviceType == DeviceType.ANDROID_TV) definition.oldAndroidIds else definition.oldSamsungIds
+                val current = existing.firstOrNull { it.appIdentifier == preset.appIdentifier }
+                    ?: existing.firstOrNull { it.appIdentifier in oldIds &&
+                        (it.appName.equals(definition.name, true) ||
+                            (definition.iconKey == "max" && it.appName.lowercase().let { name -> name == "max" || name == "max / hbo" || name == "hbo max" })) }
+                if (current == null) {
+                    val id = dao.insert(preset)
+                    existing.add(preset.copy(id = id))
+                } else {
+                    // Preserve names, favorites, ordering and usage while correcting launch metadata.
+                    dao.update(current.copy(appIdentifier = preset.appIdentifier,
+                        deepLinkUrl = preset.deepLinkUrl, iconKey = preset.iconKey))
+                }
             }
+
         }
     }
 
