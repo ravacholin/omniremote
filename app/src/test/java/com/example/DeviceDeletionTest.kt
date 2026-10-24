@@ -1,6 +1,7 @@
 package com.example
 
 import android.app.Application
+import android.os.Looper
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
@@ -26,6 +27,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -64,7 +66,10 @@ class DeviceDeletionTest {
         model.selectDevice(saved)
         model.deleteDevice(saved)
         withTimeout(5000) {
-            while (model.activeDevice.value != null) delay(10)
+            while (model.activeDevice.value != null) {
+                shadowOf(Looper.getMainLooper()).idle()
+                delay(10)
+            }
         }
         assertEquals(ConnectionState.Disconnected, model.connectionState.value)
         assertFalse(model.isCurrentDeviceAndroidTv)
@@ -78,7 +83,10 @@ class DeviceDeletionTest {
         model.selectDevice(saved)
         model.deleteDevice(saved)
         withTimeout(5000) {
-            while (model.activeDevice.value?.id != second) delay(10)
+            while (model.activeDevice.value?.id != second) {
+                shadowOf(Looper.getMainLooper()).idle()
+                delay(10)
+            }
         }
         assertEquals(second, model.activeDevice.value?.id)
     }
