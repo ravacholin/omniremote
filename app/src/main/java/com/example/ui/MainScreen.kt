@@ -121,7 +121,6 @@ fun MainScreen(
     val powerOnStatusMessage by viewModel.powerOnStatusMessage.collectAsStateWithLifecycle()
     val showMacConfigDialog by viewModel.showMacConfigDialog.collectAsStateWithLifecycle()
     val macConfigDevice by viewModel.macConfigDevice.collectAsStateWithLifecycle()
-    val isAndroidTvPaired = viewModel.isAndroidTvPaired
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -238,7 +237,8 @@ fun MainScreen(
                     )
                 }
 
-                // Connection state (auth prompt / error / no TV)
+                // Only WaitingAuth requests a PIN. A cached pairing flag can be stale
+                // while credentials are restored or the control session reconnects.
                 val isAndroidTv = activeDevice?.deviceType == DeviceType.ANDROID_TV
                 when (val state = connectionState) {
                     is ConnectionState.WaitingAuth -> Notice(
@@ -275,16 +275,6 @@ fun MainScreen(
                         )
                     }
                     else -> {}
-                }
-
-                // Android TV 1-touch pairing prompt
-                if (isAndroidTv && !isAndroidTvPaired && connectionState !is ConnectionState.WaitingAuth) {
-                    Notice(
-                        label = "Vincular Google TV",
-                        message = "Con el código PIN que aparece en pantalla",
-                        actions = listOf(NoticeAction("Vincular", primary = true) { viewModel.startAndroidTvPairing() }),
-                        onClick = { viewModel.startAndroidTvPairing() }
-                    )
                 }
 
                 // Navigation and gestures share the D-pad; apps and numpad have their own tabs.
