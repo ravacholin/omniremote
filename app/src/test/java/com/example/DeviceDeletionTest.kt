@@ -63,7 +63,14 @@ class DeviceDeletionTest {
         val db = AppDatabase.getInstance(application)
         val id = db.tvDeviceDao().insert(device().copy(isDefault = true))
         val saved = db.tvDeviceDao().getDeviceById(id)!!
-        model.selectDevice(saved)
+        // Finish startup auto-selection before deleting; otherwise its suspended
+        // app initialization can reselect the stale initial database snapshot.
+        withTimeout(5000) {
+            while (model.activeDevice.value?.id != saved.id) {
+                shadowOf(Looper.getMainLooper()).idle()
+                delay(10)
+            }
+        }
         model.deleteDevice(saved)
         withTimeout(5000) {
             while (model.activeDevice.value != null) {
@@ -80,7 +87,14 @@ class DeviceDeletionTest {
         val first = db.tvDeviceDao().insert(device().copy(isDefault = true))
         val second = db.tvDeviceDao().insert(device().copy(ipAddress = "127.0.0.2"))
         val saved = db.tvDeviceDao().getDeviceById(first)!!
-        model.selectDevice(saved)
+        // Finish startup auto-selection before deleting; otherwise its suspended
+        // app initialization can reselect the stale initial database snapshot.
+        withTimeout(5000) {
+            while (model.activeDevice.value?.id != saved.id) {
+                shadowOf(Looper.getMainLooper()).idle()
+                delay(10)
+            }
+        }
         model.deleteDevice(saved)
         withTimeout(5000) {
             while (model.activeDevice.value?.id != second) {
