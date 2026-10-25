@@ -48,6 +48,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -279,25 +282,13 @@ fun MainScreen(
 
                 // Navigation and gestures share the D-pad; apps and numpad have their own tabs.
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectableGroup(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RemoteMode.entries.forEachIndexed { index, mode ->
-                            RemoteModeTabButton(
-                                mode = mode,
-                                index = index + 1,
-                                isSelected = activeTab == mode,
-                                onClick = {
-                                    HapticUtil.triggerKeyHaptic(context)
-                                    viewModel.setActiveTab(mode)
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
+                    RemoteModeTabs(
+                        activeTab = activeTab,
+                        onSelect = { mode ->
+                            HapticUtil.triggerKeyHaptic(context)
+                            viewModel.setActiveTab(mode)
                         }
-                    }
+                    )
                     HorizontalDivider(color = Hairline, thickness = GridGap)
                 }
 
@@ -460,6 +451,56 @@ fun MainScreen(
                 viewModel.detectMacForDevice(dev)
             }
         )
+    }
+}
+
+/** Mode tabs: tap one, or slide a finger along the row to switch to the tab under it. */
+@Composable
+fun RemoteModeTabs(
+    activeTab: RemoteMode,
+    onSelect: (RemoteMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val currentTab by rememberUpdatedState(activeTab)
+    val currentOnSelect by rememberUpdatedState(onSelect)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .selectableGroup()
+            .testTag("remote_mode_tabs")
+            .pointerInput(Unit) {
+                // Drag events can arrive before recomposition updates currentTab.
+                var lastTab = currentTab
+                fun selectAt(x: Float) {
+                    val modes = RemoteMode.entries
+                    val mode = modes[(x / size.width * modes.size).toInt().coerceIn(0, modes.lastIndex)]
+                    if (mode != lastTab) {
+                        lastTab = mode
+                        currentOnSelect(mode)
+                    }
+                }
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        lastTab = currentTab
+                        selectAt(offset.x)
+                    },
+                    onHorizontalDrag = { change, _ ->
+                        change.consume()
+                        selectAt(change.position.x)
+                    }
+                )
+            },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RemoteMode.entries.forEachIndexed { index, mode ->
+            RemoteModeTabButton(
+                mode = mode,
+                index = index + 1,
+                isSelected = activeTab == mode,
+                onClick = { if (mode != activeTab) onSelect(mode) },
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }
 
