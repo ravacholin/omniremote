@@ -2,7 +2,10 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,12 +25,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.isOutOfBounds
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -47,8 +56,82 @@ val GridGap = 1.dp
 fun Modifier.hairlineGrid(): Modifier = this.background(Hairline).padding(GridGap)
 
 /**
+ * Hold-to-repeat timing, modelled on a physical remote: a tap sends one
+ * command; holding past [HOLD_DELAY_MS] sends it again and keeps repeating,
+ * a little faster the longer the key stays down.
+ */
+object KeyRepeat {
+    const val HOLD_DELAY_MS = 400L
+    const val INITIAL_INTERVAL_MS = 160L
+    const val MIN_INTERVAL_MS = 70L
+    private const val ACCELERATION_MS = 15L
+
+    /** Delay before the next repeat, after [repeats] repeats have been sent. */
+    fun intervalAfter(repeats: Int): Long =
+        (INITIAL_INTERVAL_MS - (repeats - 1).coerceAtLeast(0) * ACCELERATION_MS)
+            .coerceAtLeast(MIN_INTERVAL_MS)
+}
+
+/**
+ * Click that repeats while held. A tap fires on release, like [clickable];
+ * holding fires after [KeyRepeat.HOLD_DELAY_MS] and then at [KeyRepeat.intervalAfter],
+ * without an extra command on release. Sliding off the key or a parent
+ * gesture consuming the touch (D-pad swipe, scroll) cancels it.
+ */
+@Composable
+private fun Modifier.repeatingClickable(
+    interaction: MutableInteractionSource,
+    onClick: () -> Unit
+): Modifier {
+    val currentOnClick by rememberUpdatedState(onClick)
+    return this
+        .semantics {
+            role = Role.Button
+            onClick { currentOnClick(); true }
+        }
+        .pointerInput(interaction) {
+            awaitEachGesture {
+                val down = awaitFirstDown()
+                val press = PressInteraction.Press(down.position)
+                interaction.tryEmit(press)
+                var now = down.uptimeMillis
+                var nextRepeatAt = now + KeyRepeat.HOLD_DELAY_MS
+                var repeats = 0
+                var lifted = false
+                while (true) {
+                    val event = withTimeoutOrNull((nextRepeatAt - now).coerceAtLeast(0)) {
+                        awaitPointerEvent()
+                    }
+                    if (event == null) {
+                        now = nextRepeatAt
+                        repeats++
+                        currentOnClick()
+                        nextRepeatAt = now + KeyRepeat.intervalAfter(repeats)
+                        continue
+                    }
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (change.isConsumed) break
+                    now = change.uptimeMillis
+                    if (!change.pressed) {
+                        change.consume()
+                        lifted = true
+                        break
+                    }
+                    if (change.isOutOfBounds(size, extendedTouchPadding)) break
+                }
+                if (lifted) {
+                    interaction.tryEmit(PressInteraction.Release(press))
+                    if (repeats == 0) currentOnClick()
+                } else {
+                    interaction.tryEmit(PressInteraction.Cancel(press))
+                }
+            }
+        }
+}
+
+/**
  * A square-edged key that inverts on press. Inverted keys are the primary
- * actions: white at rest, grey while held.
+ * actions: white at rest, grey while held. [repeatable] keys repeat while held.
  */
 @Composable
 fun GridKey(
@@ -56,6 +139,7 @@ fun GridKey(
     modifier: Modifier = Modifier,
     testTag: String? = null,
     inverted: Boolean = false,
+    repeatable: Boolean = false,
     content: @Composable (tint: Color) -> Unit
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -72,7 +156,10 @@ fun GridKey(
         modifier = modifier
             .heightIn(min = 48.dp)
             .background(background)
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .then(
+                if (repeatable) Modifier.repeatingClickable(interaction, onClick)
+                else Modifier.clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            )
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
         contentAlignment = Alignment.Center
     ) {
@@ -89,9 +176,10 @@ fun IconKey(
     modifier: Modifier = Modifier,
     testTag: String? = null,
     inverted: Boolean = false,
-    iconSize: Dp = 22.dp
+    iconSize: Dp = 22.dp,
+    repeatable: Boolean = false
 ) {
-    GridKey(onClick = onClick, modifier = modifier, testTag = testTag, inverted = inverted) { tint ->
+    GridKey(onClick = onClick, modifier = modifier, testTag = testTag, inverted = inverted, repeatable = repeatable) { tint ->
         Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(iconSize))
     }
 }
