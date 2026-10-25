@@ -121,27 +121,45 @@ fun RemoteDpad(
                                 pass = PointerEventPass.Initial
                             )
                             var swiping = false
+                            var displacement = Offset.Zero
+                            var now = down.uptimeMillis
+                            var nextRepeatAt = Long.MAX_VALUE
+                            var repeats = 0
+                            fun sendSwipe() {
+                                HapticUtil.triggerKeyHaptic(context)
+                                currentOnKeyPress(swipeDirection(displacement))
+                            }
                             // Observe before child clicks and surrounding scroll containers.
                             // Leave taps alone; once dragging, cancel the child click.
+                            // Holding at the end of a swipe repeats it, steered by the finger.
                             while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val event = if (swiping) {
+                                    withTimeoutOrNull((nextRepeatAt - now).coerceAtLeast(0)) {
+                                        awaitPointerEvent(PointerEventPass.Initial)
+                                    }
+                                } else {
+                                    awaitPointerEvent(PointerEventPass.Initial)
+                                }
+                                if (event == null) {
+                                    now = nextRepeatAt
+                                    repeats++
+                                    sendSwipe()
+                                    nextRepeatAt = now + KeyRepeat.intervalAfter(repeats)
+                                    continue
+                                }
                                 val change = event.changes.firstOrNull { it.id == down.id }
                                     ?: break
                                 if (change.isConsumed) break
-                                val displacement = change.position - down.position
-                                if (displacement.getDistance() > viewConfiguration.touchSlop) {
+                                now = change.uptimeMillis
+                                displacement = change.position - down.position
+                                if (!swiping && displacement.getDistance() > viewConfiguration.touchSlop) {
                                     swiping = true
+                                    nextRepeatAt = now + KeyRepeat.HOLD_DELAY_MS
                                 }
                                 if (swiping) change.consume()
                                 if (!change.pressed) {
-                                    if (swiping && displacement != Offset.Zero) {
-                                        val key = if (abs(displacement.x) > abs(displacement.y)) {
-                                            if (displacement.x > 0) RemoteKey.RIGHT else RemoteKey.LEFT
-                                        } else {
-                                            if (displacement.y > 0) RemoteKey.DOWN else RemoteKey.UP
-                                        }
-                                        HapticUtil.triggerKeyHaptic(context)
-                                        currentOnKeyPress(key)
+                                    if (swiping && repeats == 0 && displacement != Offset.Zero) {
+                                        sendSwipe()
                                     }
                                     break
                                 }
@@ -153,11 +171,11 @@ fun RemoteDpad(
                 val arrowSize = if (padSize >= 260.dp) 30.dp else 26.dp
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(GridGap)) {
                     PadCorner()
-                    IconKey(RemoteIcons.Up, "Up", { handlePress(RemoteKey.UP) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_up", iconSize = arrowSize)
+                    IconKey(RemoteIcons.Up, "Up", { handlePress(RemoteKey.UP) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_up", iconSize = arrowSize, repeatable = true)
                     PadCorner()
                 }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(GridGap)) {
-                    IconKey(RemoteIcons.Left, "Left", { handlePress(RemoteKey.LEFT) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_left", iconSize = arrowSize)
+                    IconKey(RemoteIcons.Left, "Left", { handlePress(RemoteKey.LEFT) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_left", iconSize = arrowSize, repeatable = true)
                     GridKey(
                         onClick = { handlePress(RemoteKey.ENTER) },
                         inverted = true,
@@ -175,11 +193,11 @@ fun RemoteDpad(
                             color = tint
                         )
                     }
-                    IconKey(RemoteIcons.Right, "Right", { handlePress(RemoteKey.RIGHT) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_right", iconSize = arrowSize)
+                    IconKey(RemoteIcons.Right, "Right", { handlePress(RemoteKey.RIGHT) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_right", iconSize = arrowSize, repeatable = true)
                 }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(GridGap)) {
                     PadCorner()
-                    IconKey(RemoteIcons.Down, "Down", { handlePress(RemoteKey.DOWN) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_down", iconSize = arrowSize)
+                    IconKey(RemoteIcons.Down, "Down", { handlePress(RemoteKey.DOWN) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_down", iconSize = arrowSize, repeatable = true)
                     PadCorner()
                 }
             }
@@ -264,6 +282,14 @@ fun RemoteDpad(
     }
 }
 
+/** Dominant axis of a D-pad swipe. */
+private fun swipeDirection(displacement: Offset): RemoteKey =
+    if (abs(displacement.x) > abs(displacement.y)) {
+        if (displacement.x > 0) RemoteKey.RIGHT else RemoteKey.LEFT
+    } else {
+        if (displacement.y > 0) RemoteKey.DOWN else RemoteKey.UP
+    }
+
 @Composable
 private fun RowScope.NavKey(icon: ImageVector, label: String, testTag: String, onClick: () -> Unit) {
     IconKey(icon, label, onClick, Modifier.weight(1f).fillMaxHeight(), testTag)
@@ -324,7 +350,7 @@ fun MediaQuickActionPill(
     }
 }
 
-/** Secondary transport key (rewind, fast-forward). */
+/** Secondary transport key (rewind, fast-forward); repeats while held. */
 @Composable
 fun TactileMediaButton(
     icon: ImageVector,
@@ -336,7 +362,7 @@ fun TactileMediaButton(
     size: Dp = 48.dp,
     iconSize: Dp = 20.dp
 ) {
-    IconKey(icon, contentDescription, onClick, modifier, testTag, iconSize = iconSize)
+    IconKey(icon, contentDescription, onClick, modifier, testTag, iconSize = iconSize, repeatable = true)
 }
 
 /** Free-standing square key outlined by a hairline. */
@@ -363,7 +389,7 @@ fun CircleRemoteButton(
     )
 }
 
-/** Up / centre / down column used for volume and channel. */
+/** Up / centre / down column used for volume and channel; up and down repeat while held. */
 @Composable
 fun RockerColumn(
     topIcon: ImageVector,
@@ -380,7 +406,7 @@ fun RockerColumn(
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(GridGap)) {
         val cellModifier = Modifier.weight(1f).fillMaxWidth()
-        IconKey(topIcon, topLabel, onTopClick, cellModifier, "${testTagPrefix}_up")
+        IconKey(topIcon, topLabel, onTopClick, cellModifier, "${testTagPrefix}_up", repeatable = true)
         GridKey(onClick = onCenterClick, modifier = cellModifier, testTag = "${testTagPrefix}_center") { tint ->
             if (centerIcon != null) {
                 Icon(centerIcon, contentDescription = centerLabel, tint = if (tint == Paper) Ash else tint, modifier = Modifier.size(18.dp))
@@ -388,6 +414,6 @@ fun RockerColumn(
                 Text(centerLabel, style = MaterialTheme.typography.labelMedium, color = if (tint == Paper) Ash else tint)
             }
         }
-        IconKey(bottomIcon, bottomLabel, onBottomClick, cellModifier, "${testTagPrefix}_down")
+        IconKey(bottomIcon, bottomLabel, onBottomClick, cellModifier, "${testTagPrefix}_down", repeatable = true)
     }
 }

@@ -16,8 +16,10 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
+import com.example.ui.components.KeyRepeat
 import com.example.ui.components.RemoteDpad
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -159,5 +161,67 @@ class RemoteDpadGestureTest {
             up()
         }
         compose.runOnIdle { assertEquals(listOf(RemoteKey.UP), keys) }
+    }
+
+    private fun holdKey(tag: String, millis: Long) {
+        compose.onNodeWithTag(tag).performTouchInput { down(center) }
+        compose.mainClock.advanceTimeBy(millis)
+        compose.onNodeWithTag(tag).performTouchInput { up() }
+    }
+
+    @Test fun holdingArrowRepeatsWithoutExtraOnRelease() {
+        showDpad()
+        holdKey("key_dpad_down", 1_000)
+        compose.runOnIdle {
+            assertTrue("expected several repeats, got $keys", keys.size >= 3)
+            assertTrue(keys.all { it == RemoteKey.DOWN })
+        }
+    }
+
+    @Test fun shortPressBelowHoldDelaySendsOnce() {
+        showDpad()
+        holdKey("key_dpad_up", KeyRepeat.HOLD_DELAY_MS / 2)
+        compose.runOnIdle { assertEquals(listOf(RemoteKey.UP), keys) }
+    }
+
+    @Test fun holdingVolumeAndChannelRepeats() {
+        showDpad()
+        holdKey("vol_up", 1_000)
+        compose.runOnIdle {
+            assertTrue(keys.size >= 3)
+            assertTrue(keys.all { it == RemoteKey.VOL_UP })
+            keys.clear()
+        }
+        holdKey("ch_down", 1_000)
+        compose.runOnIdle {
+            assertTrue(keys.size >= 3)
+            assertTrue(keys.all { it == RemoteKey.CH_DOWN })
+        }
+    }
+
+    @Test fun holdingOkDoesNotRepeat() {
+        showDpad()
+        holdKey("key_dpad_enter", 1_000)
+        compose.runOnIdle { assertEquals(listOf(RemoteKey.ENTER), keys) }
+    }
+
+    @Test fun swipeAndHoldRepeatsDirection() {
+        showDpad()
+        compose.onNodeWithTag("key_dpad_enter").performTouchInput {
+            down(center)
+            moveTo(center + Offset(100f, 0f), delayMillis = 50)
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithTag("key_dpad_enter").performTouchInput { up() }
+        compose.runOnIdle {
+            assertTrue("expected several repeats, got $keys", keys.size >= 3)
+            assertTrue(keys.all { it == RemoteKey.RIGHT })
+        }
+    }
+
+    @Test fun repeatAccelerates() {
+        assertEquals(KeyRepeat.INITIAL_INTERVAL_MS, KeyRepeat.intervalAfter(1))
+        assertTrue(KeyRepeat.intervalAfter(4) < KeyRepeat.intervalAfter(1))
+        assertEquals(KeyRepeat.MIN_INTERVAL_MS, KeyRepeat.intervalAfter(100))
     }
 }
