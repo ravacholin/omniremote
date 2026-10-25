@@ -29,4 +29,17 @@ class AndroidAppLaunchLinksTest {
         val link = "android-app://com.example.custom"
         assertEquals(listOf(link), StreamingAppCatalog.androidLaunchLinks("com.example.custom", link))
     }
+
+    @Test fun `Paramount+ uses links its TV app claims and repairs the saved home page link`() {
+        val pkg = "com.cbs.ca"
+        val expected = listOf(
+            "pplusintl://www.paramountplus.com/shows/",
+            "https://www.paramountplus.com/shows/",
+            "https://www.paramountplus.com/",
+            "https://play.google.com/store/apps/details?id=$pkg"
+        )
+        for (saved in listOf("", "https://www.paramountplus.com/", "market://launch?id=$pkg")) {
+            assertEquals(expected, StreamingAppCatalog.androidLaunchLinks(pkg, saved))
+        }
+    }
 }

@@ -606,6 +606,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         controller.reconnect()
     }
 
+    fun onAppForeground() {
+        controller.reconnectIfFailed()
+    }
+
     fun testPing(ip: String, port: Int, callback: (Boolean) -> Unit) {
         viewModelScope.launch {
             val result = scanner.testConnection(ip, port)

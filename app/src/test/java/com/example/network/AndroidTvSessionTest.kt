@@ -100,7 +100,7 @@ class AndroidTvSessionTest {
                 val appPacket = AndroidTvProtocol.readPacket(input)
                 val launch = AndroidTvProtocol.getFieldBytes(appPacket, 90)!!
                 assertEquals("https://www.disneyplus.com", AndroidTvProtocol.getFieldBytes(launch, 1)!!.toString(Charsets.UTF_8))
-                for (expected in listOf("https://tv.apple.com", "https://www.paramountplus.com/", "https://play.hbomax.com")) {
+                for (expected in listOf("https://tv.apple.com", "pplusintl://www.paramountplus.com/shows/", "https://play.hbomax.com")) {
                     val packet = AndroidTvProtocol.readPacket(input)
                     val appLink = AndroidTvProtocol.getFieldBytes(packet, 90)!!
                     assertEquals(expected, AndroidTvProtocol.getFieldBytes(appLink, 1)!!.toString(Charsets.UTF_8))

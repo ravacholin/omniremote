@@ -12,13 +12,17 @@ Catálogo integrado el 22 de octubre de 2026. No instala servicios ni inicia ses
 
 El catálogo se comparte entre los accesos predeterminados y el diálogo para añadir apps. Al abrir una TV guardada se agregan los servicios que faltan, conservando los nombres personalizados, favoritos, orden e historial de los registros existentes. Se corrigen los antiguos presets de Max y Paramount+; los paquetes estadounidenses de Paramount+ no se utilizan como opción predeterminada argentina.
 
-Android envía `RemoteAppLinkLaunchRequest` (campo protobuf 90, enlace en campo 1) por la conexión Remote Service v2 autenticada, anunciando APP_LINK (512). Apple TV usa `https://tv.apple.com`, Paramount+ usa `https://www.paramountplus.com/`, HBO Max usa `https://play.hbomax.com` (alternativa `https://play.max.com`) y Disney+ usa `https://www.disneyplus.com`. Se reparan también los enlaces `market://launch` guardados por APK anteriores.
+Android envía `RemoteAppLinkLaunchRequest` (campo protobuf 90, enlace en campo 1) por la conexión Remote Service v2 autenticada, anunciando APP_LINK (512). Apple TV usa `https://tv.apple.com`, Paramount+ usa `pplusintl://www.paramountplus.com/shows/` (alternativas `https://www.paramountplus.com/shows/` y `https://www.paramountplus.com/`), HBO Max usa `https://play.hbomax.com` (alternativa `https://play.max.com`) y Disney+ usa `https://www.disneyplus.com`. Se reparan también los enlaces `market://launch` guardados por APK anteriores.
 
 Flow abre directamente la ficha oficial de Google Play: el enlace anterior `market://launch` no es un deep link verificado de Flow. Se abre la ficha y el mando indica «Flow: selecciona Abrir en la pantalla de la TV». La misma alternativa se ofrece para los otros servicios si sus enlaces son rechazados. No se pulsa Enter automáticamente porque la ficha podría mostrar Instalar en lugar de Abrir. No se encontró un enlace directo universal verificable de Flow para todos los Android TV.
 
 `RemoteError` después de iniciar la sesión describe una orden rechazada: no se cierra el socket ni se pide vincular otra vez. El rechazo se asocia al enlace solicitado; las peticiones de apertura se serializan. Un rechazo durante la negociación sigue siendo fatal, y EOF o un fallo de transporte siguen produciendo una desconexión. El protocolo no ofrece confirmación positiva de apertura: se espera una ventana de 900 ms para recibir un rechazo inmediato y no se presenta el silencio como comprobación de que la app esté en primer plano. Los errores tardíos se muestran como errores de la orden, conservando el mando conectado.
 
 Samsung consulta `ed.installedApp.get` por la sesión vinculada y lanza mediante `ed.apps.launch`, respetando el tipo nativo/deep link. Algunos firmwares no exponen la lista: en ese caso Flow devuelve un error explícito; no se inventa un ID ni se sustituye por Samsung Flow. Los otros servicios conservan sus IDs conocidos. Una petición REST rechazada ya no se informa como exitosa.
+
+## Paramount+ en Android TV
+
+La app de TV de Paramount+ (`com.cbs.ca`) solo declara `www.paramountplus.com` con prefijos de ruta como `/shows`, `/movies` o `/watch`, así que la raíz `https://www.paramountplus.com/` no coincide con ningún filtro y la TV responde que no hay app para ese enlace. Se usa el esquema propio `pplusintl://` (no depende de la verificación de App Links) con la ruta `/shows/`, y se reparan los enlaces a la raíz guardados por versiones anteriores.
 
 ## Corrección tras el reporte de Android TV
 
@@ -31,6 +35,7 @@ El APK anterior confundía RemoteError con pérdida de conexión. La prueba TLS 
 - [HBO Max — ficha Android](https://play.google.com/store/apps/details?id=com.wbd.stream)
 - [HBO Max — ficha Samsung](https://www.samsung.com/us/tvs/smart-tv/samsung-tv-apps-detail/?appId=3202301029760)
 - [Paramount+ internacional — ficha del proveedor](https://play.google.com/store/apps/details?id=com.cbs.ca)
+- [Manifiesto de Paramount+ (`com.cbs.ca`): filtros de enlaces publicados en la comunidad de Channels](https://community.getchannels.com/t/release-stream-link-file-manager-for-channels-streaming-library-manager-extension/39684/475)
 - [Paramount+ — ficha Samsung](https://www.samsung.com/us/tvs/smart-tv/samsung-tv-apps-detail/?appId=3201710014981)
 - [Disney+ — ficha Android](https://play.google.com/store/apps/details?id=com.disney.disneyplus)
 - [Disney+ — ficha Samsung](https://www.samsung.com/us/tvs/smart-tv/samsung-tv-apps-detail/?appId=3201901017640)

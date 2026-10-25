@@ -22,6 +22,7 @@ import android.content.Context
 import com.example.data.local.TvTokenStore
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 
 class UnifiedTvController(
     private val context: Context? = null,
@@ -45,6 +46,9 @@ class UnifiedTvController(
     private var bluetoothSettingsJob: Job? = null
 
     private var activeDevice: TvDeviceEntity? = null
+    // A TV that is already on often refuses the very first socket after the app starts
+    // (Wi-Fi still waking up, or the TV still holding the previous session).
+    private var connectRetriesLeft = 0
 
     private val samsungClient = SamsungTvClient(
         tokenStore = tokenStore,
@@ -64,7 +68,7 @@ class UnifiedTvController(
                     _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
                     resolveDeviceMac(dev)
                 } else if (error != null) {
-                    _connectionState.value = ConnectionState.Error(error)
+                    if (!retryInitialConnection(dev)) _connectionState.value = ConnectionState.Error(error)
                 } else {
                     _connectionState.value = ConnectionState.Disconnected
                 }
@@ -93,7 +97,7 @@ class UnifiedTvController(
                     _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
                     resolveDeviceMac(dev)
                 } else if (error != null) {
-                    _connectionState.value = ConnectionState.Error(error)
+                    if (!retryInitialConnection(dev)) _connectionState.value = ConnectionState.Error(error)
                 } else {
                     _connectionState.value = ConnectionState.Disconnected
                 }
@@ -185,18 +189,43 @@ class UnifiedTvController(
         _connectionState.value = ConnectionState.Connecting(effectiveDevice.name, effectiveDevice.ipAddress)
         addLog(effectiveDevice.name, "Connecting to ${effectiveDevice.ipAddress} (${effectiveDevice.deviceType.shortName})...", true)
 
-        when (effectiveDevice.deviceType) {
+        connectRetriesLeft = CONNECT_RETRY_DELAYS_MS.size
+        startConnection(effectiveDevice)
+    }
+
+    private fun startConnection(device: TvDeviceEntity) {
+        when (device.deviceType) {
             DeviceType.SAMSUNG_TIZEN -> {
-                samsungClient.connect(effectiveDevice.ipAddress, 8002, effectiveDevice.authToken)
+                samsungClient.connect(device.ipAddress, 8002, device.authToken)
             }
             DeviceType.ANDROID_TV -> {
                 connectionJob = scope.launch {
-                    val ok = androidClient.connect(effectiveDevice.ipAddress, effectiveDevice.port)
-                    if (ok) addLog(effectiveDevice.name, "Conectado a ${effectiveDevice.name}", true)
+                    val ok = androidClient.connect(device.ipAddress, device.port)
+                    if (ok) addLog(device.name, "Conectado a ${device.name}", true)
                     // The client emits the specific connection or authorization error.
                 }
             }
         }
+    }
+
+    /** Retries a failed first connection silently; returns false once the error should be shown. */
+    private fun retryInitialConnection(device: TvDeviceEntity): Boolean {
+        if (_connectionState.value !is ConnectionState.Connecting || connectRetriesLeft <= 0) return false
+        val wait = CONNECT_RETRY_DELAYS_MS[CONNECT_RETRY_DELAYS_MS.size - connectRetriesLeft]
+        connectRetriesLeft--
+        connectionJob?.cancel()
+        connectionJob = scope.launch {
+            delay(wait)
+            if (activeDevice?.id != device.id || activeDevice?.ipAddress != device.ipAddress) return@launch
+            if (_connectionState.value !is ConnectionState.Connecting) return@launch
+            startConnection(activeDevice ?: return@launch)
+        }
+        return true
+    }
+
+    /** Reconnects when the app returns to the foreground after a connection error. */
+    fun reconnectIfFailed() {
+        if (_connectionState.value is ConnectionState.Error) reconnect()
     }
 
     fun reconnect() {
@@ -215,6 +244,7 @@ class UnifiedTvController(
         cancelBluetoothNavigation()
         connectionJob?.cancel()
         connectionJob = null
+        connectRetriesLeft = 0
         pairingJob?.cancel()
         pairingJob = null
         activeDevice = null
@@ -376,5 +406,9 @@ class UnifiedTvController(
             val updated = (listOf(newLog) + _recentLogs.value).take(15)
             _recentLogs.value = updated
         }
+    }
+
+    private companion object {
+        val CONNECT_RETRY_DELAYS_MS = longArrayOf(800, 2000)
     }
 }
