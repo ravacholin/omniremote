@@ -23,7 +23,7 @@ class StreamingCatalogTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         try {
-            for (type in DeviceType.entries.filter { it != DeviceType.MACOS }) {
+            for (type in DeviceType.entries.filter { !it.isComputer }) {
                 val deviceId = db.tvDeviceDao().insert(TvDeviceEntity(name = type.name, deviceType = type, ipAddress = "192.168.1.20"))
                 val dao = db.tvAppDao()
                 val repository = TvAppRepository(db)
@@ -56,7 +56,7 @@ class StreamingCatalogTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         try {
-            for (type in DeviceType.entries.filter { it != DeviceType.MACOS }) {
+            for (type in DeviceType.entries.filter { !it.isComputer }) {
                 val deviceId = db.tvDeviceDao().insert(TvDeviceEntity(name = "Legacy $type", deviceType = type, ipAddress = "192.168.1.22"))
                 val maxId = if (type == DeviceType.ANDROID_TV) "com.hbo.hbonow" else "3201601007250"
                 val paramountId = if (type == DeviceType.ANDROID_TV) "com.cbs.app" else "3201908019033"

@@ -80,16 +80,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val connectionState: StateFlow<ConnectionState> = controller.connectionState
     val recentLogs: StateFlow<List<CommandLog>> = controller.recentLogs
     val lastDispatchedKey: StateFlow<RemoteKey?> = controller.lastDispatchedKey
-    val macVolume: StateFlow<com.example.network.MacVolume?> = controller.macVolume
+    val computerVolume: StateFlow<com.example.network.ComputerVolume?> = controller.computerVolume
 
-    private val _isMacLoginDialogOpen = MutableStateFlow(false)
-    val isMacLoginDialogOpen: StateFlow<Boolean> = _isMacLoginDialogOpen.asStateFlow()
+    private val _isComputerLoginDialogOpen = MutableStateFlow(false)
+    val isComputerLoginDialogOpen: StateFlow<Boolean> = _isComputerLoginDialogOpen.asStateFlow()
 
-    private val _isMacLoginInProgress = MutableStateFlow(false)
-    val isMacLoginInProgress: StateFlow<Boolean> = _isMacLoginInProgress.asStateFlow()
+    private val _isComputerLoginInProgress = MutableStateFlow(false)
+    val isComputerLoginInProgress: StateFlow<Boolean> = _isComputerLoginInProgress.asStateFlow()
 
-    private val _macLoginError = MutableStateFlow<String?>(null)
-    val macLoginError: StateFlow<String?> = _macLoginError.asStateFlow()
+    private val _computerLoginError = MutableStateFlow<String?>(null)
+    val computerLoginError: StateFlow<String?> = _computerLoginError.asStateFlow()
 
     private val _activeTab = MutableStateFlow(RemoteMode.DPAD)
     val activeTab: StateFlow<RemoteMode> = _activeTab.asStateFlow()
@@ -214,8 +214,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             controller.connectionState.collect { state ->
                 if (state is ConnectionState.WaitingAuth && controller.isCurrentDeviceAndroidTv() &&
                     !_isAndroidTvPairingDialogOpen.value) startAndroidTvPairing()
-                if (state is ConnectionState.WaitingAuth && controller.isCurrentDeviceMac() &&
-                    !_isMacLoginDialogOpen.value && !_isMacLoginInProgress.value) openMacLogin()
+                if (state is ConnectionState.WaitingAuth && controller.isCurrentDeviceComputer() &&
+                    !_isComputerLoginDialogOpen.value && !_isComputerLoginInProgress.value) openComputerLogin()
             }
         }
         viewModelScope.launch {
@@ -231,7 +231,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     if (_activeDevice.value == null) {
                         val defaultDev = devices.firstOrNull { it.isDefault } ?: devices.first()
-                        selectDevice(defaultDev)
+                        // This list can predate a deletion that finished while the apps above were checked.
+                        if (repository.getDeviceById(defaultDev.id) != null && _activeDevice.value == null) {
+                            selectDevice(defaultDev)
+                        }
                     }
                 }
             }
@@ -324,8 +327,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendKey(key: RemoteKey) {
-        // The Mac toggles whatever is playing; a guessed play/pause state would drift.
-        if (key == RemoteKey.PLAY_PAUSE && controller.isCurrentDeviceMac()) {
+        // A Mac or PC toggles whatever is playing; a guessed play/pause state would drift.
+        if (key == RemoteKey.PLAY_PAUSE && controller.isCurrentDeviceComputer()) {
             controller.sendKey(key)
             return
         }
@@ -552,36 +555,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _pairingSuccessMessage.value = null
     }
 
-    fun openMacLogin() {
-        _macLoginError.value = (controller.connectionState.value as? ConnectionState.WaitingAuth)?.message
-        _isMacLoginDialogOpen.value = true
+    fun openComputerLogin() {
+        _computerLoginError.value = (controller.connectionState.value as? ConnectionState.WaitingAuth)?.message
+        _isComputerLoginDialogOpen.value = true
     }
 
-    fun closeMacLogin() {
-        _isMacLoginDialogOpen.value = false
-        _macLoginError.value = null
+    fun closeComputerLogin() {
+        _isComputerLoginDialogOpen.value = false
+        _computerLoginError.value = null
     }
 
-    fun submitMacLogin(username: String, password: String) {
+    fun submitComputerLogin(username: String, password: String) {
         if (username.isBlank() || password.isEmpty()) {
-            _macLoginError.value = "Completá el usuario y la contraseña de la Mac."
+            _computerLoginError.value = "Completá el usuario y la contraseña."
             return
         }
-        _isMacLoginInProgress.value = true
-        _macLoginError.value = null
+        _isComputerLoginInProgress.value = true
+        _computerLoginError.value = null
         viewModelScope.launch {
-            val result = controller.loginMac(username, password)
-            _isMacLoginInProgress.value = false
+            val result = controller.loginComputer(username, password)
+            _isComputerLoginInProgress.value = false
             when (result) {
-                is com.example.network.MacResult.Ok -> _isMacLoginDialogOpen.value = false
-                is com.example.network.MacResult.LoginNeeded -> _macLoginError.value = result.message
-                is com.example.network.MacResult.Failed -> _macLoginError.value = result.message
+                is com.example.network.SshResult.Ok -> _isComputerLoginDialogOpen.value = false
+                is com.example.network.SshResult.LoginNeeded -> _computerLoginError.value = result.message
+                is com.example.network.SshResult.Failed -> _computerLoginError.value = result.message
             }
         }
     }
 
-    fun setMacVolume(level: Int) {
-        controller.setMacVolume(level)
+    fun setComputerVolume(level: Int) {
+        controller.setComputerVolume(level)
     }
 
     fun sendText(text: String) {
@@ -608,7 +611,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val remaining = withContext(Dispatchers.IO) {
                 repository.deleteDevice(device)
-                if (device.deviceType == DeviceType.MACOS) tokenStore.clearMacLogin(device.id)
+                if (device.deviceType.isComputer) tokenStore.clearSshLogin(device.id)
                 repository.getDefaultDevice()
             }
             if (_activeDevice.value?.id == device.id) {

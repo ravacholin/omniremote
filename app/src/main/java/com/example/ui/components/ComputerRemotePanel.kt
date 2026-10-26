@@ -23,8 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
-import com.example.network.MacVolume
+import com.example.network.ComputerVolume
 import com.example.ui.theme.Ash
 import com.example.ui.theme.Hairline
 import com.example.ui.theme.Paper
@@ -32,10 +33,11 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import kotlin.math.roundToInt
 
-/** Volume and media for a Mac: the only controls macOS exposes without installing an app. */
+/** Volume and media for a Mac or PC: the controls its SSH server can reach. */
 @Composable
-fun MacRemotePanel(
-    volume: MacVolume?,
+fun ComputerRemotePanel(
+    deviceType: DeviceType,
+    volume: ComputerVolume?,
     onKeyPress: (RemoteKey) -> Unit,
     onVolumeChange: (Int) -> Unit,
     modifier: Modifier = Modifier
@@ -45,7 +47,7 @@ fun MacRemotePanel(
         HapticUtil.triggerKeyHaptic(context)
         onKeyPress(key)
     }
-    // Follows the Mac, except while the finger is on the slider.
+    // Follows the computer, except while the finger is on the slider.
     var dragLevel by remember { mutableStateOf<Float?>(null) }
     val shownLevel = dragLevel ?: volume?.level?.toFloat() ?: 0f
 
@@ -108,6 +110,9 @@ fun MacRemotePanel(
             IconKey(RemoteIcons.Forward, "Siguiente", { press(RemoteKey.FAST_FORWARD) }, cell, "mac_next")
         }
 
-        MonoLabel("Música, Spotify o la app que esté sonando")
+        MonoLabel(
+            if (deviceType == DeviceType.WINDOWS) "Spotify, el navegador o la app que esté sonando"
+            else "Música, Spotify o la app que esté sonando"
+        )
     }
 }

@@ -2,17 +2,50 @@ package com.example.network
 
 import com.example.data.model.RemoteKey
 
-/** Current macOS output volume as reported by `get volume settings`. */
-data class MacVolume(val level: Int, val muted: Boolean)
-
 /** A script for the Mac's built-in osascript, fed through stdin so nothing needs quoting. */
-data class MacScript(val language: Language, val source: String) {
+data class MacScript(val language: Language, val source: String) : SshCommand {
     enum class Language(val osascriptArgs: String) {
         APPLESCRIPT("-"),
         JAVASCRIPT("-l JavaScript -")
     }
 
-    val command: String get() = "/usr/bin/osascript ${language.osascriptArgs}"
+    override val command: String get() = "/usr/bin/osascript ${language.osascriptArgs}"
+    override val stdin: String get() = source
+}
+
+/** macOS through Remote Login and osascript. */
+object MacPlatform : SshPlatform {
+    override val displayName = "la Mac"
+    override val enableSshHint = "Activá Ajustes del Sistema > General > Compartir > Sesión remota."
+    override val readVolume: SshCommand get() = MacScripts.readVolume
+
+    override fun authorizeKey(publicKey: String): SshCommand = ShellCommand(authorizeKeyCommand(publicKey))
+    override fun setVolume(level: Int): SshCommand = MacScripts.setVolume(level)
+    override fun forKey(key: RemoteKey): SshCommand? = MacScripts.forKey(key)
+
+    override fun idleMessage(output: String): String? =
+        if (output == MacScripts.NO_PLAYER) "Nada reproduciendo. Abrí Música o Spotify, o dale Accesibilidad a sshd-keygen-wrapper en la Mac."
+        else null
+
+    internal fun authorizeKeyCommand(publicKey: String): String {
+        require(!publicKey.contains('\'') && !publicKey.contains('\n')) { "Unexpected public key format" }
+        return "umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && " +
+            "(grep -qxF '$publicKey' ~/.ssh/authorized_keys || echo '$publicKey' >> ~/.ssh/authorized_keys)"
+    }
+
+    /** Turns osascript errors into the setting the user has to change on the Mac. */
+    override fun describeScriptError(error: String): String = when {
+        error.contains("-1743") || error.contains("Not authorized to send Apple events", ignoreCase = true) ->
+            "La Mac bloqueó el control del reproductor. En la Mac: Ajustes del Sistema > Privacidad y seguridad > Automatización > sshd-keygen-wrapper."
+        error.contains("missing value") ->
+            "La salida de audio actual de la Mac no permite cambiar el volumen."
+        error.isBlank() -> "La Mac no pudo ejecutar el comando."
+        else -> error.lineSequence().first().take(160)
+    }
+
+    private data class ShellCommand(override val command: String) : SshCommand {
+        override val stdin: String? get() = null
+    }
 }
 
 /**
@@ -71,25 +104,6 @@ set volume output muted false$REPORT_VOLUME""".trimStart()
         RemoteKey.REWIND -> media(Media.PREVIOUS)
         RemoteKey.POWER, RemoteKey.POWER_OFF -> displaySleep
         else -> null
-    }
-
-    /** True when [key] changes the volume, so its output carries the new [MacVolume]. */
-    fun reportsVolume(key: RemoteKey): Boolean = when (key) {
-        RemoteKey.VOL_UP, RemoteKey.VOL_DOWN, RemoteKey.MUTE -> true
-        else -> false
-    }
-
-    /** Parses "50,false". Digital outputs without volume control report "missing value". */
-    fun parseVolume(output: String): MacVolume? {
-        val parts = output.trim().split(",")
-        if (parts.size != 2) return null
-        val level = parts[0].trim().toDoubleOrNull()?.toInt() ?: return null
-        val muted = when (parts[1].trim()) {
-            "true" -> true
-            "false" -> false
-            else -> return null
-        }
-        return MacVolume(level.coerceIn(0, 100), muted)
     }
 
     // The media key only works when "sshd-keygen-wrapper" has Accessibility access; without it

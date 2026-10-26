@@ -71,8 +71,8 @@ import com.example.data.model.ConnectionState
 import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
 import com.example.ui.components.AndroidTvPairingDialog
-import com.example.ui.components.MacLoginDialog
-import com.example.ui.components.MacRemotePanel
+import com.example.ui.components.ComputerLoginDialog
+import com.example.ui.components.ComputerRemotePanel
 import com.example.ui.components.DeviceManagerDialog
 import com.example.ui.components.DeviceSelectorBar
 import com.example.ui.components.RemoteIcons
@@ -126,10 +126,10 @@ fun MainScreen(
     val powerOnStatusMessage by viewModel.powerOnStatusMessage.collectAsStateWithLifecycle()
     val showMacConfigDialog by viewModel.showMacConfigDialog.collectAsStateWithLifecycle()
     val macConfigDevice by viewModel.macConfigDevice.collectAsStateWithLifecycle()
-    val macVolume by viewModel.macVolume.collectAsStateWithLifecycle()
-    val isMacLoginDialogOpen by viewModel.isMacLoginDialogOpen.collectAsStateWithLifecycle()
-    val isMacLoginInProgress by viewModel.isMacLoginInProgress.collectAsStateWithLifecycle()
-    val macLoginError by viewModel.macLoginError.collectAsStateWithLifecycle()
+    val computerVolume by viewModel.computerVolume.collectAsStateWithLifecycle()
+    val isComputerLoginDialogOpen by viewModel.isComputerLoginDialogOpen.collectAsStateWithLifecycle()
+    val isComputerLoginInProgress by viewModel.isComputerLoginInProgress.collectAsStateWithLifecycle()
+    val computerLoginError by viewModel.computerLoginError.collectAsStateWithLifecycle()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -156,9 +156,9 @@ fun MainScreen(
 
     // Back handler: Close sheet if open, or return to D-Pad if in sub-mode
     val currentType = activeDevice?.deviceType ?: DeviceType.SAMSUNG_TIZEN
-    val isMac = currentType == DeviceType.MACOS
+    val isComputer = currentType.isComputer
 
-    BackHandler(enabled = isDeviceManagerOpen || (activeTab != RemoteMode.DPAD && !isMac)) {
+    BackHandler(enabled = isDeviceManagerOpen || (activeTab != RemoteMode.DPAD && !isComputer)) {
         if (isDeviceManagerOpen) {
             viewModel.setDeviceManagerOpen(false)
         } else {
@@ -252,11 +252,15 @@ fun MainScreen(
                 val isAndroidTv = activeDevice?.deviceType == DeviceType.ANDROID_TV
                 when (val state = connectionState) {
                     is ConnectionState.WaitingAuth -> Notice(
-                        label = if (isMac) "Iniciá sesión en la Mac" else "Autorizá en tu TV",
+                        label = when (currentType) {
+                            DeviceType.MACOS -> "Iniciá sesión en la Mac"
+                            DeviceType.WINDOWS -> "Iniciá sesión en la PC"
+                            else -> "Autorizá en tu TV"
+                        },
                         message = state.message,
                         actions = when {
                             isAndroidTv -> listOf(NoticeAction("PIN", primary = true) { viewModel.startAndroidTvPairing() })
-                            isMac -> listOf(NoticeAction("Ingresar", primary = true) { viewModel.openMacLogin() })
+                            isComputer -> listOf(NoticeAction("Ingresar", primary = true) { viewModel.openComputerLogin() })
                             else -> emptyList()
                         }
                     )
@@ -289,12 +293,13 @@ fun MainScreen(
                     else -> {}
                 }
 
-                // A Mac only takes volume and media, so it gets a single panel instead of the tabs.
-                if (isMac) {
-                    MacRemotePanel(
-                        volume = macVolume,
+                // A Mac or PC only takes volume and media, so it gets a single panel instead of the tabs.
+                if (isComputer) {
+                    ComputerRemotePanel(
+                        deviceType = currentType,
+                        volume = computerVolume,
                         onKeyPress = { key -> viewModel.sendKey(key) },
-                        onVolumeChange = { level -> viewModel.setMacVolume(level) },
+                        onVolumeChange = { level -> viewModel.setComputerVolume(level) },
                         modifier = if (isShortScreen) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().weight(1f)
                     )
                 } else {
@@ -458,14 +463,15 @@ fun MainScreen(
         onDismiss = { viewModel.closeAndroidTvPairingDialog() }
     )
 
-    MacLoginDialog(
-        isOpen = isMacLoginDialogOpen && isMac,
-        deviceName = activeDevice?.name ?: "Mac",
+    ComputerLoginDialog(
+        isOpen = isComputerLoginDialogOpen && isComputer,
+        deviceType = currentType,
+        deviceName = activeDevice?.name ?: currentType.shortName,
         deviceIp = activeDevice?.ipAddress ?: "",
-        isLoading = isMacLoginInProgress,
-        errorMessage = macLoginError,
-        onSubmit = { user, password -> viewModel.submitMacLogin(user, password) },
-        onDismiss = { viewModel.closeMacLogin() }
+        isLoading = isComputerLoginInProgress,
+        errorMessage = computerLoginError,
+        onSubmit = { user, password -> viewModel.submitComputerLogin(user, password) },
+        onDismiss = { viewModel.closeComputerLogin() }
     )
 
     // Wake-on-LAN MAC Address Configuration Dialog

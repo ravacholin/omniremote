@@ -655,21 +655,34 @@ fun DeviceManagerDialog(
                                         .weight(1f)
                                         .testTag("select_android_type")
                                 )
-                                FilterChip(
-                                    selected = formType == DeviceType.MACOS,
-                                    onClick = {
-                                        formType = DeviceType.MACOS
-                                        formPort = DeviceType.MACOS.defaultPort.toString()
-                                    },
-                                    label = { Text("Mac") },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = DeviceType.MACOS.brandColor.copy(alpha = 0.2f),
-                                        selectedLabelColor = DeviceType.MACOS.brandColor
-                                    ),
-                                    modifier = Modifier
-                                        .weight(0.6f)
-                                        .testTag("select_mac_type")
-                                )
+                            }
+                            // Computers take volume and media only, over their built-in SSH server.
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                listOf(
+                                    Triple(DeviceType.MACOS, "Mac", "select_mac_type"),
+                                    Triple(DeviceType.WINDOWS, "PC con Windows", "select_windows_type")
+                                ).forEach { (type, label, tag) ->
+                                    FilterChip(
+                                        selected = formType == type,
+                                        onClick = {
+                                            formType = type
+                                            formPort = type.defaultPort.toString()
+                                        },
+                                        label = { Text(label) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = type.brandColor.copy(alpha = 0.2f),
+                                            selectedLabelColor = type.brandColor
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag(tag)
+                                    )
+                                }
                             }
                         }
 

@@ -3,8 +3,8 @@ package com.example.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
-import com.example.network.MacLogin
-import com.example.network.MacLoginStore
+import com.example.network.SshLogin
+import com.example.network.SshLoginStore
 import com.example.network.WakeOnLan
 
 /**
@@ -12,7 +12,7 @@ import com.example.network.WakeOnLan
  * Ensures Samsung Smart TV authorization tokens and Android TV pairing credentials
  * are permanently preserved across app restarts, re-scans, and device selections.
  */
-class TvTokenStore(context: Context) : MacLoginStore {
+class TvTokenStore(context: Context) : SshLoginStore {
 
     private val prefs: SharedPreferences = context.applicationContext.getSharedPreferences(
         PREFS_NAME,
@@ -106,9 +106,10 @@ class TvTokenStore(context: Context) : MacLoginStore {
     fun getCertDer(): String? = prefs.getString(KEY_CLIENT_CERT_DER, null)
     fun getPrivateKeyPkcs8(): String? = prefs.getString(KEY_CLIENT_KEY_PKCS8, null)
 
-    override fun getMacLogin(deviceId: Long): MacLogin? {
+    // Stored under the original Mac prefix so logins saved before Windows support still work.
+    override fun getSshLogin(deviceId: Long): SshLogin? {
         val prefix = KEY_PREFIX_MAC_LOGIN + deviceId + "_"
-        return MacLogin(
+        return SshLogin(
             username = prefs.getString(prefix + "user", null) ?: return null,
             privateKey = prefs.getString(prefix + "private_key", null) ?: return null,
             publicKey = prefs.getString(prefix + "public_key", null) ?: return null,
@@ -116,17 +117,17 @@ class TvTokenStore(context: Context) : MacLoginStore {
         )
     }
 
-    override fun saveMacLogin(deviceId: Long, login: MacLogin) {
+    override fun saveSshLogin(deviceId: Long, login: SshLogin) {
         val prefix = KEY_PREFIX_MAC_LOGIN + deviceId + "_"
         prefs.edit()
             .putString(prefix + "user", login.username)
             .putString(prefix + "private_key", login.privateKey)
             .putString(prefix + "public_key", login.publicKey)
             .putString(prefix + "host_key", login.hostKey)
-            .commit().also { check(it) { "Could not persist Mac login" } }
+            .commit().also { check(it) { "Could not persist SSH login" } }
     }
 
-    override fun clearMacLogin(deviceId: Long) {
+    override fun clearSshLogin(deviceId: Long) {
         val prefix = KEY_PREFIX_MAC_LOGIN + deviceId + "_"
         val editor = prefs.edit()
         prefs.all.keys.filter { it.startsWith(prefix) }.forEach { editor.remove(it) }

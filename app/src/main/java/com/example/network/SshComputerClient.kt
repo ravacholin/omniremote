@@ -1,5 +1,6 @@
 package com.example.network
 
+import com.example.data.model.RemoteKey
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.HostKey
 import com.jcraft.jsch.HostKeyRepository
@@ -11,43 +12,102 @@ import com.jcraft.jsch.UIKeyboardInteractive
 import com.jcraft.jsch.UserInfo
 import java.io.ByteArrayOutputStream
 
-/** Key-based login saved after the first password login, plus the Mac's pinned host key. */
-data class MacLogin(
+/** Key-based login saved after the first password login, plus the computer's pinned host key. */
+data class SshLogin(
     val username: String,
     val privateKey: String,
     val publicKey: String,
     val hostKey: String
 )
 
-interface MacLoginStore {
-    fun getMacLogin(deviceId: Long): MacLogin?
-    fun saveMacLogin(deviceId: Long, login: MacLogin)
-    fun clearMacLogin(deviceId: Long)
+interface SshLoginStore {
+    fun getSshLogin(deviceId: Long): SshLogin?
+    fun saveSshLogin(deviceId: Long, login: SshLogin)
+    fun clearSshLogin(deviceId: Long)
 }
 
-sealed interface MacResult {
-    data class Ok(val output: String) : MacResult
-    data class LoginNeeded(val message: String) : MacResult
-    data class Failed(val message: String) : MacResult
+sealed interface SshResult {
+    data class Ok(val output: String) : SshResult
+    data class LoginNeeded(val message: String) : SshResult
+    data class Failed(val message: String) : SshResult
+}
+
+/** A command line for the computer's SSH server, with an optional script fed through stdin. */
+interface SshCommand {
+    val command: String
+    val stdin: String?
+}
+
+/** Current output volume as both platforms report it: "level,muted". */
+data class ComputerVolume(val level: Int, val muted: Boolean) {
+    companion object {
+        /** Parses "50,false". Outputs without volume control report something else ("missing value"). */
+        fun parse(output: String): ComputerVolume? {
+            val parts = output.trim().split(",")
+            if (parts.size != 2) return null
+            val level = parts[0].trim().toDoubleOrNull()?.toInt() ?: return null
+            val muted = when (parts[1].trim()) {
+                "true" -> true
+                "false" -> false
+                else -> return null
+            }
+            return ComputerVolume(level.coerceIn(0, 100), muted)
+        }
+    }
+}
+
+/** What differs between the computers controlled over SSH. */
+interface SshPlatform {
+    /** The computer as named in messages, e.g. "la Mac". */
+    val displayName: String
+    /** Where the user turns on the SSH server; shown when the connection is refused. */
+    val enableSshHint: String
+    val readVolume: SshCommand
+
+    fun authorizeKey(publicKey: String): SshCommand
+    fun setVolume(level: Int): SshCommand
+    fun forKey(key: RemoteKey): SshCommand?
+
+    /** True when [key] changes the volume, so its output carries the new [ComputerVolume]. */
+    fun reportsVolume(key: RemoteKey): Boolean = when (key) {
+        RemoteKey.VOL_UP, RemoteKey.VOL_DOWN, RemoteKey.MUTE -> true
+        else -> false
+    }
+
+    /** Runs once per session before any control; Windows installs its helper here. */
+    fun prepare(run: (SshCommand) -> SshResult): SshResult = SshResult.Ok("")
+
+    /** True when [error] means the helper that [prepare] installs is gone. */
+    fun isSetupMissing(error: String): Boolean = false
+
+    /** Why a command that ran found nothing to control, or null when it did something. */
+    fun idleMessage(output: String): String? = null
+
+    /** Turns a failed command's output into the setting the user has to change. */
+    fun describeScriptError(error: String): String
 }
 
 /**
- * Controls a Mac through its built-in Remote Login (SSH) server: nothing is installed on the Mac.
+ * Controls a computer through its built-in SSH server: nothing has to be installed by hand.
  * The password is used once to authorize a key generated on the phone and is never stored.
  * Calls block, so run them off the main thread.
  */
-class MacSshClient(private val store: MacLoginStore?) {
+class SshComputerClient(private val store: SshLoginStore?, val platform: SshPlatform) {
     private data class Target(val deviceId: Long, val ip: String, val port: Int)
+    private data class Exit(val status: Int, val stdout: String, val stderr: String)
 
     private val lock = Any()
     @Volatile private var session: Session? = null
     @Volatile private var target: Target? = null
-    // Bumped by disconnect() so a login still in flight for the previous Mac is dropped.
+    // Bumped by disconnect() so a login still in flight for the previous computer is dropped.
     @Volatile private var generation = 0
+
+    private val name = platform.displayName
+    private val capitalName = name.replaceFirstChar(Char::uppercaseChar)
 
     val isConnected: Boolean get() = session?.isConnected == true
 
-    fun connect(deviceId: Long, ip: String, port: Int): MacResult = synchronized(lock) {
+    fun connect(deviceId: Long, ip: String, port: Int): SshResult = synchronized(lock) {
         closeSession()
         target = Target(deviceId, ip, port)
         openWithSavedLogin()
@@ -60,8 +120,8 @@ class MacSshClient(private val store: MacLoginStore?) {
         closeSession()
     }
 
-    /** First-time login: authorizes a new key on the Mac, then keeps the session open. */
-    fun login(deviceId: Long, ip: String, port: Int, username: String, password: String): MacResult = synchronized(lock) {
+    /** First-time login: authorizes a new key on the computer, then keeps the session open. */
+    fun login(deviceId: Long, ip: String, port: Int, username: String, password: String): SshResult = synchronized(lock) {
         closeSession()
         target = Target(deviceId, ip, port)
         val startedIn = generation
@@ -83,46 +143,58 @@ class MacSshClient(private val store: MacLoginStore?) {
             KeyPair.genKeyPair(JSch(), KeyPair.ECDSA, 256)
         } catch (e: JSchException) {
             newSession.disconnect()
-            return MacResult.Failed("No se pudo generar la clave: ${e.message}")
+            return SshResult.Failed("No se pudo generar la clave: ${e.message}")
         }
         val privateKey = ByteArrayOutputStream().also { generated.writePrivateKey(it) }.toString(Charsets.UTF_8.name())
         val publicKey = ByteArrayOutputStream().also { generated.writePublicKey(it, KEY_COMMENT) }
             .toString(Charsets.UTF_8.name()).trim()
         generated.dispose()
 
-        val authorize = exec(newSession, authorizeKeyCommand(publicKey), stdin = null)
-        if (authorize !is MacResult.Ok) {
+        val authorize = exec(newSession, platform.authorizeKey(publicKey))
+        if (authorize !is SshResult.Ok) {
             newSession.disconnect()
             return authorize
         }
         val hostKey = hostKeys.seen ?: run {
             newSession.disconnect()
-            return MacResult.Failed("La Mac no presentó una clave de host.")
+            return SshResult.Failed("${capitalName} no presentó una clave de host.")
         }
-        store?.saveMacLogin(deviceId, MacLogin(user, privateKey, publicKey, hostKey))
+        store?.saveSshLogin(deviceId, SshLogin(user, privateKey, publicKey, hostKey))
+        val prepared = platform.prepare { exec(newSession, it) }
+        if (prepared !is SshResult.Ok) {
+            newSession.disconnect()
+            return prepared
+        }
         if (startedIn != generation) {
             newSession.disconnect()
-            return MacResult.Failed("Conexión cancelada.")
+            return SshResult.Failed("Conexión cancelada.")
         }
         session = newSession
-        MacResult.Ok("")
+        SshResult.Ok("")
     }
 
-    fun run(script: MacScript): MacResult = synchronized(lock) {
+    fun run(command: SshCommand): SshResult = synchronized(lock) {
         val current = session?.takeIf { it.isConnected } ?: run {
-            // Wi-Fi drops and Mac display sleep close idle sessions; reopen silently.
+            // Wi-Fi drops and display sleep close idle sessions; reopen silently.
             val reopened = openWithSavedLogin()
-            if (reopened !is MacResult.Ok) return reopened
-            session ?: return MacResult.Failed("Sin sesión con la Mac.")
+            if (reopened !is SshResult.Ok) return reopened
+            session ?: return SshResult.Failed("Sin sesión con ${name}.")
         }
-        exec(current, script.command, script.source)
+        val exit = execRaw(current, command) ?: return SshResult.Failed("La sesión con ${name} se cerró.")
+        if (exit.status != 0 && platform.isSetupMissing(exit.stderr.ifBlank { exit.stdout })) {
+            // The helper was deleted while connected: reinstall it once and retry.
+            val prepared = platform.prepare { exec(current, it) }
+            if (prepared !is SshResult.Ok) return prepared
+            return exec(current, command)
+        }
+        toResult(exit)
     }
 
-    private fun openWithSavedLogin(): MacResult {
-        val t = target ?: return MacResult.Failed("No hay ninguna Mac seleccionada.")
+    private fun openWithSavedLogin(): SshResult {
+        val t = target ?: return SshResult.Failed("No hay ninguna computadora seleccionada.")
         val startedIn = generation
-        val login = store?.getMacLogin(t.deviceId)
-            ?: return MacResult.LoginNeeded("Iniciá sesión con tu usuario de la Mac para autorizar OmniRemote.")
+        val login = store?.getSshLogin(t.deviceId)
+            ?: return SshResult.LoginNeeded("Iniciá sesión con tu usuario de ${name} para autorizar OmniRemote.")
         return try {
             val jsch = JSch().apply {
                 hostKeyRepository = PinnedHostKey(expected = login.hostKey)
@@ -133,12 +205,17 @@ class MacSshClient(private val store: MacLoginStore?) {
                 configure()
                 connect(CONNECT_TIMEOUT_MS)
             }
+            val prepared = platform.prepare { exec(opened, it) }
+            if (prepared !is SshResult.Ok) {
+                opened.disconnect()
+                return prepared
+            }
             if (startedIn != generation) {
                 opened.disconnect()
-                return MacResult.Failed("Conexión cancelada.")
+                return SshResult.Failed("Conexión cancelada.")
             }
             session = opened
-            MacResult.Ok("")
+            SshResult.Ok("")
         } catch (e: JSchException) {
             describe(e, passwordLogin = false)
         }
@@ -157,46 +234,53 @@ class MacSshClient(private val store: MacLoginStore?) {
         closing?.disconnect()
     }
 
-    private fun exec(session: Session, command: String, stdin: String?): MacResult {
+    private fun exec(session: Session, command: SshCommand): SshResult =
+        execRaw(session, command)?.let(::toResult) ?: SshResult.Failed("La sesión con ${name} se cerró.")
+
+    private fun toResult(exit: Exit): SshResult =
+        if (exit.status == 0) SshResult.Ok(exit.stdout)
+        else SshResult.Failed(platform.describeScriptError(exit.stderr.ifBlank { exit.stdout }))
+
+    /** Null when the session can no longer open a channel. */
+    private fun execRaw(session: Session, command: SshCommand): Exit? {
         val channel = try {
             session.openChannel("exec") as ChannelExec
         } catch (e: JSchException) {
-            return MacResult.Failed("La sesión con la Mac se cerró: ${e.message}")
+            return null
         }
         return try {
-            channel.setCommand(command)
+            channel.setCommand(command.command)
             val out = channel.inputStream
             val err = channel.errStream
             val input = channel.outputStream
             channel.connect(CONNECT_TIMEOUT_MS)
-            input.use { if (stdin != null) it.write(stdin.toByteArray()) }
+            input.use { stdin -> command.stdin?.let { stdin.write(it.toByteArray()) } }
             val stdout = out.readBytes().toString(Charsets.UTF_8).trim()
             val stderr = err.readBytes().toString(Charsets.UTF_8).trim()
             val deadline = System.currentTimeMillis() + CONNECT_TIMEOUT_MS
             while (!channel.isClosed && System.currentTimeMillis() < deadline) Thread.sleep(10)
-            if (channel.exitStatus == 0) MacResult.Ok(stdout)
-            else MacResult.Failed(describeScriptError(stderr.ifBlank { stdout }))
+            Exit(channel.exitStatus, stdout, stderr)
         } catch (e: Exception) {
-            MacResult.Failed("La Mac no respondió: ${e.message}")
+            Exit(-1, "", "${capitalName} no respondió: ${e.message}")
         } finally {
             channel.disconnect()
         }
     }
 
-    private fun describe(e: JSchException, passwordLogin: Boolean): MacResult {
+    private fun describe(e: JSchException, passwordLogin: Boolean): SshResult {
         val message = e.message.orEmpty()
         return when {
             message.contains("Auth fail", ignoreCase = true) || message.contains("Auth cancel", ignoreCase = true) ->
-                if (passwordLogin) MacResult.LoginNeeded("Usuario o contraseña incorrectos.")
-                else MacResult.LoginNeeded("La Mac ya no acepta la clave de OmniRemote. Volvé a iniciar sesión.")
+                if (passwordLogin) SshResult.LoginNeeded("Usuario o contraseña incorrectos.")
+                else SshResult.LoginNeeded("${capitalName} ya no acepta la clave de OmniRemote. Volvé a iniciar sesión.")
             message.contains("HostKey has been changed", ignoreCase = true) ->
-                MacResult.Failed("La identidad de la Mac cambió. Si la reinstalaste, borrala y volvé a agregarla.")
+                SshResult.Failed("La identidad de ${name} cambió. Si la reinstalaste, borrala y volvé a agregarla.")
             message.contains("Connection refused", ignoreCase = true) ->
-                MacResult.Failed("La Mac rechazó la conexión. Activá Ajustes del Sistema > General > Compartir > Sesión remota.")
+                SshResult.Failed("${capitalName} rechazó la conexión. ${platform.enableSshHint}")
             message.contains("timeout", ignoreCase = true) || message.contains("timed out", ignoreCase = true) ||
                 message.contains("No route", ignoreCase = true) || message.contains("unreachable", ignoreCase = true) ->
-                MacResult.Failed("No se encontró la Mac. Verificá que esté despierta y en la misma red Wi-Fi.")
-            else -> MacResult.Failed("No se pudo conectar con la Mac: $message")
+                SshResult.Failed("No se encontró ${name}. Verificá que esté despierta y en la misma red Wi-Fi.")
+            else -> SshResult.Failed("No se pudo conectar con ${name}: $message")
         }
     }
 
@@ -238,21 +322,5 @@ class MacSshClient(private val store: MacLoginStore?) {
         private const val CONNECT_TIMEOUT_MS = 6000
         private const val KEEPALIVE_MS = 15000
         private const val KEY_COMMENT = "omniremote@android"
-
-        internal fun authorizeKeyCommand(publicKey: String): String {
-            require(!publicKey.contains('\'') && !publicKey.contains('\n')) { "Unexpected public key format" }
-            return "umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && " +
-                "(grep -qxF '$publicKey' ~/.ssh/authorized_keys || echo '$publicKey' >> ~/.ssh/authorized_keys)"
-        }
-
-        /** Turns osascript errors into the setting the user has to change on the Mac. */
-        internal fun describeScriptError(error: String): String = when {
-            error.contains("-1743") || error.contains("Not authorized to send Apple events", ignoreCase = true) ->
-                "La Mac bloqueó el control del reproductor. En la Mac: Ajustes del Sistema > Privacidad y seguridad > Automatización > sshd-keygen-wrapper."
-            error.contains("missing value") ->
-                "La salida de audio actual de la Mac no permite cambiar el volumen."
-            error.isBlank() -> "La Mac no pudo ejecutar el comando."
-            else -> error.lineSequence().first().take(160)
-        }
     }
 }
