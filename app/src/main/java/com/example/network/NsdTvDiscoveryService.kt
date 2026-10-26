@@ -54,7 +54,8 @@ class NsdTvDiscoveryService(private val context: Context) {
         "_samsungmsf._tcp",          // Samsung MultiScreen Framework (Tizen)
         "_dial-multiscreen-org._tcp",// DIAL protocol used by Samsung and Google Cast
         "_airplay._tcp",             // Apple AirPlay on Samsung & Android TVs
-        "_adb._tcp"                  // Android TV Network Debugging
+        "_adb._tcp",                 // Android TV Network Debugging
+        "_ssh._tcp"                  // macOS Remote Login (Mac volume and media)
     )
 
     private val activeListeners = mutableMapOf<String, NsdManager.DiscoveryListener>()
@@ -257,7 +258,9 @@ class NsdTvDiscoveryService(private val context: Context) {
                 sName.contains("eureka", ignoreCase = true) ||
                 sType.contains("adb", ignoreCase = true)
 
+        val model = serviceInfo.attributes["model"]?.toString(Charsets.UTF_8)
         val deviceType = when {
+            isMacService(sType, model) -> DeviceType.MACOS
             isSamsung -> DeviceType.SAMSUNG_TIZEN
             isAndroidOrGoogle -> DeviceType.ANDROID_TV
             else -> {
@@ -279,7 +282,13 @@ class NsdTvDiscoveryService(private val context: Context) {
             .replace(".", "")
             .replace("-", " ")
             .trim()
-            .ifBlank { if (deviceType == DeviceType.SAMSUNG_TIZEN) "Samsung Smart TV" else "Google TV" }
+            .ifBlank {
+                when (deviceType) {
+                    DeviceType.SAMSUNG_TIZEN -> "Samsung Smart TV"
+                    DeviceType.ANDROID_TV -> "Google TV"
+                    DeviceType.MACOS -> "Mac"
+                }
+            }
 
         val modelInfo = "Discovered via NsdManager (${sType.trimEnd('.')})"
 
@@ -287,10 +296,10 @@ class NsdTvDiscoveryService(private val context: Context) {
             name = cleanName,
             ipAddress = ip,
             deviceType = deviceType,
-            port = if (deviceType == DeviceType.SAMSUNG_TIZEN) {
-                if (port > 0) port else 8002
-            } else {
-                if (port > 0) port else 8008
+            port = when {
+                deviceType == DeviceType.MACOS -> if (sType.contains("ssh", ignoreCase = true) && port > 0) port else DeviceType.MACOS.defaultPort
+                deviceType == DeviceType.SAMSUNG_TIZEN -> if (port > 0) port else 8002
+                else -> if (port > 0) port else 8008
             },
             modelInfo = modelInfo
         )
@@ -304,6 +313,8 @@ class NsdTvDiscoveryService(private val context: Context) {
         val index = current.indexOfFirst { it.ipAddress == tv.ipAddress }
         if (index >= 0) {
             val existing = current[index]
+            // A Mac also advertises AirPlay, which on its own would look like a TV.
+            if (existing.deviceType == DeviceType.MACOS && tv.deviceType != DeviceType.MACOS) return
             val generic = tv.name.contains(tv.ipAddress) || tv.name == "Google TV"
             val betterName = if (generic) existing.name else tv.name
             val remotePort = if (existing.port == 6466 || tv.port == 6466) 6466 else tv.port
@@ -312,5 +323,12 @@ class NsdTvDiscoveryService(private val context: Context) {
             current.add(tv)
         }
         _discoveredTvs.value = current
+    }
+
+    companion object {
+        /** Remote Login advertises _ssh._tcp; a Mac's AirPlay TXT record carries a Mac model. */
+        internal fun isMacService(serviceType: String, model: String?): Boolean =
+            serviceType.contains("_ssh._tcp", ignoreCase = true) ||
+                model?.trim()?.let { it.startsWith("Mac", ignoreCase = true) || it.startsWith("iMac", ignoreCase = true) } == true
     }
 }

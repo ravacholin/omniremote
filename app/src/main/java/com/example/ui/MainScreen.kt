@@ -71,6 +71,8 @@ import com.example.data.model.ConnectionState
 import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
 import com.example.ui.components.AndroidTvPairingDialog
+import com.example.ui.components.MacLoginDialog
+import com.example.ui.components.MacRemotePanel
 import com.example.ui.components.DeviceManagerDialog
 import com.example.ui.components.DeviceSelectorBar
 import com.example.ui.components.RemoteIcons
@@ -124,6 +126,10 @@ fun MainScreen(
     val powerOnStatusMessage by viewModel.powerOnStatusMessage.collectAsStateWithLifecycle()
     val showMacConfigDialog by viewModel.showMacConfigDialog.collectAsStateWithLifecycle()
     val macConfigDevice by viewModel.macConfigDevice.collectAsStateWithLifecycle()
+    val macVolume by viewModel.macVolume.collectAsStateWithLifecycle()
+    val isMacLoginDialogOpen by viewModel.isMacLoginDialogOpen.collectAsStateWithLifecycle()
+    val isMacLoginInProgress by viewModel.isMacLoginInProgress.collectAsStateWithLifecycle()
+    val macLoginError by viewModel.macLoginError.collectAsStateWithLifecycle()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -149,15 +155,16 @@ fun MainScreen(
     }
 
     // Back handler: Close sheet if open, or return to D-Pad if in sub-mode
-    BackHandler(enabled = isDeviceManagerOpen || activeTab != RemoteMode.DPAD) {
+    val currentType = activeDevice?.deviceType ?: DeviceType.SAMSUNG_TIZEN
+    val isMac = currentType == DeviceType.MACOS
+
+    BackHandler(enabled = isDeviceManagerOpen || (activeTab != RemoteMode.DPAD && !isMac)) {
         if (isDeviceManagerOpen) {
             viewModel.setDeviceManagerOpen(false)
         } else {
             viewModel.setActiveTab(RemoteMode.DPAD)
         }
     }
-
-    val currentType = activeDevice?.deviceType ?: DeviceType.SAMSUNG_TIZEN
 
     Scaffold(
         modifier = modifier
@@ -245,11 +252,13 @@ fun MainScreen(
                 val isAndroidTv = activeDevice?.deviceType == DeviceType.ANDROID_TV
                 when (val state = connectionState) {
                     is ConnectionState.WaitingAuth -> Notice(
-                        label = "Autorizá en tu TV",
+                        label = if (isMac) "Iniciá sesión en la Mac" else "Autorizá en tu TV",
                         message = state.message,
-                        actions = if (isAndroidTv) {
-                            listOf(NoticeAction("PIN", primary = true) { viewModel.startAndroidTvPairing() })
-                        } else emptyList()
+                        actions = when {
+                            isAndroidTv -> listOf(NoticeAction("PIN", primary = true) { viewModel.startAndroidTvPairing() })
+                            isMac -> listOf(NoticeAction("Ingresar", primary = true) { viewModel.openMacLogin() })
+                            else -> emptyList()
+                        }
                     )
                     is ConnectionState.Error -> Notice(
                         label = "Sin conexión",
@@ -280,73 +289,83 @@ fun MainScreen(
                     else -> {}
                 }
 
-                // Navigation and gestures share the D-pad; apps and numpad have their own tabs.
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    RemoteModeTabs(
-                        activeTab = activeTab,
-                        onSelect = { mode ->
-                            HapticUtil.triggerKeyHaptic(context)
-                            viewModel.setActiveTab(mode)
-                        }
+                // A Mac only takes volume and media, so it gets a single panel instead of the tabs.
+                if (isMac) {
+                    MacRemotePanel(
+                        volume = macVolume,
+                        onKeyPress = { key -> viewModel.sendKey(key) },
+                        onVolumeChange = { level -> viewModel.setMacVolume(level) },
+                        modifier = if (isShortScreen) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().weight(1f)
                     )
-                    HorizontalDivider(color = Hairline, thickness = GridGap)
-                }
-
-                // Main Interactive Remote Body: dynamically fills the remaining screen height
-                val bodyModifier = if (isShortScreen) {
-                    Modifier.fillMaxWidth()
                 } else {
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                }
+                    // Navigation and gestures share the D-pad; apps and numpad have their own tabs.
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        RemoteModeTabs(
+                            activeTab = activeTab,
+                            onSelect = { mode ->
+                                HapticUtil.triggerKeyHaptic(context)
+                                viewModel.setActiveTab(mode)
+                            }
+                        )
+                        HorizontalDivider(color = Hairline, thickness = GridGap)
+                    }
 
-                AnimatedContent(
-                    targetState = activeTab,
-                    transitionSpec = {
-                        (fadeIn() + slideInVertically { it / 8 }) togetherWith (fadeOut() + slideOutVertically { -it / 8 })
-                    },
-                    label = "remote_tab_content",
-                    modifier = bodyModifier
-                ) { tab ->
-                    when (tab) {
-                        RemoteMode.DPAD -> {
-                            RemoteDpad(
-                                deviceType = currentType,
-                                onKeyPress = { key -> viewModel.sendKey(key) },
-                                onBrightnessClick = { viewModel.openBrightness() },
-                                isPlaying = isPlaying,
-                                onTogglePlayPause = { viewModel.togglePlayPause() },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        RemoteMode.APPS -> {
-                            RemoteAppsGrid(
-                                deviceType = currentType,
-                                deviceName = activeDevice?.name ?: currentType.title,
-                                apps = filteredTvApps,
-                                allAppsCount = activeTvApps.size,
-                                favoritesCount = activeTvApps.count { it.isFavorite },
-                                selectedCategory = selectedCategory,
-                                searchQuery = searchQuery,
-                                onCategorySelected = { viewModel.setSelectedCategory(it) },
-                                onSearchQueryChanged = { viewModel.setSearchQuery(it) },
-                                onAppLaunch = { app -> viewModel.launchTvApp(app) },
-                                onToggleFavorite = { app -> viewModel.toggleFavoriteApp(app) },
-                                onDeleteApp = { app -> viewModel.deleteTvApp(app) },
-                                onAddNewApp = { name, id, category, colorHex, iconKey, isFav ->
-                                    viewModel.addCustomApp(name, id, category, colorHex, iconKey, isFav)
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        RemoteMode.NUMPAD -> {
-                            RemoteNumpad(
-                                deviceType = currentType,
-                                onKeyPress = { key -> viewModel.sendKey(key) },
-                                onSendText = { text -> viewModel.sendText(text) },
-                                modifier = Modifier.fillMaxSize()
-                            )
+                    // Main Interactive Remote Body: dynamically fills the remaining screen height
+                    val bodyModifier = if (isShortScreen) {
+                        Modifier.fillMaxWidth()
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    }
+
+                    AnimatedContent(
+                        targetState = activeTab,
+                        transitionSpec = {
+                            (fadeIn() + slideInVertically { it / 8 }) togetherWith (fadeOut() + slideOutVertically { -it / 8 })
+                        },
+                        label = "remote_tab_content",
+                        modifier = bodyModifier
+                    ) { tab ->
+                        when (tab) {
+                            RemoteMode.DPAD -> {
+                                RemoteDpad(
+                                    deviceType = currentType,
+                                    onKeyPress = { key -> viewModel.sendKey(key) },
+                                    onBrightnessClick = { viewModel.openBrightness() },
+                                    isPlaying = isPlaying,
+                                    onTogglePlayPause = { viewModel.togglePlayPause() },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            RemoteMode.APPS -> {
+                                RemoteAppsGrid(
+                                    deviceType = currentType,
+                                    deviceName = activeDevice?.name ?: currentType.title,
+                                    apps = filteredTvApps,
+                                    allAppsCount = activeTvApps.size,
+                                    favoritesCount = activeTvApps.count { it.isFavorite },
+                                    selectedCategory = selectedCategory,
+                                    searchQuery = searchQuery,
+                                    onCategorySelected = { viewModel.setSelectedCategory(it) },
+                                    onSearchQueryChanged = { viewModel.setSearchQuery(it) },
+                                    onAppLaunch = { app -> viewModel.launchTvApp(app) },
+                                    onToggleFavorite = { app -> viewModel.toggleFavoriteApp(app) },
+                                    onDeleteApp = { app -> viewModel.deleteTvApp(app) },
+                                    onAddNewApp = { name, id, category, colorHex, iconKey, isFav ->
+                                        viewModel.addCustomApp(name, id, category, colorHex, iconKey, isFav)
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            RemoteMode.NUMPAD -> {
+                                RemoteNumpad(
+                                    deviceType = currentType,
+                                    onKeyPress = { key -> viewModel.sendKey(key) },
+                                    onSendText = { text -> viewModel.sendText(text) },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                     }
                 }
@@ -437,6 +456,16 @@ fun MainScreen(
         onSubmitPin = { pin -> viewModel.submitAndroidTvPin(pin) },
         onRetry = { viewModel.startAndroidTvPairing() },
         onDismiss = { viewModel.closeAndroidTvPairingDialog() }
+    )
+
+    MacLoginDialog(
+        isOpen = isMacLoginDialogOpen && isMac,
+        deviceName = activeDevice?.name ?: "Mac",
+        deviceIp = activeDevice?.ipAddress ?: "",
+        isLoading = isMacLoginInProgress,
+        errorMessage = macLoginError,
+        onSubmit = { user, password -> viewModel.submitMacLogin(user, password) },
+        onDismiss = { viewModel.closeMacLogin() }
     )
 
     // Wake-on-LAN MAC Address Configuration Dialog

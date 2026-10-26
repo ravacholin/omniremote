@@ -655,6 +655,21 @@ fun DeviceManagerDialog(
                                         .weight(1f)
                                         .testTag("select_android_type")
                                 )
+                                FilterChip(
+                                    selected = formType == DeviceType.MACOS,
+                                    onClick = {
+                                        formType = DeviceType.MACOS
+                                        formPort = DeviceType.MACOS.defaultPort.toString()
+                                    },
+                                    label = { Text("Mac") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = DeviceType.MACOS.brandColor.copy(alpha = 0.2f),
+                                        selectedLabelColor = DeviceType.MACOS.brandColor
+                                    ),
+                                    modifier = Modifier
+                                        .weight(0.6f)
+                                        .testTag("select_mac_type")
+                                )
                             }
                         }
 
