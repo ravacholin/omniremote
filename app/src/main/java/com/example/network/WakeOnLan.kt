@@ -469,8 +469,9 @@ object WakeOnLan {
                 } catch (_: Exception) {}
             }
 
-            // Macs wake from the magic packet alone ("Wake for network access").
-            DeviceType.MACOS -> Unit
+            // Computers wake from the magic packet alone ("Wake for network access" on a Mac,
+            // "Allow this device to wake the computer" on a Windows network adapter).
+            DeviceType.MACOS, DeviceType.WINDOWS -> Unit
         }
 
         val success = totalPackets > 0

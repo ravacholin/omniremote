@@ -287,6 +287,7 @@ class NsdTvDiscoveryService(private val context: Context) {
                     DeviceType.SAMSUNG_TIZEN -> "Samsung Smart TV"
                     DeviceType.ANDROID_TV -> "Google TV"
                     DeviceType.MACOS -> "Mac"
+                    DeviceType.WINDOWS -> "PC con Windows"
                 }
             }
 

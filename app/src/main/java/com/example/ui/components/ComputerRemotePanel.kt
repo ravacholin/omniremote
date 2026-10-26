@@ -23,8 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
-import com.example.network.MacVolume
+import com.example.network.ComputerVolume
 import com.example.ui.theme.Ash
 import com.example.ui.theme.Hairline
 import com.example.ui.theme.Paper
@@ -32,10 +33,11 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import kotlin.math.roundToInt
 
-/** Volume and media for a Mac: the only controls macOS exposes without installing an app. */
+/** Volume for a Mac or PC, plus media on a Mac: the controls its SSH server can reach. */
 @Composable
-fun MacRemotePanel(
-    volume: MacVolume?,
+fun ComputerRemotePanel(
+    deviceType: DeviceType,
+    volume: ComputerVolume?,
     onKeyPress: (RemoteKey) -> Unit,
     onVolumeChange: (Int) -> Unit,
     modifier: Modifier = Modifier
@@ -45,7 +47,7 @@ fun MacRemotePanel(
         HapticUtil.triggerKeyHaptic(context)
         onKeyPress(key)
     }
-    // Follows the Mac, except while the finger is on the slider.
+    // Follows the computer, except while the finger is on the slider.
     var dragLevel by remember { mutableStateOf<Float?>(null) }
     val shownLevel = dragLevel ?: volume?.level?.toFloat() ?: 0f
 
@@ -92,22 +94,25 @@ fun MacRemotePanel(
             IconKey(RemoteIcons.VolumeUp, "Vol +", { press(RemoteKey.VOL_UP) }, cell, "mac_vol_up", repeatable = true)
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().height(88.dp).hairlineGrid(),
-            horizontalArrangement = Arrangement.spacedBy(GridGap)
-        ) {
-            val cell = Modifier.weight(1f).fillMaxHeight()
-            IconKey(RemoteIcons.Rewind, "Anterior", { press(RemoteKey.REWIND) }, cell, "mac_previous")
-            GridKey(onClick = { press(RemoteKey.PLAY_PAUSE) }, modifier = Modifier.weight(1.4f).fillMaxHeight(), testTag = "mac_play_pause", inverted = true) { tint ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(RemoteIcons.Play, contentDescription = "Play/Pause", tint = tint, modifier = Modifier.size(26.dp))
-                    Spacer(Modifier.size(4.dp))
-                    Icon(RemoteIcons.Pause, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp))
+        // Media keys sent over SSH never reach a Windows desktop.
+        if (deviceType != DeviceType.WINDOWS) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(88.dp).hairlineGrid(),
+                horizontalArrangement = Arrangement.spacedBy(GridGap)
+            ) {
+                val cell = Modifier.weight(1f).fillMaxHeight()
+                IconKey(RemoteIcons.Rewind, "Anterior", { press(RemoteKey.REWIND) }, cell, "mac_previous")
+                GridKey(onClick = { press(RemoteKey.PLAY_PAUSE) }, modifier = Modifier.weight(1.4f).fillMaxHeight(), testTag = "mac_play_pause", inverted = true) { tint ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(RemoteIcons.Play, contentDescription = "Play/Pause", tint = tint, modifier = Modifier.size(26.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Icon(RemoteIcons.Pause, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp))
+                    }
                 }
+                IconKey(RemoteIcons.Forward, "Siguiente", { press(RemoteKey.FAST_FORWARD) }, cell, "mac_next")
             }
-            IconKey(RemoteIcons.Forward, "Siguiente", { press(RemoteKey.FAST_FORWARD) }, cell, "mac_next")
-        }
 
-        MonoLabel("Música, Spotify o la app que esté sonando")
+            MonoLabel("Música, Spotify o la app que esté sonando")
+        }
     }
 }

@@ -26,6 +26,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.data.model.DeviceType
 import com.example.ui.theme.Ash
 import com.example.ui.theme.Ink
 import com.example.ui.theme.Paper
@@ -35,12 +36,13 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextSecondary
 
 /**
- * One-time Mac login. The password authorizes a key generated on the phone and is then
- * forgotten; the Mac only needs Remote Login turned on.
+ * One-time Mac or PC login. The password authorizes a key generated on the phone and is then
+ * forgotten; the computer only needs its built-in SSH server turned on.
  */
 @Composable
-fun MacLoginDialog(
+fun ComputerLoginDialog(
     isOpen: Boolean,
+    deviceType: DeviceType,
     deviceName: String,
     deviceIp: String,
     isLoading: Boolean,
@@ -49,6 +51,7 @@ fun MacLoginDialog(
     onDismiss: () -> Unit
 ) {
     if (!isOpen) return
+    val isWindows = deviceType == DeviceType.WINDOWS
 
     var username by rememberSaveable(deviceIp) { mutableStateOf("") }
     var password by remember(deviceIp) { mutableStateOf("") }
@@ -71,15 +74,20 @@ fun MacLoginDialog(
         shape = Sharp,
         title = {
             Column {
-                Text("Conectar la Mac", style = MaterialTheme.typography.titleMedium, color = Paper)
+                Text(if (isWindows) "Conectar la PC" else "Conectar la Mac", style = MaterialTheme.typography.titleMedium, color = Paper)
                 MonoLabel("$deviceName // $deviceIp")
             }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "En la Mac activá Ajustes del Sistema > General > Compartir > Sesión remota. " +
-                        "No hace falta instalar nada. La contraseña se usa una sola vez para autorizar este teléfono y no se guarda.",
+                    text = if (isWindows) {
+                        "En la PC activá Configuración > Sistema > Características opcionales > Servidor OpenSSH. " +
+                            "No hace falta instalar nada más. La contraseña se usa una sola vez para autorizar este teléfono y no se guarda."
+                    } else {
+                        "En la Mac activá Ajustes del Sistema > General > Compartir > Sesión remota. " +
+                            "No hace falta instalar nada. La contraseña se usa una sola vez para autorizar este teléfono y no se guarda."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
@@ -87,8 +95,8 @@ fun MacLoginDialog(
                     value = username,
                     onValueChange = { username = it.trim() },
                     enabled = !isLoading,
-                    label = { Text("Usuario de la Mac") },
-                    placeholder = { Text("nombre corto, p. ej. pablo") },
+                    label = { Text(if (isWindows) "Usuario de Windows" else "Usuario de la Mac") },
+                    placeholder = { Text(if (isWindows) "carpeta en C:\\Users, p. ej. pablo" else "nombre corto, p. ej. pablo") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.None,
@@ -103,7 +111,7 @@ fun MacLoginDialog(
                     value = password,
                     onValueChange = { password = it },
                     enabled = !isLoading,
-                    label = { Text("Contraseña") },
+                    label = { Text(if (isWindows) "Contraseña (no el PIN)" else "Contraseña") },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
@@ -113,11 +121,15 @@ fun MacLoginDialog(
                     modifier = Modifier.fillMaxWidth().testTag("mac_login_password")
                 )
                 if (!errorMessage.isNullOrBlank()) {
-                    Notice(label = "Mac", message = errorMessage)
+                    Notice(label = deviceType.shortName, message = errorMessage)
                 }
                 Text(
-                    text = "Para controlar el reproductor, la Mac puede pedir permiso la primera vez: aceptalo en la pantalla de la Mac. " +
-                        "Para pausar YouTube o cualquier app, agregá sshd-keygen-wrapper en Privacidad y seguridad > Accesibilidad.",
+                    text = if (isWindows) {
+                        "En la PC, OmniRemote controla el volumen y el silencio."
+                    } else {
+                        "Para controlar el reproductor, la Mac puede pedir permiso la primera vez: aceptalo en la pantalla de la Mac. " +
+                            "Para pausar YouTube o cualquier app, agregá sshd-keygen-wrapper en Privacidad y seguridad > Accesibilidad."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted
                 )

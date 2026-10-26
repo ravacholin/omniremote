@@ -29,8 +29,19 @@ enum class DeviceType(
         brandTag = "MACOS // SSH",
         defaultPort = 22,
         brandColorHex = 0xFFD4D4D8 // Brushed Aluminium
+    ),
+    WINDOWS(
+        title = "PC con Windows",
+        shortName = "Windows",
+        brandTag = "WINDOWS // SSH",
+        defaultPort = 22,
+        brandColorHex = 0xFFA1A1AA // Graphite
     );
 
     val brandColor: Color
         get() = Color(brandColorHex)
+
+    /** A computer controlled over SSH for volume and media only. */
+    val isComputer: Boolean
+        get() = this == MACOS || this == WINDOWS
 }

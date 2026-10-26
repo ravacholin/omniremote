@@ -24,14 +24,14 @@ class TvAppRepository(private val database: AppDatabase) {
         database.withTransaction {
             // Discovery callbacks may outlive a TV deleted by the user.
             if (database.tvDeviceDao().getDeviceById(deviceId) == null) return@withTransaction
-            // A Mac is controlled for volume and media only; it has no TV app launcher.
-            if (deviceType == DeviceType.MACOS) return@withTransaction
+            // A Mac or PC is controlled for volume and media only; it has no TV app launcher.
+            if (deviceType.isComputer) return@withTransaction
             if (dao.getAppCountForDevice(deviceId) == 0) {
                 val streamingIds = StreamingAppCatalog.apps.map { it.forDevice(deviceId, deviceType, 0).appIdentifier }.toSet()
                 val baseApps = when (deviceType) {
                     DeviceType.SAMSUNG_TIZEN -> getSamsungDefaultApps(deviceId)
                     DeviceType.ANDROID_TV -> getAndroidTvDefaultApps(deviceId)
-                    DeviceType.MACOS -> emptyList()
+                    DeviceType.MACOS, DeviceType.WINDOWS -> emptyList()
                 }
                 dao.insertAll(baseApps.filter { it.appIdentifier !in streamingIds })
             }
