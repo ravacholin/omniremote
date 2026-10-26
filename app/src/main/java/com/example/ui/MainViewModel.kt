@@ -80,6 +80,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val connectionState: StateFlow<ConnectionState> = controller.connectionState
     val recentLogs: StateFlow<List<CommandLog>> = controller.recentLogs
     val lastDispatchedKey: StateFlow<RemoteKey?> = controller.lastDispatchedKey
+    val macVolume: StateFlow<com.example.network.MacVolume?> = controller.macVolume
+
+    private val _isMacLoginDialogOpen = MutableStateFlow(false)
+    val isMacLoginDialogOpen: StateFlow<Boolean> = _isMacLoginDialogOpen.asStateFlow()
+
+    private val _isMacLoginInProgress = MutableStateFlow(false)
+    val isMacLoginInProgress: StateFlow<Boolean> = _isMacLoginInProgress.asStateFlow()
+
+    private val _macLoginError = MutableStateFlow<String?>(null)
+    val macLoginError: StateFlow<String?> = _macLoginError.asStateFlow()
 
     private val _activeTab = MutableStateFlow(RemoteMode.DPAD)
     val activeTab: StateFlow<RemoteMode> = _activeTab.asStateFlow()
@@ -204,6 +214,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             controller.connectionState.collect { state ->
                 if (state is ConnectionState.WaitingAuth && controller.isCurrentDeviceAndroidTv() &&
                     !_isAndroidTvPairingDialogOpen.value) startAndroidTvPairing()
+                if (state is ConnectionState.WaitingAuth && controller.isCurrentDeviceMac() &&
+                    !_isMacLoginDialogOpen.value && !_isMacLoginInProgress.value) openMacLogin()
             }
         }
         viewModelScope.launch {
@@ -312,6 +324,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendKey(key: RemoteKey) {
+        // The Mac toggles whatever is playing; a guessed play/pause state would drift.
+        if (key == RemoteKey.PLAY_PAUSE && controller.isCurrentDeviceMac()) {
+            controller.sendKey(key)
+            return
+        }
         when (key) {
             RemoteKey.PLAY -> _isPlaying.value = true
             RemoteKey.PAUSE, RemoteKey.STOP -> _isPlaying.value = false
@@ -535,6 +552,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _pairingSuccessMessage.value = null
     }
 
+    fun openMacLogin() {
+        _macLoginError.value = (controller.connectionState.value as? ConnectionState.WaitingAuth)?.message
+        _isMacLoginDialogOpen.value = true
+    }
+
+    fun closeMacLogin() {
+        _isMacLoginDialogOpen.value = false
+        _macLoginError.value = null
+    }
+
+    fun submitMacLogin(username: String, password: String) {
+        if (username.isBlank() || password.isEmpty()) {
+            _macLoginError.value = "Completá el usuario y la contraseña de la Mac."
+            return
+        }
+        _isMacLoginInProgress.value = true
+        _macLoginError.value = null
+        viewModelScope.launch {
+            val result = controller.loginMac(username, password)
+            _isMacLoginInProgress.value = false
+            when (result) {
+                is com.example.network.MacResult.Ok -> _isMacLoginDialogOpen.value = false
+                is com.example.network.MacResult.LoginNeeded -> _macLoginError.value = result.message
+                is com.example.network.MacResult.Failed -> _macLoginError.value = result.message
+            }
+        }
+    }
+
+    fun setMacVolume(level: Int) {
+        controller.setMacVolume(level)
+    }
+
     fun sendText(text: String) {
         controller.sendText(text)
     }
@@ -559,6 +608,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val remaining = withContext(Dispatchers.IO) {
                 repository.deleteDevice(device)
+                if (device.deviceType == DeviceType.MACOS) tokenStore.clearMacLogin(device.id)
                 repository.getDefaultDevice()
             }
             if (_activeDevice.value?.id == device.id) {

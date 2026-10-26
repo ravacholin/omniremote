@@ -9,6 +9,11 @@ import com.example.data.model.TvAppEntity
 import com.example.data.model.TvAppShortcut
 import com.example.data.model.TvDeviceEntity
 import com.example.network.AndroidTvClient
+import com.example.network.MacResult
+import com.example.network.MacScript
+import com.example.network.MacScripts
+import com.example.network.MacSshClient
+import com.example.network.MacVolume
 import com.example.network.SamsungTvClient
 import com.example.network.SamsungBluetoothAudio
 import com.example.network.WakeOnLan
@@ -23,6 +28,9 @@ import com.example.data.local.TvTokenStore
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 class UnifiedTvController(
     private val context: Context? = null,
@@ -40,6 +48,9 @@ class UnifiedTvController(
 
     private val _lastDispatchedKey = MutableStateFlow<RemoteKey?>(null)
     val lastDispatchedKey: StateFlow<RemoteKey?> = _lastDispatchedKey.asStateFlow()
+
+    private val _macVolume = MutableStateFlow<MacVolume?>(null)
+    val macVolume: StateFlow<MacVolume?> = _macVolume.asStateFlow()
 
     private var connectionJob: Job? = null
     private var pairingJob: Job? = null
@@ -84,6 +95,21 @@ class UnifiedTvController(
             }
         }
     )
+
+    private val macClient = MacSshClient(tokenStore)
+    // Held volume keys repeat faster than a Mac round trip; drop repeats while one is running.
+    private val macVolumeKeyBusy = AtomicBoolean(false)
+    // Slider drags only need the latest level.
+    private val macVolumeRequests = Channel<Int>(Channel.CONFLATED)
+
+    init {
+        scope.launch(Dispatchers.IO) {
+            for (level in macVolumeRequests) {
+                val device = activeDevice?.takeIf { it.deviceType == DeviceType.MACOS } ?: continue
+                runMacScript(device, MacScripts.setVolume(level), reportsVolume = true)
+            }
+        }
+    }
 
     private val androidClient = AndroidTvClient(
         context = context,
@@ -151,6 +177,63 @@ class UnifiedTvController(
         return success
     }
 
+    fun isCurrentDeviceMac(): Boolean = activeDevice?.deviceType == DeviceType.MACOS
+
+    /** First login to a Mac; the password authorizes a key and is not stored. */
+    suspend fun loginMac(username: String, password: String): MacResult {
+        val dev = activeDevice?.takeIf { it.deviceType == DeviceType.MACOS }
+            ?: return MacResult.Failed("Seleccioná primero tu Mac.")
+        connectionJob?.cancel()
+        val result = withContext(Dispatchers.IO) {
+            macClient.login(dev.id, dev.ipAddress, dev.port, username, password)
+        }
+        handleMacConnectResult(dev, result)
+        return result
+    }
+
+    fun setMacVolume(level: Int) {
+        if (activeDevice?.deviceType != DeviceType.MACOS) return
+        _macVolume.value = _macVolume.value?.copy(level = level, muted = false)
+        macVolumeRequests.trySend(level)
+    }
+
+    private fun handleMacConnectResult(dev: TvDeviceEntity, result: MacResult) {
+        if (activeDevice?.id != dev.id || activeDevice?.ipAddress != dev.ipAddress) return
+        when (result) {
+            is MacResult.Ok -> {
+                _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
+                addLog(dev.name, "Conectado a ${dev.name}", true)
+                resolveDeviceMac(dev)
+                scope.launch(Dispatchers.IO) { runMacScript(dev, MacScripts.readVolume, reportsVolume = true) }
+            }
+            is MacResult.LoginNeeded -> _connectionState.value = ConnectionState.WaitingAuth(dev.name, result.message)
+            is MacResult.Failed -> if (!retryInitialConnection(dev)) _connectionState.value = ConnectionState.Error(result.message)
+        }
+    }
+
+    /** Runs [script] on the Mac; returns whether it succeeded and logs why when it did not. */
+    private fun runMacScript(device: TvDeviceEntity, script: MacScript, reportsVolume: Boolean): Boolean {
+        val result = macClient.run(script)
+        if (activeDevice?.id != device.id) return false
+        return when (result) {
+            is MacResult.Ok -> {
+                if (reportsVolume) MacScripts.parseVolume(result.output)?.let { _macVolume.value = it }
+                if (result.output == MacScripts.NO_PLAYER) {
+                    addLog(device.name, "Nada reproduciendo. Abrí Música o Spotify, o dale Accesibilidad a sshd-keygen-wrapper en la Mac.", false)
+                    false
+                } else true
+            }
+            is MacResult.LoginNeeded -> {
+                _connectionState.value = ConnectionState.WaitingAuth(device.name, result.message)
+                false
+            }
+            is MacResult.Failed -> {
+                addLog(device.name, result.message, false)
+                false
+            }
+        }
+    }
+
     fun isCurrentDeviceAndroidTv(): Boolean {
         return activeDevice?.deviceType == DeviceType.ANDROID_TV
     }
@@ -205,6 +288,14 @@ class UnifiedTvController(
                     // The client emits the specific connection or authorization error.
                 }
             }
+            DeviceType.MACOS -> {
+                connectionJob = scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        macClient.connect(device.id, device.ipAddress, device.port)
+                    }
+                    handleMacConnectResult(device, result)
+                }
+            }
         }
     }
 
@@ -250,6 +341,8 @@ class UnifiedTvController(
         activeDevice = null
         samsungClient.disconnect()
         androidClient.disconnect()
+        macClient.disconnect()
+        _macVolume.value = null
         _connectionState.value = ConnectionState.Disconnected
     }
 
@@ -257,6 +350,11 @@ class UnifiedTvController(
         cancelBluetoothNavigation()
         val device = activeDevice ?: return
         _lastDispatchedKey.value = key
+
+        if (device.deviceType == DeviceType.MACOS) {
+            sendMacKey(device, key)
+            return
+        }
 
         scope.launch(Dispatchers.IO) {
             val success: Boolean = when (device.deviceType) {
@@ -266,13 +364,31 @@ class UnifiedTvController(
                 DeviceType.ANDROID_TV -> {
                     androidClient.sendKey(key)
                 }
+                DeviceType.MACOS -> false
             }
 
             val commandName = when (device.deviceType) {
                 DeviceType.SAMSUNG_TIZEN -> key.samsungKey
                 DeviceType.ANDROID_TV -> "KEYCODE_${key.name}"
+                DeviceType.MACOS -> key.name
             }
             addLog(device.name, "Sent $commandName (${key.label})", success)
+        }
+    }
+
+    private fun sendMacKey(device: TvDeviceEntity, key: RemoteKey) {
+        val script = MacScripts.forKey(key) ?: run {
+            addLog(device.name, "${key.label} no está disponible en la Mac.", false)
+            return
+        }
+        val volumeKey = MacScripts.reportsVolume(key)
+        if (volumeKey && !macVolumeKeyBusy.compareAndSet(false, true)) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                if (runMacScript(device, script, reportsVolume = volumeKey)) addLog(device.name, "Mac: ${key.label}", true)
+            } finally {
+                if (volumeKey) macVolumeKeyBusy.set(false)
+            }
         }
     }
 
@@ -288,6 +404,7 @@ class UnifiedTvController(
                 DeviceType.ANDROID_TV -> {
                     androidClient.sendText(text)
                 }
+                DeviceType.MACOS -> false
             }
             addLog(device.name, "Sent text: \"$text\"", success)
         }
@@ -337,6 +454,7 @@ class UnifiedTvController(
                 DeviceType.ANDROID_TV -> {
                     androidClient.launchApp(shortcut)
                 }
+                DeviceType.MACOS -> false
             }
             addLog(device.name, "Launched ${shortcut.title}", success)
         }
@@ -355,6 +473,7 @@ class UnifiedTvController(
                     result.isSuccess
                 }
                 DeviceType.ANDROID_TV -> androidClient.launchAppByPackage(app.appIdentifier, app.deepLinkUrl) { storeOpened = true }
+                DeviceType.MACOS -> false
             }
             val message = when {
                 storeOpened -> "${app.appName}: selecciona Abrir en la pantalla de la TV."

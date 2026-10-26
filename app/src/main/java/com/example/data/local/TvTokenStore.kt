@@ -3,6 +3,8 @@ package com.example.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.example.network.MacLogin
+import com.example.network.MacLoginStore
 import com.example.network.WakeOnLan
 
 /**
@@ -10,7 +12,7 @@ import com.example.network.WakeOnLan
  * Ensures Samsung Smart TV authorization tokens and Android TV pairing credentials
  * are permanently preserved across app restarts, re-scans, and device selections.
  */
-class TvTokenStore(context: Context) {
+class TvTokenStore(context: Context) : MacLoginStore {
 
     private val prefs: SharedPreferences = context.applicationContext.getSharedPreferences(
         PREFS_NAME,
@@ -104,6 +106,33 @@ class TvTokenStore(context: Context) {
     fun getCertDer(): String? = prefs.getString(KEY_CLIENT_CERT_DER, null)
     fun getPrivateKeyPkcs8(): String? = prefs.getString(KEY_CLIENT_KEY_PKCS8, null)
 
+    override fun getMacLogin(deviceId: Long): MacLogin? {
+        val prefix = KEY_PREFIX_MAC_LOGIN + deviceId + "_"
+        return MacLogin(
+            username = prefs.getString(prefix + "user", null) ?: return null,
+            privateKey = prefs.getString(prefix + "private_key", null) ?: return null,
+            publicKey = prefs.getString(prefix + "public_key", null) ?: return null,
+            hostKey = prefs.getString(prefix + "host_key", null) ?: return null
+        )
+    }
+
+    override fun saveMacLogin(deviceId: Long, login: MacLogin) {
+        val prefix = KEY_PREFIX_MAC_LOGIN + deviceId + "_"
+        prefs.edit()
+            .putString(prefix + "user", login.username)
+            .putString(prefix + "private_key", login.privateKey)
+            .putString(prefix + "public_key", login.publicKey)
+            .putString(prefix + "host_key", login.hostKey)
+            .commit().also { check(it) { "Could not persist Mac login" } }
+    }
+
+    override fun clearMacLogin(deviceId: Long) {
+        val prefix = KEY_PREFIX_MAC_LOGIN + deviceId + "_"
+        val editor = prefs.edit()
+        prefs.all.keys.filter { it.startsWith(prefix) }.forEach { editor.remove(it) }
+        editor.apply()
+    }
+
     companion object {
         private const val TAG = "TvTokenStore"
         private const val PREFS_NAME = "omni_remote_tokens"
@@ -116,6 +145,7 @@ class TvTokenStore(context: Context) {
         private const val KEY_PREFIX_ANDROID_PAIRED = "android_tv_paired_"
         private const val KEY_CLIENT_CERT_DER = "android_tv_client_cert_der"
         private const val KEY_CLIENT_KEY_PKCS8 = "android_tv_client_key_pkcs8"
+        private const val KEY_PREFIX_MAC_LOGIN = "mac_login_"
 
         @Volatile
         private var instance: TvTokenStore? = null

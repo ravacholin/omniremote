@@ -22,6 +22,13 @@ enum class DeviceType(
         brandTag = "GOOGLE // TV",
         defaultPort = 6466,
         brandColorHex = 0xFFE4E4E7 // Architectural Platinum Silver
+    ),
+    MACOS(
+        title = "Mac / MacBook",
+        shortName = "Mac",
+        brandTag = "MACOS // SSH",
+        defaultPort = 22,
+        brandColorHex = 0xFFD4D4D8 // Brushed Aluminium
     );
 
     val brandColor: Color

@@ -468,6 +468,9 @@ object WakeOnLan {
                     triggeredProtocols.add("Sony BRAVIA IRCC Wake")
                 } catch (_: Exception) {}
             }
+
+            // Macs wake from the magic packet alone ("Wake for network access").
+            DeviceType.MACOS -> Unit
         }
 
         val success = totalPackets > 0
