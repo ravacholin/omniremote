@@ -65,6 +65,33 @@ class PairingReliabilityTest {
         assertEquals("", store.getSamsungToken("192.168.1.99", macAddress = "AA:BB:CC:DD:EE:99"))
     }
 
+    @Test fun `token issued later wins over an older copy under the MAC`() {
+        store.saveSamsungToken("192.168.1.10", "old", 1, "AA:BB:CC:DD:EE:10")
+        // The TV issued a new token; the client saves it by IP before the MAC is known.
+        store.saveSamsungToken("192.168.1.10", "new")
+        assertEquals("new", TvTokenStore(context).getSamsungToken("192.168.1.10", 1, "AA:BB:CC:DD:EE:10"))
+        store.saveSamsungToken("192.168.1.10", "newer", 1)
+        assertEquals("newer", store.getSamsungToken("192.168.1.10", 1, "AA:BB:CC:DD:EE:10"))
+        assertEquals("newer", store.getSamsungToken("192.168.1.10"))
+    }
+
+    @Test fun `resolving the MAC keeps the token the TV just issued`() {
+        store.saveSamsungToken("192.168.1.10", "stale", macAddress = "AA:BB:CC:DD:EE:10")
+        store.saveSamsungToken("192.168.1.10", "fresh", 1)
+        store.saveSamsungToken("192.168.1.10", "fresh", 1, "AA:BB:CC:DD:EE:10")
+        assertEquals("fresh", store.getSamsungToken("192.168.1.99", macAddress = "AA:BB:CC:DD:EE:10"))
+        assertEquals("fresh", store.getSamsungToken("192.168.1.10", 1, "AA:BB:CC:DD:EE:10"))
+    }
+
+    @Test fun `tokens saved before sequence numbers are still read`() {
+        context.getSharedPreferences("omni_remote_tokens", Context.MODE_PRIVATE).edit()
+            .putString("samsung_token_ip_192.168.1.10", "legacy-ip")
+            .putString("samsung_token_mac_AA:BB:CC:DD:EE:10", "legacy-mac")
+            .commit()
+        assertEquals("legacy-ip", store.getSamsungToken("192.168.1.10"))
+        assertEquals("legacy-mac", store.getSamsungToken("192.168.1.10", macAddress = "AA:BB:CC:DD:EE:10"))
+    }
+
     @Test fun `generated certificate is currently valid`() {
         AndroidTvCertificateManager.getClientCertificate(context).checkValidity()
     }

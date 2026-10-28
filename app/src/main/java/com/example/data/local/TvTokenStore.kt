@@ -24,48 +24,71 @@ class TvTokenStore(context: Context) : MacLoginStore {
         val cleanIp = ipAddress.trim()
         Log.d(TAG, "Persisting Samsung TV token for IP: $cleanIp (length: ${token.length})")
 
+        // Every write gets a newer sequence number so lookups can tell which copy is current.
+        val seq = prefs.getLong(KEY_SEQ, 0) + 1
         prefs.edit().apply {
-            putString(KEY_PREFIX_IP + cleanIp, token)
+            putLong(KEY_SEQ, seq)
+            putToken(KEY_PREFIX_IP + cleanIp, token, seq)
             if (deviceId != null && deviceId > 0) {
-                putString(KEY_PREFIX_ID + deviceId, token)
+                putToken(KEY_PREFIX_ID + deviceId, token, seq)
                 putLong(KEY_IP_OWNER_ID + cleanIp, deviceId)
             }
             WakeOnLan.formatMacAddress(macAddress)?.let { mac ->
-                putString(KEY_PREFIX_MAC + mac, token)
+                putToken(KEY_PREFIX_MAC + mac, token, seq)
                 putString(KEY_IP_OWNER_MAC + cleanIp, mac)
                 if (deviceId != null && deviceId > 0) putString(KEY_ID_OWNER_MAC + deviceId, mac)
             }
-            apply()
+            // Written synchronously: losing a fresh token means the TV asks for permission again.
+            if (!commit()) Log.w(TAG, "Could not persist Samsung TV token for $cleanIp")
         }
     }
 
+    private fun SharedPreferences.Editor.putToken(key: String, token: String, seq: Long) {
+        putString(key, token)
+        putLong(KEY_PREFIX_SEQ + key, seq)
+    }
+
+    /**
+     * Returns the most recently saved token among the keys that belong to this TV.
+     * Samsung TVs can issue a new token on reconnect, so an older copy stored under
+     * another identity (IP, id or MAC) must never win over the latest one.
+     */
     fun getSamsungToken(ipAddress: String, deviceId: Long? = null, macAddress: String? = null): String {
         val cleanIp = ipAddress.trim()
+        val requestedMac = WakeOnLan.formatMacAddress(macAddress)
+        val keys = mutableListOf<String>()
         // Stable hardware identity wins when DHCP assigns an old IP to another TV.
-        WakeOnLan.formatMacAddress(macAddress)?.let { mac ->
-            val token = prefs.getString(KEY_PREFIX_MAC + mac, null)
-                ?: macAddress?.let { prefs.getString(KEY_PREFIX_MAC + it.trim().uppercase(), null) }
-            if (!token.isNullOrBlank()) return token
+        if (requestedMac != null) {
+            keys += KEY_PREFIX_MAC + requestedMac
+            macAddress?.let { keys += KEY_PREFIX_MAC + it.trim().uppercase() }
         }
+        val hasMacToken = keys.any { !prefs.getString(it, null).isNullOrBlank() }
+        var conflict = false
         if (deviceId != null && deviceId > 0) {
             val owner = prefs.getString(KEY_ID_OWNER_MAC + deviceId, null)
-            val requested = WakeOnLan.formatMacAddress(macAddress)
-            if (owner != null && requested != null && owner != requested) return ""
-            val token = prefs.getString(KEY_PREFIX_ID + deviceId, null)
-            if (!token.isNullOrBlank()) return token
+            if (owner != null && requestedMac != null && owner != requestedMac) conflict = true
+            else keys += KEY_PREFIX_ID + deviceId
         }
-        val ownerMac = prefs.getString(KEY_IP_OWNER_MAC + cleanIp, null)
-        val requestedMac = WakeOnLan.formatMacAddress(macAddress)
-        if (requestedMac != null && ownerMac != null && requestedMac != ownerMac) return ""
-        val ownerId = prefs.getLong(KEY_IP_OWNER_ID + cleanIp, 0)
-        if (deviceId != null && deviceId > 0 && ownerId > 0 && deviceId != ownerId) return ""
-        return prefs.getString(KEY_PREFIX_IP + cleanIp, "") ?: ""
+        if (!conflict) {
+            val ownerMac = prefs.getString(KEY_IP_OWNER_MAC + cleanIp, null)
+            val ownerId = prefs.getLong(KEY_IP_OWNER_ID + cleanIp, 0)
+            val macMismatch = requestedMac != null && ownerMac != null && requestedMac != ownerMac
+            val idMismatch = deviceId != null && deviceId > 0 && ownerId > 0 && deviceId != ownerId
+            if (!macMismatch && !idMismatch) keys += KEY_PREFIX_IP + cleanIp
+        } else if (!hasMacToken) {
+            return ""
+        }
+        // Ties (tokens saved before sequence numbers existed) keep the MAC > id > IP order.
+        return keys.mapNotNull { key -> prefs.getString(key, null)?.takeIf { it.isNotBlank() }?.let { key to it } }
+            .maxByOrNull { (key, _) -> prefs.getLong(KEY_PREFIX_SEQ + key, 0) }
+            ?.second.orEmpty()
     }
 
     fun clearSamsungToken(ipAddress: String) {
         val cleanIp = ipAddress.trim()
         prefs.edit().apply {
             remove(KEY_PREFIX_IP + cleanIp)
+            remove(KEY_PREFIX_SEQ + KEY_PREFIX_IP + cleanIp)
             apply()
         }
     }
@@ -146,6 +169,8 @@ class TvTokenStore(context: Context) : MacLoginStore {
         private const val KEY_CLIENT_CERT_DER = "android_tv_client_cert_der"
         private const val KEY_CLIENT_KEY_PKCS8 = "android_tv_client_key_pkcs8"
         private const val KEY_PREFIX_MAC_LOGIN = "mac_login_"
+        private const val KEY_SEQ = "samsung_token_seq"
+        private const val KEY_PREFIX_SEQ = "samsung_token_seq_"
 
         @Volatile
         private var instance: TvTokenStore? = null

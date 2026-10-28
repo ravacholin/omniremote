@@ -48,7 +48,13 @@ class SamsungTvClient(
 
     private var currentIp: String = ""
     private var currentPort: Int = 8002
-    private var currentToken: String = ""
+    @Volatile private var currentToken: String = ""
+    /** Token of the current session, as last issued by the TV. */
+    val token: String get() = currentToken
+
+    // While the TV shows its permission prompt, opening another socket shows a second prompt.
+    @Volatile private var awaitingAuth = false
+    @Volatile private var lastAutoReconnectAt = 0L
 
     private val okHttpClient: OkHttpClient by lazy {
         createUnsafeOkHttpClient()
@@ -106,18 +112,24 @@ class SamsungTvClient(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                if (generation != connectionGeneration.get()) return
-
                 try {
                     val json = JSONObject(text)
                     val event = json.optString("event")
 
                     // Extract token from multiple possible structures returned across Samsung Tizen versions
                     val receivedToken = extractTokenFromJson(json)
+                    val current = generation == connectionGeneration.get()
+                    if (!receivedToken.isNullOrBlank()) {
+                        // Persist even from a superseded socket: the user may have accepted the
+                        // prompt of an earlier attempt, and that token is valid for this TV.
+                        tokenStore?.saveSamsungToken(sessionIp, receivedToken)
+                        if (sessionIp == currentIp) currentToken = receivedToken
+                    }
+                    if (!current) return
+
                     if (!receivedToken.isNullOrBlank()) {
                         Log.d("SamsungTvClient", "Received Samsung TV authorization token")
-                        currentToken = receivedToken
-                        tokenStore?.saveSamsungToken(sessionIp, receivedToken)
+                        awaitingAuth = false
                         onTokenReceived?.invoke(receivedToken)
                         isConnected = true
                         onConnectionChanged?.invoke(true, null)
@@ -129,14 +141,21 @@ class SamsungTvClient(
                             pendingAppDiscovery?.complete(installedApps)
                         }
                         "ms.channel.connect" -> {
+                            awaitingAuth = false
                             isConnected = true
                             webSocket.send(SamsungAppProtocol.requestApps())
                             onConnectionChanged?.invoke(true, null)
                         }
                         "ms.channel.unauthorized" -> {
                             isConnected = false
+                            awaitingAuth = true
                             Log.w("SamsungTvClient", "Samsung TV requires authorization on TV screen")
                             onWaitingAuthPrompt?.invoke()
+                        }
+                        "ms.channel.timeOut" -> {
+                            isConnected = false
+                            awaitingAuth = false
+                            onConnectionChanged?.invoke(false, "La TV dejó de esperar la autorización. Reintentá y aceptá OmniRemote en la TV.")
                         }
                     }
                 } catch (e: Exception) {
@@ -189,6 +208,7 @@ class SamsungTvClient(
         webSocket?.close(1000, "User disconnected")
         webSocket = null
         isConnected = false
+        awaitingAuth = false
     }
 
     fun sendKey(key: RemoteKey): Boolean {
@@ -207,8 +227,11 @@ class SamsungTvClient(
             })
         }
         val sent = webSocket?.send(payload.toString()) ?: false
-        if (!sent && currentIp.isNotBlank()) {
-            // Reconnect if socket was dropped, always with port 8002 and persistent token
+        val now = System.currentTimeMillis()
+        // Reconnect if socket was dropped, with the persisted token. Held keys repeat quickly,
+        // so reconnect at most once per window and never while the TV prompt is on screen.
+        if (!sent && currentIp.isNotBlank() && !awaitingAuth && now - lastAutoReconnectAt > AUTO_RECONNECT_WINDOW_MS) {
+            lastAutoReconnectAt = now
             connect(currentIp, 8002, currentToken)
         }
         return sent
@@ -252,5 +275,9 @@ class SamsungTvClient(
             Result.success(Unit)
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { Result.failure(e) }
+    }
+
+    private companion object {
+        const val AUTO_RECONNECT_WINDOW_MS = 3000L
     }
 }
