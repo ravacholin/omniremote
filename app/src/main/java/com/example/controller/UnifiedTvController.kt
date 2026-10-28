@@ -496,9 +496,10 @@ class UnifiedTvController(
                 onDeviceMacResolved?.invoke(device.id, result.resolvedMac)
             }
             addLog(device.name, result.message, result.success)
-            // Delay and auto reconnect
+            // Delay and auto reconnect, unless the TV is connected or showing its permission prompt.
             kotlinx.coroutines.delay(1800)
-            reconnect()
+            val state = _connectionState.value
+            if (state !is ConnectionState.Connected && state !is ConnectionState.WaitingAuth) reconnect()
         }
     }
 
