@@ -279,7 +279,10 @@ class UnifiedTvController(
     private fun startConnection(device: TvDeviceEntity) {
         when (device.deviceType) {
             DeviceType.SAMSUNG_TIZEN -> {
-                samsungClient.connect(device.ipAddress, 8002, device.authToken)
+                // Re-read on every attempt: a retry must use a token accepted since the last one.
+                val token = tokenStore?.getSamsungToken(device.ipAddress, device.id, device.macAddress).orEmpty()
+                    .ifBlank { device.authToken }
+                samsungClient.connect(device.ipAddress, 8002, token)
             }
             DeviceType.ANDROID_TV -> {
                 connectionJob = scope.launch {
@@ -493,9 +496,10 @@ class UnifiedTvController(
                 onDeviceMacResolved?.invoke(device.id, result.resolvedMac)
             }
             addLog(device.name, result.message, result.success)
-            // Delay and auto reconnect
+            // Delay and auto reconnect, unless the TV is connected or showing its permission prompt.
             kotlinx.coroutines.delay(1800)
-            reconnect()
+            val state = _connectionState.value
+            if (state !is ConnectionState.Connected && state !is ConnectionState.WaitingAuth) reconnect()
         }
     }
 
@@ -507,8 +511,9 @@ class UnifiedTvController(
             activeDevice = activeDevice?.copy(macAddress = mac)
             onDeviceMacResolved?.invoke(device.id, mac)
             if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
-                val token = tokenStore?.getSamsungToken(device.ipAddress, device.id, mac).orEmpty()
-                    .ifBlank { device.authToken }
+                // Save the token this session is using; looking it up by the new MAC could
+                // return an older token and overwrite the one the TV just issued.
+                val token = samsungClient.token.ifBlank { activeDevice?.authToken.orEmpty() }
                 tokenStore?.saveSamsungToken(device.ipAddress, token, device.id, mac)
             }
             addLog(device.name, "Dirección MAC guardada para Wake-on-LAN: $mac", true)

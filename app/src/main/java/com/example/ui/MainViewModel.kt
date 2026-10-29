@@ -428,6 +428,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _powerOnStatusMessage.value = null
                         return@launch
                     }
+                    // Reconnecting would close the socket the TV prompt belongs to; the token
+                    // the user grants arrives on it, otherwise the TV asks again next time.
+                    is ConnectionState.WaitingAuth -> {
+                        _powerOnStatusMessage.value = null
+                        return@launch
+                    }
                     is ConnectionState.Connecting -> Unit
                     else -> controller.reconnect()
                 }
