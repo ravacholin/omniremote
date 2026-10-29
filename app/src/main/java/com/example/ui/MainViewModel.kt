@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.example.data.model.DeviceType
+import com.example.sleep.SleepTimerManager
+import android.widget.Toast
 
 import com.example.data.model.TvAppEntity
 import com.example.data.repository.TvAppRepository
@@ -48,6 +50,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val appRepository = TvAppRepository(database)
     private val scanner = TvScanner(application)
     val tokenStore = com.example.data.local.TvTokenStore.getInstance(application)
+    private val sleepTimerManager = SleepTimerManager.getInstance(application)
+    val sleepTimer = sleepTimerManager.timer
+    val sleepTimerResult = sleepTimerManager.result
     val nsdDiscoveryService = com.example.network.NsdTvDiscoveryService(application)
 
     private val controller = UnifiedTvController(
@@ -75,6 +80,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _activeDevice = MutableStateFlow<TvDeviceEntity?>(null)
+    private val deletedDeviceIds = mutableSetOf<Long>()
     val activeDevice: StateFlow<TvDeviceEntity?> = _activeDevice.asStateFlow()
 
     val connectionState: StateFlow<ConnectionState> = controller.connectionState
@@ -239,6 +245,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectDevice(device: TvDeviceEntity) {
+        // An older device-list emission can finish app initialization after deletion.
+        if (device.id in deletedDeviceIds) return
         _activeDevice.value = device
         controller.setActiveDevice(device)
         viewModelScope.launch(Dispatchers.IO) {
@@ -391,6 +399,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             controller.sendKey(RemoteKey.POWER)
         }
     }
+
+    /** False asks the UI to offer Android's exact-alarm permission; no timer is changed. */
+    fun cycleSleepTimer(): Boolean {
+        val device = _activeDevice.value?.takeIf { it.deviceType != DeviceType.MACOS } ?: return true
+        return try {
+            val timer = sleepTimerManager.advance(device)
+            Toast.makeText(getApplication(), timer?.let { "Sleep: ${it.minutes} minutos · ${it.deviceName}" }
+                ?: "Sleep: OFF", Toast.LENGTH_SHORT).show()
+            true
+        } catch (_: SecurityException) {
+            false
+        } catch (_: Exception) {
+            Toast.makeText(getApplication(), "No se pudo programar Sleep. Reintentá.", Toast.LENGTH_SHORT).show()
+            true
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerManager.cancel()
+        Toast.makeText(getApplication(), "Sleep: OFF", Toast.LENGTH_SHORT).show()
+    }
+
+    fun dismissSleepTimerResult() = sleepTimerManager.reportResult(null)
 
     /**
      * Direct Multi-Vector Power On for linked TVs:
@@ -611,6 +642,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteDevice(device: TvDeviceEntity) {
+        deletedDeviceIds += device.id
+        sleepTimerManager.cancelForDevice(device.id)
         viewModelScope.launch {
             val remaining = withContext(Dispatchers.IO) {
                 repository.deleteDevice(device)
@@ -663,6 +696,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onAppForeground() {
+        if (sleepTimerManager.timer.value != null && !sleepTimerManager.canScheduleExact) {
+            sleepTimerManager.cancel()
+            sleepTimerManager.reportResult("Sleep cancelado: habilitá Alarmas y recordatorios para volver a programarlo")
+        }
         controller.reconnectIfFailed()
     }
 

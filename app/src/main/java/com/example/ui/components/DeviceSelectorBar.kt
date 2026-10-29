@@ -68,7 +68,9 @@ fun DeviceSelectorBar(
     onOpenManager: () -> Unit,
     onOpenScan: () -> Unit,
     onPowerClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sleepMinutes: Int? = null,
+    onSleepClick: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var expanded by remember { mutableStateOf(false) }
@@ -268,6 +270,14 @@ fun DeviceSelectorBar(
                         modifier = Modifier.testTag("add_qs_tile_menu_item")
                     )
                 }
+            }
+
+            if (activeDevice?.deviceType != DeviceType.MACOS) {
+                SleepTimerButton(
+                    minutes = sleepMinutes,
+                    enabled = activeDevice != null,
+                    onClick = onSleepClick
+                )
             }
 
             IconKey(
