@@ -1,6 +1,12 @@
 package com.example.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -38,6 +44,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -48,6 +56,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -130,6 +141,41 @@ fun MainScreen(
     val isMacLoginDialogOpen by viewModel.isMacLoginDialogOpen.collectAsStateWithLifecycle()
     val isMacLoginInProgress by viewModel.isMacLoginInProgress.collectAsStateWithLifecycle()
     val macLoginError by viewModel.macLoginError.collectAsStateWithLifecycle()
+    val sleepTimer by viewModel.sleepTimer.collectAsStateWithLifecycle()
+    val sleepTimerResult by viewModel.sleepTimerResult.collectAsStateWithLifecycle()
+    var showSleepPermission by rememberSaveable { mutableStateOf(false) }
+    var pendingSleepDeviceId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val alarmPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (pendingSleepDeviceId != null && viewModel.activeDevice.value?.id == pendingSleepDeviceId) {
+            if (!viewModel.cycleSleepTimer()) {
+                Toast.makeText(context, "Sleep no se activó: falta permitir Alarmas y recordatorios", Toast.LENGTH_LONG).show()
+            }
+        }
+        pendingSleepDeviceId = null
+    }
+
+    if (showSleepPermission) {
+        AlertDialog(
+            onDismissRequest = { showSleepPermission = false; pendingSleepDeviceId = null },
+            title = { Text("Activar Sleep") },
+            text = { Text("Permití Alarmas y recordatorios para apagar la TV a tiempo, incluso con el teléfono bloqueado.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSleepPermission = false
+                    try {
+                        alarmPermissionLauncher.launch(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:${context.packageName}")))
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        pendingSleepDeviceId = null
+                        Toast.makeText(context, "Habilitá Alarmas y recordatorios para OmniRemote en Ajustes", Toast.LENGTH_LONG).show()
+                    }
+                }) { Text("Permitir") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSleepPermission = false; pendingSleepDeviceId = null }) { Text("Cancelar") }
+            }
+        )
+    }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -229,8 +275,32 @@ fun MainScreen(
                     onPowerClick = {
                         HapticUtil.triggerKeyHaptic(context)
                         viewModel.powerToggle()
+                    },
+                    sleepMinutes = sleepTimer?.minutes,
+                    onSleepClick = {
+                        HapticUtil.triggerKeyHaptic(context)
+                        if (!viewModel.cycleSleepTimer()) {
+                            pendingSleepDeviceId = activeDevice?.id
+                            showSleepPermission = true
+                        }
                     }
                 )
+
+                sleepTimer?.let { timer ->
+                    Notice(
+                        label = "Sleep · ${timer.minutes} min",
+                        message = timer.deviceName,
+                        modifier = Modifier.testTag("sleep_timer_notice"),
+                        actions = listOf(NoticeAction("Cancelar") { viewModel.cancelSleepTimer() })
+                    )
+                }
+                sleepTimerResult?.let { result ->
+                    Notice(
+                        label = "Sleep",
+                        message = result,
+                        actions = listOf(NoticeAction("Cerrar") { viewModel.dismissSleepTimerResult() })
+                    )
+                }
 
                 // Power-On Status (Wake-on-LAN in progress)
                 powerOnStatusMessage?.let { status ->

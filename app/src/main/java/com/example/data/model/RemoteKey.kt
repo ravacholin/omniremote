@@ -7,7 +7,7 @@ enum class RemoteKey(
 ) {
     // Power
     POWER("Power", "KEY_POWER", 26),
-    POWER_OFF("Power Off", "KEY_POWEROFF", 26),
+    POWER_OFF("Power Off", "KEY_POWEROFF", 223), // KEYCODE_SLEEP never wakes an already sleeping TV.
 
     // Volume & Sound
     VOL_UP("Vol +", "KEY_VOLUP", 24),
