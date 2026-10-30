@@ -7,8 +7,21 @@ esa TV y ofrece Cancelar. Cambiar de TV no cambia un timer existente. Volver a t
 Sleep programa el siguiente plazo para la TV seleccionada en ese momento.
 
 Funciona con Samsung Tizen y Google/Android TV. No se ofrece para Mac. Usa las
-credenciales ya guardadas y órdenes de apagado explícitas: `KEY_POWEROFF` en Samsung,
-`KEYCODE_SLEEP` (223) en Android TV. Nunca usa Wake-on-LAN ni alterna el encendido.
+credenciales ya guardadas. En Samsung envía `KEY_POWEROFF`. En Android TV consulta
+el estado de encendido que informa la sesión autenticada: si ya está en reposo no
+envía ninguna tecla; si está encendido envía una sola pulsación de `POWER` (26),
+igual que el botón normal del mando. Algunos aparatos HDMI no responden a `SLEEP`
+(223). Sin un estado de encendido conocido o sin soporte de estado de energía,
+no envía `POWER`. No usa Wake-on-LAN ni reintenta esa pulsación.
+
+Después de enviar `POWER`, espera hasta cinco segundos a que Android TV informe
+reposo. Un rechazo, una desconexión o la falta de confirmación se informa como
+apagado sin confirmar; escribir la orden en la conexión no basta para informar
+éxito. Si el aparato ya estaba en reposo, no se envía una orden nueva a la pantalla.
+Con un Chromecast, TV Box o Flow Box por HDMI, el estado confirmado es el del
+aparato. El apagado de la pantalla depende de HDMI-CEC y de su configuración en
+ambos equipos. La comprobación útil es que el botón normal de apagado de
+**OmniRemote** también apague la pantalla; el control físico puede usar infrarrojo.
 
 La alarma exacta de Android funciona con la pantalla bloqueada y aunque se destruya
 la pantalla o el proceso de la app. En Android 12+ puede requerir habilitar
@@ -30,9 +43,10 @@ gradle --console=plain --no-daemon :app:assembleDebug :app:testDebugUnitTest :ap
 ```
 
 Las pruebas verifican ciclo y vencimientos completos, reemplazo/cancelación de
-alarmas, persistencia del destino, permiso denegado, reinicio del teléfono y orden
-223 sobre una conexión TLS real a un servidor que simula Android TV. No prueban
-hardware físico.
+alarmas, persistencia del destino, permiso denegado, reinicio del teléfono y apagado
+por una conexión TLS real a un servidor que simula Android TV. Cubren `POWER` solo
+desde encendido, ausencia de teclas cuando ya está en reposo, confirmación de reposo,
+rechazo y falta de respuesta. No prueban hardware físico ni HDMI-CEC.
 
 Con teléfono y TVs reales:
 

@@ -45,8 +45,12 @@ class AndroidTvClient(
 ) {
     private val remoteConnectMutex = Mutex()
     private val appLaunchMutex = Mutex()
+    private val powerOffMutex = Mutex()
     private data class PendingAppLaunch(val link: String, val accepted: CompletableDeferred<Boolean>)
     @Volatile private var pendingAppLaunch: PendingAppLaunch? = null
+    private data class PendingPowerOff(val socket: SSLSocket, val confirmed: CompletableDeferred<Boolean>)
+    @Volatile private var pendingPowerOff: PendingPowerOff? = null
+    @Volatile private var remotePowerOn: Boolean? = null
     private val writeLock = Any()
     private var pairingIp: String = ""
     private val tag = "AndroidTvClient"
@@ -166,12 +170,27 @@ class AndroidTvClient(
                                 (AndroidTvProtocol.getFieldVarint(batch, 2) ?: 0)
                         }
                     }
+                    AndroidTvProtocol.getFieldBytes(packet, 40)?.let { start ->
+                        synchronized(writeLock) {
+                            if (remoteSocket === socket) {
+                                // RemoteStart.started is also the device's power status. An omitted bool is false.
+                                remotePowerOn = (AndroidTvProtocol.getFieldVarint(start, 1) ?: 0) != 0
+                                if (remotePowerOn == false) {
+                                    pendingPowerOff?.takeIf { it.socket === socket }?.confirmed?.complete(true)
+                                }
+                            }
+                        }
+                    }
                     AndroidTvProtocol.buildRemoteResponse(packet, features)?.let { writeRemotePacket(out, it) }
                     AndroidTvProtocol.getFieldBytes(packet, 3)?.let { error ->
                         // RemoteError describes a rejected command, not a broken TLS connection.
                         // During negotiation it still means that the session could not start.
                         check(isConnected) { "La TV rechazó el canal de control." }
                         val rejectedMessage = AndroidTvProtocol.getFieldBytes(error, 2)
+                        val rejectedKey = rejectedMessage?.let { AndroidTvProtocol.getFieldBytes(it, 10) }
+                        if (rejectedMessage == null || rejectedKey?.let { AndroidTvProtocol.getFieldVarint(it, 1) } == 26) {
+                            pendingPowerOff?.takeIf { it.socket === socket }?.confirmed?.complete(false)
+                        }
                         val rejectedApp = rejectedMessage?.let { AndroidTvProtocol.getFieldBytes(it, 90) }
                         val rejectedLink = rejectedApp?.let { AndroidTvProtocol.getFieldBytes(it, 1)?.toString(Charsets.UTF_8) }
                         val pending = pendingAppLaunch
@@ -206,8 +225,7 @@ class AndroidTvClient(
                     } catch (e: Exception) {
                         if (remoteSocket === socket) {
                             Log.w(tag, "Remote v2 reader failed; closing the control session", e)
-                            closeRemoteSocket()
-                            onConnectionChanged?.invoke(false, "Se perdió la conexión con la TV. Vuelve a conectar.")
+                            closeRemoteSocket(socket, "Se perdió la conexión con la TV. Vuelve a conectar.")
                         }
                     }
                 }
@@ -380,19 +398,26 @@ class AndroidTvClient(
         }
     }
 
-    private fun closeRemoteSocket() {
-        // Detach before closing: the reader must not publish a stale disconnect on replacement.
-        val socket = remoteSocket
-        remoteSocket = null
-        pendingAppLaunch?.accepted?.complete(false)
-        remoteOutput = null
-        remoteInput = null
-        negotiatedFeatures = 0
-        imeCounters = 0 to 0
-        isConnected = false
-        remoteReaderJob?.cancel()
-        remoteReaderJob = null
-        try { socket?.close() } catch (_: Exception) {}
+    private fun closeRemoteSocket(expected: SSLSocket? = remoteSocket, error: String? = null) {
+        // Abort transport before taking the write monitor: close must unblock a stalled write.
+        // Closing an old socket is harmless; its cleanup must never reset a replacement session.
+        try { expected?.close() } catch (_: Exception) {}
+        synchronized(writeLock) {
+            if (remoteSocket !== expected) return
+            remoteSocket = null
+            pendingAppLaunch?.accepted?.complete(false)
+            pendingPowerOff?.confirmed?.complete(false)
+            remotePowerOn = null
+            remoteOutput = null
+            remoteInput = null
+            negotiatedFeatures = 0
+            imeCounters = 0 to 0
+            isConnected = false
+            remoteReaderJob?.cancel()
+            remoteReaderJob = null
+            // Publish before a replacement can finish its RemoteStart negotiation.
+            if (error != null) onConnectionChanged?.invoke(false, error)
+        }
     }
 
     @Synchronized
@@ -433,6 +458,43 @@ class AndroidTvClient(
             closeRemoteSocket()
             onConnectionChanged?.invoke(false, "No se pudo enviar la tecla. Vuelve a conectar la TV.")
             false
+        }
+    }
+
+    /**
+     * Use the same POWER key as the working remote button, only from a known on state.
+     * Some HDMI players ignore SLEEP (223). Never toggle an already sleeping device or
+     * retry after an uncertain write: another POWER could wake it again.
+     */
+    suspend fun powerOff(canSend: () -> Boolean = { true }): Boolean = powerOffMutex.withLock {
+        withContext(Dispatchers.IO) {
+            if (!canSend() || activeIp.isBlank() || !isPaired) return@withContext false
+            if (!isConnected && !initRemoteV2Connection(activeIp)) return@withContext false
+            val socket = remoteSocket ?: return@withContext false
+            val pending = PendingPowerOff(socket, CompletableDeferred())
+            val commandContext = currentCoroutineContext()
+            try {
+                synchronized(writeLock) {
+                    commandContext.ensureActive()
+                    if (!canSend() || remoteSocket !== socket || !isConnected ||
+                        negotiatedFeatures and 32 == 0) return@withContext false
+                    when (remotePowerOn) {
+                        false -> return@withContext true
+                        null -> return@withContext false
+                        true -> Unit
+                    }
+                    val out = remoteOutput ?: return@withContext false
+                    pendingPowerOff = pending
+                    writeRemotePacket(out, AndroidTvProtocol.buildRemoteKeyInject(RemoteKey.POWER.androidKeyCode))
+                }
+                withTimeoutOrNull(5_000) { pending.confirmed.await() } == true
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                Log.w(tag, "Could not confirm Android TV standby", error)
+                false
+            } finally {
+                if (pendingPowerOff === pending) pendingPowerOff = null
+            }
         }
     }
 

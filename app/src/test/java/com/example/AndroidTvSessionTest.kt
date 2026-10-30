@@ -23,6 +23,34 @@ import kotlin.concurrent.thread
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class AndroidTvSessionTest {
+    @Test fun `cleanup from an old remote reader keeps the replacement session open`() {
+        val connectionEvents = mutableListOf<Boolean>()
+        val client = AndroidTvClient(onConnectionChanged = { connected, _ -> connectionEvents.add(connected) })
+        val ssl = javax.net.ssl.SSLContext.getDefault()
+        val oldSocket = ssl.socketFactory.createSocket() as SSLSocket
+        val newSocket = ssl.socketFactory.createSocket() as SSLSocket
+        val socketField = AndroidTvClient::class.java.getDeclaredField("remoteSocket").apply { isAccessible = true }
+        try {
+            socketField.set(client, newSocket)
+            AndroidTvClient::class.java.getDeclaredField("isConnected").apply { isAccessible = true }.set(client, true)
+            val cleanup = AndroidTvClient::class.java.getDeclaredMethod("closeRemoteSocket", SSLSocket::class.java, String::class.java)
+                .apply { isAccessible = true }
+            cleanup.invoke(client, oldSocket, "old reader error")
+            assertTrue(oldSocket.isClosed)
+            assertSame(newSocket, socketField.get(client))
+            assertFalse(newSocket.isClosed)
+            assertTrue(client.isConnected)
+            assertTrue(connectionEvents.isEmpty())
+            cleanup.invoke(client, newSocket, "current reader error")
+            assertTrue(newSocket.isClosed)
+            assertFalse(client.isConnected)
+            assertEquals(listOf(false), connectionEvents)
+        } finally {
+            oldSocket.close()
+            newSocket.close()
+        }
+    }
+
     @Test fun `cleanup from an old pairing attempt keeps the new socket open`() {
         val client = AndroidTvClient()
         val ssl = javax.net.ssl.SSLContext.getDefault()
