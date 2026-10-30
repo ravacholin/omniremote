@@ -36,6 +36,10 @@ class SamsungPlaybackTest {
     }
 
     private fun attach(client: SamsungTvClient, socket: WebSocket) {
+        SamsungTvClient::class.java.getDeclaredField("isConnected").apply {
+            isAccessible = true
+            setBoolean(client, true)
+        }
         SamsungTvClient::class.java.getDeclaredField("webSocket").apply {
             isAccessible = true
             set(client, socket)

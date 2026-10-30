@@ -259,8 +259,12 @@ class UnifiedTvController(
             device
         }
 
+        val state = _connectionState.value
+        val preserveSession = state is ConnectionState.Connected ||
+            (effectiveDevice.deviceType == DeviceType.SAMSUNG_TIZEN &&
+                (state is ConnectionState.Connecting || state is ConnectionState.WaitingAuth))
         if (activeDevice?.id == effectiveDevice.id && activeDevice?.ipAddress == effectiveDevice.ipAddress &&
-            _connectionState.value is ConnectionState.Connected) {
+            activeDevice?.deviceType == effectiveDevice.deviceType && preserveSession) {
             activeDevice = effectiveDevice
             return
         }
