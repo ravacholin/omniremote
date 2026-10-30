@@ -29,6 +29,14 @@ televisor físico.
    Confirmar que no se vuelve a apagar después de despertar y que puede controlarse al arrancar.
 6. Con varios televisores, cambiar entre ellos y verificar que cada Samsung conserva su
    propia autorización. Probar también después de cambiar la IP y volver a descubrir la TV.
+7. En Samsung, repetir tres ciclos de apagar y encender desde el teléfono. Durante el
+   arranque, pulsar navegación/volumen: no deben abrir otro intento ni dejar POWER en
+   cola. Si aparece el permiso inicial, actualizar la MAC o volver a seleccionar la
+   misma TV y aceptarlo: debe conservarse esa sesión y su autorización.
+8. Después de usar Sleep en Samsung, volver a encender y comprobar la reconexión sin
+   autorizar otra vez. Repetir tras cerrar y volver a abrir la aplicación, conservando
+   sus datos. Esto verifica que se usa el último token guardado, también si lo renovó
+   la sesión de Sleep.
 
 Para despertar, la TV necesita soporte de WoL/WoWLAN y la opción de encendido por red
 activada. Teléfono y TV deben tener conectividad local; el aislamiento de clientes del router

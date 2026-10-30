@@ -34,14 +34,15 @@ class SamsungTvClient(
     private val tokenStore: TvTokenStore? = null,
     private val onTokenReceived: ((String) -> Unit)? = null,
     private val onConnectionChanged: ((Boolean, String?) -> Unit)? = null,
-    private val onWaitingAuthPrompt: (() -> Unit)? = null
+    private val onWaitingAuthPrompt: (() -> Unit)? = null,
+    private val webSocketFactory: WebSocket.Factory? = null
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var webSocket: WebSocket? = null
     private val appDiscoveryMutex = Mutex()
     @Volatile private var installedApps: List<SamsungInstalledApp> = emptyList()
     @Volatile private var pendingAppDiscovery: CompletableDeferred<List<SamsungInstalledApp>>? = null
-    var isConnected = false
+    @Volatile var isConnected = false
         private set
 
     private val connectionGeneration = java.util.concurrent.atomic.AtomicLong()
@@ -54,6 +55,7 @@ class SamsungTvClient(
 
     // While the TV shows its permission prompt, opening another socket shows a second prompt.
     @Volatile private var awaitingAuth = false
+    private var connecting = false
     @Volatile private var lastAutoReconnectAt = 0L
 
     private val okHttpClient: OkHttpClient by lazy {
@@ -81,6 +83,7 @@ class SamsungTvClient(
             .build()
     }
 
+    @Synchronized
     fun connect(ipAddress: String, port: Int = 8002, token: String = "") {
         disconnect()
         val generation = connectionGeneration.get()
@@ -90,12 +93,13 @@ class SamsungTvClient(
         // Port 8001 is unencrypted and invalidates/conflicts with secure token sessions.
         currentPort = 8002
 
-        // Resolve token: prioritize passed token, fallback to persistent store (by IP, ID, or last token)
+        // The controller resolves the TV's IP/id/MAC identity before passing a token.
         val resolvedToken = when {
             token.isNotBlank() -> token.trim()
             else -> tokenStore?.getSamsungToken(currentIp) ?: ""
         }
         currentToken = resolvedToken
+        connecting = true
 
         val appNameBase64 = Base64.encodeToString("OmniRemote".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         val scheme = "wss"
@@ -105,84 +109,94 @@ class SamsungTvClient(
         Log.d("SamsungTvClient", "Connecting to Samsung TV at $currentIp:$currentPort (Has token: ${currentToken.isNotBlank()}, tokenLength: ${currentToken.length})")
         val request = Request.Builder().url(url).build()
 
-        webSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
+        webSocket = (webSocketFactory ?: okHttpClient).newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (generation != connectionGeneration.get()) return
                 // Wait for ms.channel.connect before reporting an authorized session.
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                try {
-                    val json = JSONObject(text)
-                    val event = json.optString("event")
+                synchronized(this@SamsungTvClient) {
+                    if (generation != connectionGeneration.get()) return
+                    try {
+                        val json = JSONObject(text)
+                        val event = json.optString("event")
 
-                    // Extract token from multiple possible structures returned across Samsung Tizen versions
-                    val receivedToken = extractTokenFromJson(json)
-                    val current = generation == connectionGeneration.get()
-                    if (!receivedToken.isNullOrBlank()) {
-                        // Persist even from a superseded socket: the user may have accepted the
-                        // prompt of an earlier attempt, and that token is valid for this TV.
-                        tokenStore?.saveSamsungToken(sessionIp, receivedToken)
-                        if (sessionIp == currentIp) currentToken = receivedToken
+                        when (event) {
+                            "ed.installedApp.get" -> {
+                                installedApps = SamsungAppProtocol.installedApps(json)
+                                pendingAppDiscovery?.complete(installedApps)
+                            }
+                            "ms.channel.connect" -> {
+                                // Only this event confirms authorization. A replaced socket must
+                                // never overwrite the token of the current session.
+                                extractTokenFromJson(json)?.let { receivedToken ->
+                                    tokenStore?.saveSamsungToken(sessionIp, receivedToken)
+                                    currentToken = receivedToken
+                                    onTokenReceived?.invoke(receivedToken)
+                                }
+                                connecting = false
+                                awaitingAuth = false
+                                isConnected = true
+                                webSocket.send(SamsungAppProtocol.requestApps())
+                                onConnectionChanged?.invoke(true, null)
+                            }
+                            "ms.channel.unauthorized" -> {
+                                connecting = false
+                                isConnected = false
+                                awaitingAuth = true
+                                Log.w("SamsungTvClient", "Samsung TV requires authorization on TV screen")
+                                onWaitingAuthPrompt?.invoke()
+                            }
+                            "ms.channel.timeOut" -> {
+                                connecting = false
+                                isConnected = false
+                                awaitingAuth = false
+                                onConnectionChanged?.invoke(false, "La TV dejó de esperar la autorización. Reintentá y aceptá OmniRemote en la TV.")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SamsungTvClient", "Error parsing Samsung response", e)
                     }
-                    if (!current) return
-
-                    if (!receivedToken.isNullOrBlank()) {
-                        Log.d("SamsungTvClient", "Received Samsung TV authorization token")
-                        awaitingAuth = false
-                        onTokenReceived?.invoke(receivedToken)
-                        isConnected = true
-                        onConnectionChanged?.invoke(true, null)
-                    }
-
-                    when (event) {
-                        "ed.installedApp.get" -> {
-                            installedApps = SamsungAppProtocol.installedApps(json)
-                            pendingAppDiscovery?.complete(installedApps)
-                        }
-                        "ms.channel.connect" -> {
-                            awaitingAuth = false
-                            isConnected = true
-                            webSocket.send(SamsungAppProtocol.requestApps())
-                            onConnectionChanged?.invoke(true, null)
-                        }
-                        "ms.channel.unauthorized" -> {
-                            isConnected = false
-                            awaitingAuth = true
-                            Log.w("SamsungTvClient", "Samsung TV requires authorization on TV screen")
-                            onWaitingAuthPrompt?.invoke()
-                        }
-                        "ms.channel.timeOut" -> {
-                            isConnected = false
-                            awaitingAuth = false
-                            onConnectionChanged?.invoke(false, "La TV dejó de esperar la autorización. Reintentá y aceptá OmniRemote en la TV.")
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("SamsungTvClient", "Error parsing Samsung response", e)
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (generation != connectionGeneration.get()) return
-                isConnected = false
-                Log.w("SamsungTvClient", "WebSocket failure on Samsung TV $currentIp:8002: ${t.message}")
-                onConnectionChanged?.invoke(
-                    false,
-                    t.localizedMessage ?: "Failed to connect to Samsung TV ($currentIp:8002). Make sure TV is ON and on the same Wi-Fi."
-                )
+                synchronized(this@SamsungTvClient) {
+                    if (generation != connectionGeneration.get()) return
+                    connecting = false
+                    awaitingAuth = false
+                    this@SamsungTvClient.webSocket = null
+                    isConnected = false
+                    Log.w("SamsungTvClient", "WebSocket failure on Samsung TV $currentIp:8002: ${t.message}")
+                    onConnectionChanged?.invoke(
+                        false,
+                        t.localizedMessage ?: "Failed to connect to Samsung TV ($currentIp:8002). Make sure TV is ON and on the same Wi-Fi."
+                    )
+                }
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                if (generation != connectionGeneration.get()) return
-                isConnected = false
-                onConnectionChanged?.invoke(false, "Connection closed: $reason")
+                synchronized(this@SamsungTvClient) {
+                    if (generation != connectionGeneration.get()) return
+                    connecting = false
+                    awaitingAuth = false
+                    this@SamsungTvClient.webSocket = null
+                    webSocket.close(code, reason)
+                    isConnected = false
+                    onConnectionChanged?.invoke(false, "Connection closed: $reason")
+                }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                if (generation != connectionGeneration.get()) return
-                isConnected = false
-                onConnectionChanged?.invoke(false, null)
+                synchronized(this@SamsungTvClient) {
+                    if (generation != connectionGeneration.get()) return
+                    connecting = false
+                    awaitingAuth = false
+                    this@SamsungTvClient.webSocket = null
+                    isConnected = false
+                    onConnectionChanged?.invoke(false, null)
+                }
             }
         })
     }
@@ -200,6 +214,7 @@ class SamsungTvClient(
         return null
     }
 
+    @Synchronized
     fun disconnect() {
         connectionGeneration.incrementAndGet()
         installedApps = emptyList()
@@ -209,6 +224,7 @@ class SamsungTvClient(
         webSocket = null
         isConnected = false
         awaitingAuth = false
+        connecting = false
     }
 
     fun sendKey(key: RemoteKey): Boolean {
@@ -216,6 +232,7 @@ class SamsungTvClient(
         return sendRawKey(key.samsungKey)
     }
 
+    @Synchronized
     private fun sendRawKey(samsungKey: String): Boolean {
         val payload = JSONObject().apply {
             put("method", "ms.remote.control")
@@ -226,13 +243,16 @@ class SamsungTvClient(
                 put("TypeOfRemote", "SendRemoteKey")
             })
         }
-        val sent = webSocket?.send(payload.toString()) ?: false
+        // OkHttp queues writes before the TV authorizes the socket. In particular, do
+        // not queue POWER during boot: it could turn the TV off as soon as it wakes.
+        val sent = isConnected && webSocket?.send(payload.toString()) == true
         val now = System.currentTimeMillis()
         // Reconnect if socket was dropped, with the persisted token. Held keys repeat quickly,
         // so reconnect at most once per window and never while the TV prompt is on screen.
-        if (!sent && currentIp.isNotBlank() && !awaitingAuth && now - lastAutoReconnectAt > AUTO_RECONNECT_WINDOW_MS) {
+        if (!sent && currentIp.isNotBlank() && !connecting && !awaitingAuth && now - lastAutoReconnectAt > AUTO_RECONNECT_WINDOW_MS) {
             lastAutoReconnectAt = now
-            connect(currentIp, 8002, currentToken)
+            val latestToken = tokenStore?.getSamsungToken(currentIp).orEmpty().ifBlank { currentToken }
+            connect(currentIp, 8002, latestToken)
         }
         return sent
     }
