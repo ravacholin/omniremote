@@ -35,7 +35,7 @@ class TvSleepPowerOff(private val context: Context) {
     private suspend fun androidPowerOff(device: TvDeviceEntity, canSend: () -> Boolean): Boolean {
         val client = AndroidTvClient(context, TvTokenStore.getInstance(context), remotePort = device.port)
         return try {
-            client.connect(device.ipAddress, device.port) && client.sendKey(RemoteKey.POWER_OFF, canSend)
+            client.connect(device.ipAddress, device.port) && client.powerOff(canSend)
         } finally {
             client.disconnect()
         }

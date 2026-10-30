@@ -6,6 +6,7 @@ import com.example.data.model.DeviceType
 import com.example.data.model.TvDeviceEntity
 import com.example.network.AndroidTvCertificateManager
 import com.example.network.AndroidTvProtocol
+import com.example.network.AndroidTvClient
 import com.example.sleep.TvSleepPowerOff
 import com.example.sleep.SleepTimerManager
 import kotlinx.coroutines.async
@@ -35,7 +36,7 @@ import javax.net.ssl.SSLSocket
 class SleepPowerOffTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
 
-    @Test fun `a fresh authenticated session sends sleep 223 to the saved TV`() = runBlocking {
+    @Test fun `a fresh authenticated session uses normal power and waits for standby`() = runBlocking {
         val server = (AndroidTvCertificateManager.getOrCreateSslContext(context).serverSocketFactory
             .createServerSocket(0, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
             needClientAuth = true
@@ -53,7 +54,9 @@ class SleepPowerOffTest {
                 AndroidTvProtocol.writePacket(output, bytes(2, byteArrayOf(8, 0xE3.toByte(), 4)))
                 assertTrue(AndroidTvProtocol.hasField(AndroidTvProtocol.readPacket(input), 2))
                 AndroidTvProtocol.writePacket(output, bytes(40, byteArrayOf(8, 1)))
-                AndroidTvProtocol.readPacket(input)
+                val key = AndroidTvProtocol.readPacket(input)
+                AndroidTvProtocol.writePacket(output, bytes(40, byteArrayOf())) // started defaults to false.
+                key
             }
         }
         try {
@@ -61,8 +64,121 @@ class SleepPowerOffTest {
                 ipAddress = "127.0.0.1", port = server.localPort)
             assertTrue(TvSleepPowerOff(context).powerOff(device))
             val key = AndroidTvProtocol.getFieldBytes(packet.get(10, TimeUnit.SECONDS), 10)!!
-            assertEquals(223, AndroidTvProtocol.getFieldVarint(key, 1))
+            assertEquals(26, AndroidTvProtocol.getFieldVarint(key, 1))
             assertEquals(3, AndroidTvProtocol.getFieldVarint(key, 2))
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test fun `an already sleeping HDMI device is never power toggled`() = runBlocking {
+        checkPowerResult(initiallyOn = false, response = null, expectedSuccess = true, expectedKey = null)
+    }
+
+    @Test fun `a rejected power command is a failure rather than a successful socket write`() = runBlocking {
+        val rejectedKey = bytes(10, byteArrayOf(8, 26, 16, 3))
+        checkPowerResult(initiallyOn = true, response = bytes(3, byteArrayOf(8, 1) + bytes(2, rejectedKey)),
+            expectedSuccess = false, expectedKey = 26)
+    }
+
+    @Test fun `a device that never confirms standby does not report success`() = runBlocking {
+        checkPowerResult(initiallyOn = true, response = null, expectedSuccess = false, expectedKey = 26)
+    }
+
+    @Test fun `losing the socket is not evidence that the device entered standby`() = runBlocking {
+        checkPowerResult(initiallyOn = true, response = null, expectedSuccess = false, expectedKey = 26,
+            disconnectAfterKey = true)
+    }
+
+    @Test fun `missing power status capability prevents a blind toggle`() = runBlocking {
+        checkPowerResult(initiallyOn = true, response = null, expectedSuccess = false, expectedKey = null,
+            features = 3)
+    }
+
+    @Test fun `cancellation while waiting to write prevents a power toggle`() = runBlocking {
+        val server = (AndroidTvCertificateManager.getOrCreateSslContext(context).serverSocketFactory
+            .createServerSocket(0, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
+            needClientAuth = true
+            soTimeout = 10000
+        }
+        val executor = Executors.newSingleThreadExecutor()
+        val received = executor.submit<ByteArray?> {
+            server.accept().close()
+            (server.accept() as SSLSocket).use { socket ->
+                socket.soTimeout = 10000
+                val input = socket.inputStream
+                val output = socket.outputStream
+                AndroidTvProtocol.writePacket(output, bytes(1, byteArrayOf(8, 0xE3.toByte(), 4)))
+                AndroidTvProtocol.readPacket(input)
+                AndroidTvProtocol.writePacket(output, bytes(2, byteArrayOf(8, 0xE3.toByte(), 4)))
+                AndroidTvProtocol.readPacket(input)
+                AndroidTvProtocol.writePacket(output, bytes(40, byteArrayOf(8, 1)))
+                try { AndroidTvProtocol.readPacket(input) } catch (_: EOFException) { null }
+            }
+        }
+        val client = AndroidTvClient(context, remotePort = server.localPort)
+        try {
+            assertTrue(client.connect("127.0.0.1", server.localPort))
+            // Hold the actual dispatch monitor to reproduce cancellation during a blocked write.
+            val lock = AndroidTvClient::class.java.getDeclaredField("writeLock").apply { isAccessible = true }.get(client)!!
+            val checked = CountDownLatch(1)
+            val command = synchronized(lock) {
+                async(Dispatchers.Default) { client.powerOff { checked.countDown(); true } }.also {
+                    assertTrue(checked.await(10, TimeUnit.SECONDS))
+                    it.cancel()
+                }
+            }
+            try { command.await(); fail("Expected cancellation") } catch (_: kotlinx.coroutines.CancellationException) { }
+            client.disconnect()
+            assertNull("A cancelled dispatch must not emit POWER", received.get(10, TimeUnit.SECONDS))
+        } finally {
+            client.disconnect()
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    private suspend fun checkPowerResult(initiallyOn: Boolean, response: ByteArray?, expectedSuccess: Boolean,
+        expectedKey: Int?, features: Int = 611, disconnectAfterKey: Boolean = false) {
+        val server = (AndroidTvCertificateManager.getOrCreateSslContext(context).serverSocketFactory
+            .createServerSocket(0, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
+            needClientAuth = true
+            soTimeout = 10000
+        }
+        val executor = Executors.newSingleThreadExecutor()
+        val received = executor.submit<ByteArray?> {
+            server.accept().close()
+            (server.accept() as SSLSocket).use { socket ->
+                socket.soTimeout = 10000
+                val input = socket.inputStream
+                val output = socket.outputStream
+                val featureValue = ByteArrayOutputStream().apply {
+                    AndroidTvProtocol.writeVarint(this, 8)
+                    AndroidTvProtocol.writeVarint(this, features)
+                }.toByteArray()
+                AndroidTvProtocol.writePacket(output, bytes(1, featureValue))
+                AndroidTvProtocol.readPacket(input)
+                AndroidTvProtocol.writePacket(output, bytes(2, featureValue))
+                AndroidTvProtocol.readPacket(input)
+                AndroidTvProtocol.writePacket(output, bytes(40, if (initiallyOn) byteArrayOf(8, 1) else byteArrayOf()))
+                val key = try { AndroidTvProtocol.readPacket(input) } catch (_: EOFException) { null }
+                if (disconnectAfterKey) return@use key
+                if (key != null) {
+                    if (response != null) AndroidTvProtocol.writePacket(output, response)
+                    // Keep the session open until the client finishes; silence is not an acknowledgement.
+                    try { AndroidTvProtocol.readPacket(input); fail("Power must not be retried") } catch (_: EOFException) { }
+                }
+                key
+            }
+        }
+        try {
+            val success = TvSleepPowerOff(context).powerOff(TvDeviceEntity(id = 7, name = "HDMI device",
+                deviceType = DeviceType.ANDROID_TV, ipAddress = "127.0.0.1", port = server.localPort))
+            val key = received.get(10, TimeUnit.SECONDS)?.let { AndroidTvProtocol.getFieldBytes(it, 10)!! }
+            assertEquals(expectedSuccess, success)
+            if (expectedKey == null) assertNull("An already sleeping device must receive no key", key)
+            else assertEquals(expectedKey, key?.let { AndroidTvProtocol.getFieldVarint(it, 1) })
         } finally {
             server.close()
             executor.shutdownNow()

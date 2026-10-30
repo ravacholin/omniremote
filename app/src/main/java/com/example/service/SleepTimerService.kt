@@ -13,6 +13,7 @@ import android.os.PowerManager
 import com.example.MainActivity
 import com.example.R
 import com.example.data.local.AppDatabase
+import com.example.data.model.DeviceType
 import com.example.sleep.SleepTimerManager
 import com.example.sleep.TvSleepPowerOff
 import kotlinx.coroutines.CancellationException
@@ -63,8 +64,9 @@ class SleepTimerService : Service() {
                 when {
                     device == null -> "Sleep cancelado: la TV ya no está guardada"
                     TvSleepPowerOff(applicationContext).powerOff(device) { manager.isExecutionCurrent(timer.token) } ->
-                        "Orden de apagado enviada a ${device.name}"
-                    else -> "No se pudo apagar ${device.name}. Revisá la conexión y la autorización de la TV."
+                        if (device.deviceType == DeviceType.ANDROID_TV) "Android TV confirmó reposo en ${device.name}"
+                        else "Orden de apagado enviada a ${device.name}"
+                    else -> "No se pudo confirmar el apagado de ${device.name}. Revisá la conexión y la autorización del dispositivo."
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
