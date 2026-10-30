@@ -6,6 +6,10 @@ Un solo timer controla la TV seleccionada cuando se programa; el aviso identific
 esa TV y ofrece Cancelar. Cambiar de TV no cambia un timer existente. Volver a tocar
 Sleep programa el siguiente plazo para la TV seleccionada en ese momento.
 
+El aviso muestra los **minutos restantes**, sin segundos, y se actualiza al cambiar
+de minuto y al volver a la app. Redondea hacia arriba: mientras quede menos de un
+minuto muestra 1 min. El botón Sleep conserva el plazo elegido para recorrer el ciclo.
+
 Funciona con Samsung Tizen y Google/Android TV. No se ofrece para Mac. Usa las
 credenciales ya guardadas. En Samsung envía `KEY_POWEROFF`. En Android TV consulta
 el estado de encendido que informa la sesión autenticada: si ya está en reposo no

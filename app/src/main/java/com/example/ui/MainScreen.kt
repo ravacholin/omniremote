@@ -95,6 +95,7 @@ import com.example.ui.components.NoticeAction
 import com.example.ui.components.RemoteAppsGrid
 import com.example.ui.components.RemoteDpad
 import com.example.ui.components.RemoteNumpad
+import com.example.ui.components.SleepTimerNotice
 import com.example.ui.screens.ScanResultsScreen
 import com.example.ui.theme.*
 import com.example.ui.theme.TextSecondary
@@ -287,12 +288,7 @@ fun MainScreen(
                 )
 
                 sleepTimer?.let { timer ->
-                    Notice(
-                        label = "Sleep · ${timer.minutes} min",
-                        message = timer.deviceName,
-                        modifier = Modifier.testTag("sleep_timer_notice"),
-                        actions = listOf(NoticeAction("Cancelar") { viewModel.cancelSleepTimer() })
-                    )
+                    SleepTimerNotice(timer = timer, onCancel = viewModel::cancelSleepTimer)
                 }
                 sleepTimerResult?.let { result ->
                     Notice(
