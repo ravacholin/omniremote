@@ -431,7 +431,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun powerOnTv() {
         val device = _activeDevice.value ?: return
-        controller.recordWakeRequest()
+        val samsungProbe = controller.prepareWakeRequest(device)
         viewModelScope.launch {
             _powerOnStatusMessage.value = "Enviando ráfaga Wake-on-LAN a ${device.name}..."
             val result = com.example.network.WakeOnLan.powerOnTv(device, localSubnetPrefix, getApplication())
@@ -441,6 +441,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _activeDevice.value = updated
             }
             if (!result.success) {
+                controller.cancelWakeRequest(device)
                 // TV cannot wake because MAC address is missing: open prompt immediately!
                 _powerOnStatusMessage.value = result.message
                 if (com.example.network.WakeOnLan.formatMacAddress(device.macAddress) == null) {
@@ -449,10 +450,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            _powerOnStatusMessage.value = result.message
+            _powerOnStatusMessage.value = if (samsungProbe)
+                "Prueba Samsung: WOL enviado. La conexión se intentará automáticamente a los 30 segundos."
+            else result.message
 
             // Polling loop to auto-connect once TV hardware powers up network interfaces
-            repeat(10) {
+            repeat(if (samsungProbe) 30 else 10) {
                 delay(1500)
                 if (_activeDevice.value?.id != device.id) return@launch
                 when (controller.connectionState.value) {
@@ -467,7 +470,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         return@launch
                     }
                     is ConnectionState.Connecting -> Unit
-                    else -> controller.reconnect()
+                    else -> {
+                        // The probe schedules one attempt itself. A generic retry
+                        // here would invalidate the timing experiment after failure.
+                        if (samsungProbe) {
+                            _powerOnStatusMessage.value = null
+                            return@launch
+                        }
+                        controller.reconnect()
+                    }
                 }
             }
             delay(1500)
@@ -506,6 +517,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendWakeOnLan(device: TvDeviceEntity) {
+        if (device.deviceType == DeviceType.SAMSUNG_TIZEN && _activeDevice.value?.id == device.id &&
+            _activeDevice.value?.ipAddress == device.ipAddress) {
+            powerOnTv()
+            return
+        }
         controller.recordWakeRequest(device)
         viewModelScope.launch {
             _powerOnStatusMessage.value = "Enviando ráfaga Wake-on-LAN a ${device.name}..."

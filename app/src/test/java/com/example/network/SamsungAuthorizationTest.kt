@@ -270,6 +270,103 @@ class SamsungAuthorizationTest {
 
     private fun client() = SamsungTvClient(store, webSocketFactory = factory)
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `wake probe retires the pre-wake attempt and blocks keys until the scheduled reconnect`() = runTest {
+        store.saveSamsungToken(ip, "12345678", 7)
+        val client = client()
+        SamsungTvClient::class.java.getDeclaredField("scope").apply { isAccessible = true; set(client, this@runTest) }
+        client.connect(ip, token = "12345678", deviceId = 7)
+        val old = factory.sockets.single()
+        client.connectAfterWake(ip, "12345678", 7, null, 30_000)
+        assertTrue("The attempt started with the TV off must be retired at the explicit wake boundary", old.closed)
+        assertTrue("Graceful close queues a close frame but does not abort an outstanding upgrade", old.cancelled)
+        runCurrent()
+        advanceTimeBy(29_999)
+        runCurrent()
+        assertFalse(client.sendKey(RemoteKey.POWER))
+        client.connect(ip, token = "12345678", deviceId = 7)
+        assertEquals(1, factory.sockets.size)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(2, factory.sockets.size)
+        val resumed = factory.sockets.last()
+        assertEquals("12345678", resumed.request().url.queryParameter("token"))
+        assertTrue("POWER pressed during the wait must never be replayed", resumed.messages.isEmpty())
+        resumed.event("ms.channel.connect")
+        assertTrue(client.isConnected)
+        client.disconnect()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `repeated wake does not restart the wait or create multiple sockets`() = runTest {
+        val client = client()
+        SamsungTvClient::class.java.getDeclaredField("scope").apply { isAccessible = true; set(client, this@runTest) }
+        client.connectAfterWake(ip, "12345678", 7, null, 30_000)
+        runCurrent()
+        advanceTimeBy(15_000)
+        client.connectAfterWake(ip, "12345678", 7, null, 30_000)
+        advanceTimeBy(15_000)
+        runCurrent()
+        assertEquals("The original wake deadline must still be honored", 1, factory.sockets.size)
+        client.disconnect()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `wake reconnect reads the newest persisted credential when the wait finishes`() = runTest {
+        store.saveSamsungToken(ip, "11111111", 7)
+        val client = client()
+        SamsungTvClient::class.java.getDeclaredField("scope").apply { isAccessible = true; set(client, this@runTest) }
+        client.connectAfterWake(ip, "11111111", 7, null, 30_000)
+        runCurrent()
+        store.saveSamsungToken(ip, "22222222", 7)
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals("22222222", factory.sockets.singleOrNull()?.request()?.url?.queryParameter("token"))
+        client.disconnect()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `a failed wake can cancel the scheduled connection without deleting authorization`() = runTest {
+        store.saveSamsungToken(ip, "12345678", 7)
+        val client = client()
+        SamsungTvClient::class.java.getDeclaredField("scope").apply { isAccessible = true; set(client, this@runTest) }
+        client.connectAfterWake(ip, "12345678", 7, null, 30_000)
+        assertTrue(client.cancelWakeConnection())
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertTrue(factory.sockets.isEmpty())
+        assertEquals("12345678", TvTokenStore(context).getSamsungToken(ip, 7))
+        client.disconnect()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `switching targets cancels the scheduled wake for the previous TV`() = runTest {
+        val client = client()
+        SamsungTvClient::class.java.getDeclaredField("scope").apply { isAccessible = true; set(client, this@runTest) }
+        client.connectAfterWake(ip, "12345678", 7, null, 30_000)
+        runCurrent()
+        client.connect("192.168.1.20", token = "87654321", deviceId = 8)
+        factory.sockets.last().event("ms.channel.connect")
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(1, factory.sockets.size)
+        assertEquals("192.168.1.20", factory.sockets.single().request().url.host)
+        assertTrue(client.isConnected)
+        client.disconnect()
+    }
+
+    @Test fun `wake probe preserves an already authorized session`() {
+        val client = client()
+        client.connect(ip, token = "12345678", deviceId = 7)
+        val socket = factory.sockets.single()
+        socket.event("ms.channel.connect")
+        assertFalse(client.connectAfterWake(ip, "12345678", 7, null, 30_000))
+        assertFalse(socket.closed)
+        assertTrue(client.isConnected)
+        assertEquals(1, factory.sockets.size)
+        client.disconnect()
+    }
+
     // Only the external TV transport is replaced; session handling and disk writes are real.
     private class TvSockets : WebSocket.Factory {
         val sockets = mutableListOf<TvSocket>()
@@ -281,6 +378,7 @@ class SamsungAuthorizationTest {
         val messages = mutableListOf<String>()
         var acceptsWrites = true
         var closed = false
+        var cancelled = false
         fun event(event: String, token: String? = null) {
             val data = if (token == null) "{}" else "{\"token\":\"$token\"}"
             listener.onMessage(this, "{\"event\":\"$event\",\"data\":$data}")
@@ -290,6 +388,6 @@ class SamsungAuthorizationTest {
         override fun send(text: String): Boolean { messages += text; return acceptsWrites }
         override fun send(bytes: ByteString) = false
         override fun close(code: Int, reason: String?): Boolean { closed = true; return true }
-        override fun cancel() { closed = true }
+        override fun cancel() { closed = true; cancelled = true }
     }
 }

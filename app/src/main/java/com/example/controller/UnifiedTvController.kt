@@ -32,6 +32,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 class UnifiedTvController(
     private val context: Context? = null,
@@ -62,6 +63,7 @@ class UnifiedTvController(
     // (Wi-Fi still waking up, or the TV still holding the previous session).
     private var connectRetriesLeft = 0
     private val samsungDiagnostics = context?.let { SamsungConnectionDiagnostics(it) }
+    private val samsungUiGeneration = AtomicLong()
 
     private val samsungClient = SamsungTvClient(
         tokenStore = tokenStore,
@@ -77,7 +79,9 @@ class UnifiedTvController(
         },
         onConnectionChanged = { connected, error ->
             val eventDevice = activeDevice
+            val eventGeneration = samsungUiGeneration.get()
             scope.launch {
+                if (eventGeneration != samsungUiGeneration.get()) return@launch
                 val dev = eventDevice ?: return@launch
                 if (activeDevice?.id != dev.id || activeDevice?.ipAddress != dev.ipAddress) return@launch
                 if (connected) {
@@ -91,8 +95,12 @@ class UnifiedTvController(
             }
         },
         onWaitingAuthPrompt = {
+            val eventDevice = activeDevice
+            val eventGeneration = samsungUiGeneration.get()
             scope.launch {
-                val dev = activeDevice ?: return@launch
+                if (eventGeneration != samsungUiGeneration.get()) return@launch
+                val dev = eventDevice ?: return@launch
+                if (activeDevice?.id != dev.id || activeDevice?.ipAddress != dev.ipAddress) return@launch
                 _connectionState.value = ConnectionState.WaitingAuth(
                     dev.name,
                     "Permite OmniRemote en la pantalla de tu Samsung TV con el control original."
@@ -358,6 +366,7 @@ class UnifiedTvController(
     }
 
     fun disconnectCurrent() {
+        samsungUiGeneration.incrementAndGet()
         cancelBluetoothNavigation()
         connectionJob?.cancel()
         connectionJob = null
@@ -535,6 +544,31 @@ class UnifiedTvController(
         }
     }
 
+    /** Diagnostic variant: explicitly serialize the selected Samsung's WOL and
+     * connection, instead of requiring a separate Android shortcut to test timing. */
+    fun prepareWakeRequest(device: TvDeviceEntity): Boolean = synchronized(samsungClient) {
+        recordWakeRequest(device)
+        if (device.deviceType != DeviceType.SAMSUNG_TIZEN || activeDevice?.id != device.id ||
+            activeDevice?.ipAddress != device.ipAddress || samsungClient.isConnected) return@synchronized false
+        samsungUiGeneration.incrementAndGet()
+        connectionJob?.cancel()
+        connectionJob = null
+        connectRetriesLeft = 0
+        val credential = tokenStore?.getSamsungToken(device.ipAddress, device.id, device.macAddress, device.authToken)
+            ?: device.authToken
+        val waiting = samsungClient.connectAfterWake(device.ipAddress, credential, device.id, device.macAddress,
+            SAMSUNG_WAKE_PROBE_WAIT_MS)
+        if (waiting) _connectionState.value = ConnectionState.Connecting(device.name, device.ipAddress)
+        waiting
+    }
+
+    fun cancelWakeRequest(device: TvDeviceEntity) {
+        synchronized(samsungClient) {
+            if (activeDevice?.id == device.id && activeDevice?.ipAddress == device.ipAddress &&
+                samsungClient.cancelWakeConnection()) _connectionState.value = ConnectionState.Disconnected
+        }
+    }
+
     private fun resolveDeviceMac(device: TvDeviceEntity) {
         if (WakeOnLan.formatMacAddress(device.macAddress) != null) return
         scope.launch(Dispatchers.IO) {
@@ -564,5 +598,6 @@ class UnifiedTvController(
 
     private companion object {
         val CONNECT_RETRY_DELAYS_MS = longArrayOf(800, 2000)
+        const val SAMSUNG_WAKE_PROBE_WAIT_MS = 30_000L
     }
 }

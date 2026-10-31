@@ -44,6 +44,8 @@ class SamsungTvClient(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var webSocket: WebSocket? = null
     private var connectionDeadline: Job? = null
+    private var wakeConnectionJob: Job? = null
+    private var wakeAttemptPending = false
     private val appDiscoveryMutex = Mutex()
     @Volatile private var installedApps: List<SamsungInstalledApp> = emptyList()
     @Volatile private var pendingAppDiscovery: CompletableDeferred<List<SamsungInstalledApp>>? = null
@@ -92,6 +94,53 @@ class SamsungTvClient(
             .pingInterval(15, TimeUnit.SECONDS) // Keepalive ping frames every 15s to keep TV connection continuously active
             .retryOnConnectionFailure(true)
             .build()
+    }
+
+    /** Controlled diagnostic: keep the normal in-app WOL action, vary only when
+     * its remote connection starts. This does not establish the firmware cause. */
+    @Synchronized
+    fun connectAfterWake(ipAddress: String, token: String, deviceId: Long?, macAddress: String?, waitMs: Long): Boolean {
+        val sessionIp = ipAddress.trim()
+        if (currentIp == sessionIp && isConnected) return false
+        if (currentIp == sessionIp && wakeAttemptPending) {
+            diagnostics?.record(sessionIp, connectionGeneration.get(), "wake_wait_reused", currentToken)
+            return true
+        }
+        val preWakeSocket = webSocket
+        disconnect()
+        // A graceful close can remain queued behind a TCP/TLS/WebSocket upgrade.
+        // Abort this unauthenticated attempt before sending WOL, so it cannot
+        // reach the TV in the controlled no-connection interval.
+        preWakeSocket?.cancel()
+        val generation = connectionGeneration.get()
+        currentIp = sessionIp
+        currentDeviceId = deviceId
+        currentMacAddress = macAddress
+        currentToken = token
+        connecting = true
+        wakeAttemptPending = true
+        diagnostics?.record(sessionIp, generation, "wake_connection_wait", token, "wait_ms=$waitMs; controlled_probe=true")
+        wakeConnectionJob = scope.launch {
+            delay(waitMs)
+            synchronized(this@SamsungTvClient) {
+                if (!isActive || generation != connectionGeneration.get()) return@synchronized
+                wakeConnectionJob = null
+                connecting = false
+                val latest = tokenStore?.getSamsungToken(sessionIp, deviceId, macAddress, currentToken) ?: currentToken
+                diagnostics?.record(sessionIp, generation, "wake_connection_resume", latest)
+                connect(sessionIp, 8002, latest, deviceId, macAddress)
+                // Repeated WOL must also preserve this socket while its authorization is pending.
+                wakeAttemptPending = true
+            }
+        }
+        return true
+    }
+
+    @Synchronized
+    fun cancelWakeConnection(): Boolean {
+        if (wakeConnectionJob == null) return false
+        disconnect()
+        return true
     }
 
     @Synchronized
@@ -167,6 +216,7 @@ class SamsungTvClient(
                                 diagnostics?.record(sessionIp, generation, "authorization_confirmed", currentToken)
                                 connecting = false
                                 awaitingAuth = false
+                                wakeAttemptPending = false
                                 connectionDeadline?.cancel()
                                 connectionDeadline = null
                                 isConnected = true
@@ -262,6 +312,7 @@ class SamsungTvClient(
         connectionDeadline = null
         connecting = false
         awaitingAuth = false
+        wakeAttemptPending = false
         webSocket = null
         isConnected = false
         installedApps = emptyList()
@@ -285,6 +336,10 @@ class SamsungTvClient(
 
     @Synchronized
     fun disconnect() {
+        if (wakeConnectionJob != null) diagnostics?.record(currentIp, connectionGeneration.get(), "wake_connection_cancelled", currentToken)
+        wakeConnectionJob?.cancel()
+        wakeConnectionJob = null
+        wakeAttemptPending = false
         if (webSocket != null) diagnostics?.record(currentIp, connectionGeneration.get(), "app_disconnect", currentToken)
         connectionGeneration.incrementAndGet()
         connectionDeadline?.cancel()
