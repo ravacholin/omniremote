@@ -15,6 +15,7 @@ import com.example.network.MacScripts
 import com.example.network.MacSshClient
 import com.example.network.MacVolume
 import com.example.network.SamsungTvClient
+import com.example.network.SamsungConnectionDiagnostics
 import com.example.network.SamsungBluetoothAudio
 import com.example.network.WakeOnLan
 import kotlinx.coroutines.CoroutineScope
@@ -60,9 +61,11 @@ class UnifiedTvController(
     // A TV that is already on often refuses the very first socket after the app starts
     // (Wi-Fi still waking up, or the TV still holding the previous session).
     private var connectRetriesLeft = 0
+    private val samsungDiagnostics = context?.let { SamsungConnectionDiagnostics(it) }
 
     private val samsungClient = SamsungTvClient(
         tokenStore = tokenStore,
+        diagnostics = samsungDiagnostics,
         onTokenReceived = { token ->
             activeDevice?.let { dev ->
                 // The client already persisted this event. A separate Sleep session
@@ -248,6 +251,10 @@ class UnifiedTvController(
     }
 
     fun setActiveDevice(device: TvDeviceEntity) {
+        synchronized(samsungClient) { setActiveDeviceLocked(device) }
+    }
+
+    private fun setActiveDeviceLocked(device: TvDeviceEntity) {
         // Resolve token from persistent store to ensure latest token is always present
         val effectiveDevice = if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
             val tokenToUse = tokenStore?.getSamsungToken(device.ipAddress, device.id, device.macAddress, device.authToken)
@@ -260,7 +267,8 @@ class UnifiedTvController(
         val state = _connectionState.value
         val preserveSession = state is ConnectionState.Connected ||
             (effectiveDevice.deviceType == DeviceType.SAMSUNG_TIZEN &&
-                (state is ConnectionState.Connecting || state is ConnectionState.WaitingAuth))
+                (samsungClient.hasPendingConnection(effectiveDevice.ipAddress) ||
+                    state is ConnectionState.Connecting || state is ConnectionState.WaitingAuth))
         if (activeDevice?.id == effectiveDevice.id && activeDevice?.ipAddress == effectiveDevice.ipAddress &&
             activeDevice?.deviceType == effectiveDevice.deviceType && preserveSession) {
             activeDevice = effectiveDevice
@@ -319,13 +327,26 @@ class UnifiedTvController(
         return true
     }
 
-    /** Reconnects when the app returns to the foreground after a connection error. */
+    /** Recover both transport errors and normal standby closes on foreground. */
     fun reconnectIfFailed() {
-        if (_connectionState.value is ConnectionState.Error) reconnect()
+        activeDevice?.takeIf { it.deviceType == DeviceType.SAMSUNG_TIZEN }?.let {
+            samsungDiagnostics?.record(it.ipAddress, 0, "app_foreground", samsungClient.token,
+                "state=${_connectionState.value.javaClass.simpleName}")
+        }
+        if (_connectionState.value is ConnectionState.Error ||
+            (_connectionState.value is ConnectionState.Disconnected && activeDevice != null)) reconnect()
     }
 
     fun reconnect() {
+        synchronized(samsungClient) { reconnectLocked() }
+    }
+
+    private fun reconnectLocked() {
         activeDevice?.let { dev ->
+            val state = _connectionState.value
+            if (dev.deviceType == DeviceType.SAMSUNG_TIZEN &&
+                (samsungClient.hasPendingConnection(dev.ipAddress) ||
+                    state is ConnectionState.Connecting || state is ConnectionState.WaitingAuth)) return
             disconnectCurrent()
             setActiveDevice(dev)
         }
@@ -491,6 +512,7 @@ class UnifiedTvController(
 
     fun sendWakeOnLan() {
         val device = activeDevice ?: return
+        recordWakeRequest()
         scope.launch(Dispatchers.IO) {
             addLog(device.name, "Enviando ráfaga Wake-on-LAN multi-vector a ${device.name}...", true)
             val result = WakeOnLan.powerOnTv(device, context = context)
@@ -501,7 +523,15 @@ class UnifiedTvController(
             // Delay and auto reconnect, unless the TV is connected or showing its permission prompt.
             kotlinx.coroutines.delay(1800)
             val state = _connectionState.value
-            if (state !is ConnectionState.Connected && state !is ConnectionState.WaitingAuth) reconnect()
+            if (state !is ConnectionState.Connected && state !is ConnectionState.WaitingAuth &&
+                state !is ConnectionState.Connecting) reconnect()
+        }
+    }
+
+    fun recordWakeRequest(device: TvDeviceEntity? = activeDevice) {
+        device?.takeIf { it.deviceType == DeviceType.SAMSUNG_TIZEN }?.let {
+            // WOL sends no authorization token, including when another TV is active.
+            samsungDiagnostics?.record(it.ipAddress, 0, "wake_requested", "")
         }
     }
 

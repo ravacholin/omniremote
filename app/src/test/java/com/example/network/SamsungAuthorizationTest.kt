@@ -16,6 +16,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.IOException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlin.concurrent.thread
+import java.util.concurrent.TimeUnit
+import okhttp3.Protocol
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -117,6 +124,148 @@ class SamsungAuthorizationTest {
         socket.listener.onFailure(socket, IOException("TV entered standby"), null)
         assertFalse(client.sendKey(RemoteKey.HOME))
         assertEquals("22222222", factory.sockets.last().request().url.queryParameter("token"))
+    }
+
+    @Test fun `terminal socket events cannot restore an obsolete authorization`() {
+        for (terminal in listOf("failure", "closing", "closed", "timeout")) {
+            val client = client()
+            client.connect(ip)
+            val old = factory.sockets.last()
+            old.event("ms.channel.connect", "11111111")
+            when (terminal) {
+                "failure" -> old.listener.onFailure(old, IOException("standby"), null)
+                "closing" -> old.listener.onClosing(old, 1000, "standby")
+                "closed" -> old.listener.onClosed(old, 1000, "standby")
+                else -> old.event("ms.channel.timeOut")
+            }
+            store.saveSamsungToken(ip, "22222222")
+            old.event("ms.channel.connect", "11111111")
+            assertFalse("$terminal must retire the session", client.isConnected)
+            assertEquals(terminal, "22222222", TvTokenStore(context).getSamsungToken(ip))
+            client.disconnect()
+        }
+    }
+
+    @Test fun `a connection broadcast identifying another remote cannot replace our token`() {
+        store.saveSamsungToken(ip, "12345678")
+        val client = client()
+        client.connect(ip)
+        val socket = factory.sockets.last()
+        socket.listener.onMessage(socket, """{"event":"ms.channel.connect","data":{
+            "id":"other-client","token":"99999999","clients":[
+                {"id":"other-client","deviceName":"T3RoZXJSZW1vdGU=","attributes":{"name":"T3RoZXJSZW1vdGU="}}
+            ]}}""")
+        assertFalse(client.isConnected)
+        assertEquals("12345678", store.getSamsungToken(ip))
+        socket.listener.onMessage(socket, """{"event":"ms.channel.connect","data":{
+            "id":"our-client","token":"22222222","clients":[
+                {"id":"other-client","deviceName":"T3RoZXJSZW1vdGU="},
+                {"id":"our-client","deviceName":"T21uaVJlbW90ZQ==","attributes":{"name":"T21uaVJlbW90ZQ=="}}
+            ]}}""")
+        assertTrue(client.isConnected)
+        assertEquals("22222222", store.getSamsungToken(ip))
+        client.disconnect()
+    }
+
+    @Test fun `repeated connect preserves a socket awaiting the TV permission`() {
+        val client = client()
+        client.connect(ip)
+        val socket = factory.sockets.last()
+        client.connect(ip)
+        assertFalse("Retry must keep the socket receiving the approved token", socket.closed)
+        assertEquals(1, factory.sockets.size)
+        socket.event("ms.channel.unauthorized")
+        client.connect(ip)
+        assertFalse(socket.closed)
+        assertEquals(1, factory.sockets.size)
+        socket.event("ms.channel.connect", "12345678")
+        assertTrue(client.isConnected)
+        assertEquals("12345678", store.getSamsungToken(ip))
+        client.disconnect()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `stalled transport eventually fails without losing its saved token`() = runTest {
+        store.saveSamsungToken(ip, "12345678")
+        val errors = mutableListOf<String>()
+        val client = SamsungTvClient(store, onConnectionChanged = { _, error -> error?.let(errors::add) },
+            webSocketFactory = factory)
+        SamsungTvClient::class.java.getDeclaredField("scope").apply { isAccessible = true; set(client, this@runTest) }
+        client.connect(ip)
+        val socket = factory.sockets.last()
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals("A silent socket must finish instead of blocking every future retry", 1, errors.size)
+        assertTrue(socket.closed)
+        socket.event("ms.channel.connect", "99999999")
+        assertFalse(client.isConnected)
+        assertEquals("12345678", TvTokenStore(context).getSamsungToken(ip))
+        client.connect(ip)
+        assertEquals(2, factory.sockets.size)
+        assertEquals("12345678", factory.sockets.last().request().url.queryParameter("token"))
+        client.disconnect()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `open transport without channel authorization has a finite wait`() = runTest {
+        val errors = mutableListOf<String>()
+        val client = SamsungTvClient(store, onConnectionChanged = { _, error -> error?.let(errors::add) },
+            webSocketFactory = factory)
+        SamsungTvClient::class.java.getDeclaredField("scope").apply { isAccessible = true; set(client, this@runTest) }
+        client.connect(ip)
+        val socket = factory.sockets.last()
+        socket.listener.onOpen(socket, Response.Builder().request(socket.request()).protocol(Protocol.HTTP_1_1)
+            .code(101).message("Switching Protocols").build())
+        socket.event("ms.channel.unauthorized")
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals(1, errors.size)
+        assertTrue(socket.closed)
+        assertFalse(client.isConnected)
+        assertEquals("A timeout must not silently create a tokenless authorization request", 1, factory.sockets.size)
+        client.disconnect()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `authorization cancels the deadline for the live session`() = runTest {
+        val errors = mutableListOf<String>()
+        val client = SamsungTvClient(store, onConnectionChanged = { _, error -> error?.let(errors::add) },
+            webSocketFactory = factory)
+        SamsungTvClient::class.java.getDeclaredField("scope").apply { isAccessible = true; set(client, this@runTest) }
+        client.connect(ip)
+        factory.sockets.last().event("ms.channel.connect", "12345678")
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertTrue(errors.isEmpty())
+        assertTrue(client.isConnected)
+        assertTrue(client.sendKey(RemoteKey.HOME))
+        client.disconnect()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `an already resumed transport deadline cannot close the authorization phase`() = runTest {
+        val client = client()
+        SamsungTvClient::class.java.getDeclaredField("scope").apply { isAccessible = true; set(client, this@runTest) }
+        client.connect(ip)
+        val socket = factory.sockets.last()
+        runCurrent()
+        val timerThread: Thread
+        synchronized(client) {
+            timerThread = thread(name = "expired-samsung-transport") { advanceTimeBy(12_001) }
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+            while (timerThread.state != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+                Thread.sleep(1)
+            }
+            assertEquals("Timer must have resumed and reached the held monitor", Thread.State.BLOCKED, timerThread.state)
+            socket.listener.onOpen(socket, Response.Builder().request(socket.request()).protocol(Protocol.HTTP_1_1)
+                .code(101).message("Switching Protocols").build())
+        }
+        timerThread.join(3000)
+        assertFalse(timerThread.isAlive)
+        assertFalse("The transport deadline was canceled by the WebSocket upgrade", socket.closed)
+        socket.event("ms.channel.connect", "12345678")
+        assertTrue(client.isConnected)
+        client.disconnect()
     }
 
     private fun client() = SamsungTvClient(store, webSocketFactory = factory)

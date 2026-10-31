@@ -13,6 +13,9 @@ import com.example.data.model.TvAppShortcut
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -35,10 +38,12 @@ class SamsungTvClient(
     private val onTokenReceived: ((String) -> Unit)? = null,
     private val onConnectionChanged: ((Boolean, String?) -> Unit)? = null,
     private val onWaitingAuthPrompt: (() -> Unit)? = null,
-    private val webSocketFactory: WebSocket.Factory? = null
+    private val webSocketFactory: WebSocket.Factory? = null,
+    private val diagnostics: SamsungConnectionDiagnostics? = null
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var webSocket: WebSocket? = null
+    private var connectionDeadline: Job? = null
     private val appDiscoveryMutex = Mutex()
     @Volatile private var installedApps: List<SamsungInstalledApp> = emptyList()
     @Volatile private var pendingAppDiscovery: CompletableDeferred<List<SamsungInstalledApp>>? = null
@@ -54,6 +59,10 @@ class SamsungTvClient(
     @Volatile private var currentToken: String = ""
     /** Token of the current session, as last issued by the TV. */
     val token: String get() = currentToken
+
+    @Synchronized
+    fun hasPendingConnection(ipAddress: String): Boolean =
+        currentIp == ipAddress.trim() && (connecting || awaitingAuth)
 
     // While the TV shows its permission prompt, opening another socket shows a second prompt.
     @Volatile private var awaitingAuth = false
@@ -88,9 +97,12 @@ class SamsungTvClient(
     @Synchronized
     fun connect(ipAddress: String, port: Int = 8002, token: String? = null,
         deviceId: Long? = null, macAddress: String? = null) {
+        val sessionIp = ipAddress.trim()
+        // The permission belongs to this socket. Retrying the same target while
+        // it is pending would discard the approval and can cause another prompt.
+        if (sessionIp == currentIp && (connecting || awaitingAuth)) return
         disconnect()
         val generation = connectionGeneration.get()
-        val sessionIp = ipAddress.trim()
         currentIp = sessionIp
         currentDeviceId = deviceId
         currentMacAddress = macAddress
@@ -103,6 +115,7 @@ class SamsungTvClient(
         val resolvedToken = token?.trim() ?: tokenStore?.getSamsungToken(sessionIp, deviceId, macAddress).orEmpty()
         currentToken = resolvedToken
         connecting = true
+        diagnostics?.recordStart(sessionIp, generation, resolvedToken, if (token != null) "provided" else "store")
 
         val appNameBase64 = Base64.encodeToString("OmniRemote".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         val scheme = "wss"
@@ -114,8 +127,14 @@ class SamsungTvClient(
 
         webSocket = (webSocketFactory ?: okHttpClient).newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                if (generation != connectionGeneration.get()) return
-                // Wait for ms.channel.connect before reporting an authorized session.
+                synchronized(this@SamsungTvClient) {
+                    if (generation != connectionGeneration.get()) return
+                    diagnostics?.record(sessionIp, generation, "websocket_open", currentToken)
+                    // A WebSocket upgrade is not Samsung authorization. Leave enough time
+                    // for the TV's permission dialog, but do not block reconnection forever.
+                    scheduleConnectionDeadline(generation, AUTHORIZATION_TIMEOUT_MS,
+                        "La TV no completó la autorización de OmniRemote. Se conservó el token guardado.")
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -131,20 +150,31 @@ class SamsungTvClient(
                                 pendingAppDiscovery?.complete(installedApps)
                             }
                             "ms.channel.connect" -> {
+                                if (!isOwnConnection(json, appNameBase64)) {
+                                    diagnostics?.record(sessionIp, generation, "ignored_connection_identity", currentToken)
+                                    return
+                                }
                                 // Only this event confirms authorization. A replaced socket must
                                 // never overwrite the token of the current session.
                                 extractTokenFromJson(json)?.let { receivedToken ->
+                                    diagnostics?.record(sessionIp, generation, "token_received", receivedToken)
                                     tokenStore?.saveSamsungToken(sessionIp, receivedToken, deviceId, macAddress)
                                     currentToken = receivedToken
                                     onTokenReceived?.invoke(receivedToken)
+                                    diagnostics?.record(sessionIp, generation, "token_persisted",
+                                        tokenStore?.getSamsungToken(sessionIp, deviceId, macAddress).orEmpty())
                                 }
+                                diagnostics?.record(sessionIp, generation, "authorization_confirmed", currentToken)
                                 connecting = false
                                 awaitingAuth = false
+                                connectionDeadline?.cancel()
+                                connectionDeadline = null
                                 isConnected = true
                                 webSocket.send(SamsungAppProtocol.requestApps())
                                 onConnectionChanged?.invoke(true, null)
                             }
                             "ms.channel.unauthorized" -> {
+                                diagnostics?.record(sessionIp, generation, "authorization_rejected", currentToken)
                                 connecting = false
                                 isConnected = false
                                 awaitingAuth = true
@@ -152,10 +182,9 @@ class SamsungTvClient(
                                 onWaitingAuthPrompt?.invoke()
                             }
                             "ms.channel.timeOut" -> {
-                                connecting = false
-                                isConnected = false
-                                awaitingAuth = false
-                                onConnectionChanged?.invoke(false, "La TV dejó de esperar la autorización. Reintentá y aceptá OmniRemote en la TV.")
+                                diagnostics?.record(sessionIp, generation, "tv_authorization_timeout", currentToken)
+                                finishSession(generation, "La TV dejó de esperar la autorización. Reintentá la conexión.")
+                                webSocket.close(1000, "Authorization timed out")
                             }
                         }
                     } catch (e: Exception) {
@@ -167,13 +196,11 @@ class SamsungTvClient(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 synchronized(this@SamsungTvClient) {
                     if (generation != connectionGeneration.get()) return
-                    connecting = false
-                    awaitingAuth = false
-                    this@SamsungTvClient.webSocket = null
-                    isConnected = false
+                    diagnostics?.record(sessionIp, generation, "transport_failure", currentToken,
+                        "type=${t.javaClass.simpleName}; http=${response?.code}")
                     Log.w("SamsungTvClient", "WebSocket failure on Samsung TV $currentIp:8002: ${t.message}")
-                    onConnectionChanged?.invoke(
-                        false,
+                    finishSession(
+                        generation,
                         t.localizedMessage ?: "Failed to connect to Samsung TV ($currentIp:8002). Make sure TV is ON and on the same Wi-Fi."
                     )
                 }
@@ -182,26 +209,65 @@ class SamsungTvClient(
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 synchronized(this@SamsungTvClient) {
                     if (generation != connectionGeneration.get()) return
-                    connecting = false
-                    awaitingAuth = false
-                    this@SamsungTvClient.webSocket = null
+                    diagnostics?.record(sessionIp, generation, "socket_closing", currentToken, "code=$code")
+                    finishSession(generation, if (code == 1000 || code == 1001) null else "Connection closed: $reason")
                     webSocket.close(code, reason)
-                    isConnected = false
-                    onConnectionChanged?.invoke(false, "Connection closed: $reason")
                 }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 synchronized(this@SamsungTvClient) {
                     if (generation != connectionGeneration.get()) return
-                    connecting = false
-                    awaitingAuth = false
-                    this@SamsungTvClient.webSocket = null
-                    isConnected = false
-                    onConnectionChanged?.invoke(false, null)
+                    diagnostics?.record(sessionIp, generation, "socket_closed", currentToken, "code=$code")
+                    finishSession(generation, null)
                 }
             }
         })
+        scheduleConnectionDeadline(generation, TRANSPORT_TIMEOUT_MS,
+            "La TV no completó la conexión. Se conservó la autorización para reintentar al encender.")
+    }
+
+    private fun scheduleConnectionDeadline(generation: Long, timeoutMs: Long, error: String) {
+        connectionDeadline?.cancel()
+        connectionDeadline = scope.launch {
+            delay(timeoutMs)
+            synchronized(this@SamsungTvClient) {
+                if (!isActive || generation != connectionGeneration.get() || isConnected) return@synchronized
+                diagnostics?.record(currentIp, generation, "connection_deadline", currentToken, "wait_ms=$timeoutMs")
+                val expiredSocket = webSocket
+                finishSession(generation, error)
+                expiredSocket?.cancel()
+            }
+        }
+    }
+
+    /** Some TVs broadcast channel connections for other remotes on the same channel. */
+    private fun isOwnConnection(json: JSONObject, encodedName: String): Boolean {
+        val data = json.optJSONObject("data") ?: return true
+        // Older firmware omits the identity metadata entirely.
+        if (!data.has("id") && !data.has("clients")) return true
+        val id = data.optString("id")
+        val clients = data.optJSONArray("clients") ?: return false
+        return id.isNotBlank() && (0 until clients.length()).any { index ->
+            val client = clients.optJSONObject(index)
+            client?.optString("id") == id && client.optString("deviceName") == encodedName
+        }
+    }
+
+    /** Must retire the generation before notifying callers, which may reconnect immediately. */
+    private fun finishSession(generation: Long, error: String?) {
+        if (generation != connectionGeneration.get()) return
+        connectionGeneration.incrementAndGet()
+        connectionDeadline?.cancel()
+        connectionDeadline = null
+        connecting = false
+        awaitingAuth = false
+        webSocket = null
+        isConnected = false
+        installedApps = emptyList()
+        pendingAppDiscovery?.complete(emptyList())
+        pendingAppDiscovery = null
+        onConnectionChanged?.invoke(false, error)
     }
 
     private fun extractTokenFromJson(json: JSONObject): String? {
@@ -219,7 +285,10 @@ class SamsungTvClient(
 
     @Synchronized
     fun disconnect() {
+        if (webSocket != null) diagnostics?.record(currentIp, connectionGeneration.get(), "app_disconnect", currentToken)
         connectionGeneration.incrementAndGet()
+        connectionDeadline?.cancel()
+        connectionDeadline = null
         installedApps = emptyList()
         pendingAppDiscovery?.complete(emptyList())
         pendingAppDiscovery = null
@@ -249,6 +318,10 @@ class SamsungTvClient(
         // OkHttp queues writes before the TV authorizes the socket. In particular, do
         // not queue POWER during boot: it could turn the TV off as soon as it wakes.
         val sent = isConnected && webSocket?.send(payload.toString()) == true
+        if (samsungKey == "KEY_POWER" || samsungKey == "KEY_POWEROFF") {
+            diagnostics?.record(currentIp, connectionGeneration.get(), "power_command", currentToken,
+                "key=$samsungKey; queued=$sent; authorized=$isConnected")
+        }
         val now = System.currentTimeMillis()
         // Reconnect if socket was dropped, with the persisted token. Held keys repeat quickly,
         // so reconnect at most once per window and never while the TV prompt is on screen.
@@ -303,5 +376,7 @@ class SamsungTvClient(
 
     private companion object {
         const val AUTO_RECONNECT_WINDOW_MS = 3000L
+        const val TRANSPORT_TIMEOUT_MS = 12_000L
+        const val AUTHORIZATION_TIMEOUT_MS = 60_000L
     }
 }

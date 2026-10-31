@@ -44,3 +44,32 @@ puede impedir el envío. «Señal enviada» confirma el envío de paquetes, no q
 
 La renovación de certificados antiguos mantiene la misma clave RSA. Algunos firmwares pueden
 exigir una vinculación inicial después de renovar un certificado que ya estaba caducado.
+
+
+## Samsung UN50RU7100GCFV: permiso repetido después de POWER
+
+La causa de este caso físico todavía no está demostrada. No se atribuye a Sleep:
+el usuario no lo utiliza en Samsung. La compilación de diagnóstico conserva el
+nombre OmniRemote y las credenciales existentes.
+
+La captura se guarda localmente y se copia desde el administrador de dispositivos,
+pestaña **Settings**, botón **Copiar diagnóstico Samsung**. Incluye inicio de
+conexión, huella de la credencial enviada/recibida/guardada, confirmación o rechazo
+explícito de Samsung, POWER, solicitud WOL y cierre o límite de espera. Las huellas
+usan HMAC con clave aleatoria privada de la instalación; el informe no incluye
+el token ni la clave. El registro es acotado a 80 eventos y sus escrituras son
+asíncronas para no bloquear el control.
+
+Para obtener evidencia del caso informado, mantener los datos de la aplicación:
+controlar la TV, apagar con POWER, esperar el intervalo habitual, abrir OmniRemote
+y encender mediante WOL. Si vuelve a aparecer el permiso, copiar el diagnóstico
+antes de repetir intentos o cambiar autorizaciones. Comparar la huella del último
+token guardado con la del siguiente inicio y revisar la respuesta real de la TV.
+El informe no prueba que el firmware conserve autorizaciones; permite distinguir
+pérdida local, credencial equivocada, rechazo de Samsung y fallos de transporte.
+
+Las regresiones locales cubren cierre normal y vuelta al primer plano, callbacks
+terminales, anuncios de otros clientes, conservación de conexiones pendientes,
+reconexión iniciada por teclas y cancelación de deadlines. La prueba de integración
+usa TLS y WebSocket reales contra una TV simulada y recorre cinco ciclos de POWER,
+cierre y recreación del cliente, renovando el token en cada conexión.
