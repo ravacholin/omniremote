@@ -43,3 +43,14 @@ como Disconnected. Ambas cuentan con regresiones que fallaron antes del arreglo.
 - [ ] Confirmar en esa TV la eliminación del permiso repetido. El problema original sigue abierto.
 
 La validación final incluye la integración de `origin/main` en `0b8bdc2` (PR #35), conservando sus cambios de credenciales y verificación de destinos. El diagnóstico no atribuye a Sleep el caso informado con POWER.
+
+## Ensayo posterior: WOL dentro de OmniRemote
+
+Se recibió la traza física y la confirmación de aceptación manual. Las reconexiones con la TV encendida reutilizan la nueva credencial sin permiso en 104/45/5 ms. El usuario confirmó que el caso es abrir la app con la TV apagada y usar WOL desde el mismo mando. No se atribuye el fallo a pérdida local del token ni se confirma una causa de firmware.
+
+Se prepara la variante 1.7-wol30-test (9), definida en `docs/superpowers/specs/2026-10-31-samsung-wol-controlled-probe.md`: el mismo WOL y credencial, con una sola conexión programada tras 30 s y sin intentos anteriores en paralelo. Cuatro pruebas fallaron antes de implementar la espera. Las regresiones posteriores detectaron cierre sin cancelación de un transporte pendiente, callbacks de UI antiguos y una ronda de reintentos adicional en el ViewModel; se corrigieron dentro del ensayo.
+
+Validación de la variante: 196 pruebas en 34 suites, 0 fallos, 0 errores, 0 omitidas; assembleDebug correcto. Revisión independiente sin hallazgos importantes pendientes.
+
+- [ ] Obtener el resultado físico de esta variante usando el mismo botón WOL.
+- [ ] Confirmar o descartar el efecto temporal antes de proponer una solución permanente.

@@ -73,3 +73,27 @@ terminales, anuncios de otros clientes, conservación de conexiones pendientes,
 reconexión iniciada por teclas y cancelación de deadlines. La prueba de integración
 usa TLS y WebSocket reales contra una TV simulada y recorre cinco ciclos de POWER,
 cierre y recreación del cliente, renovando el token en cada conexión.
+
+## Variante 1.7-wol30-test (9): ensayo dentro del mismo mando
+
+El registro físico confirmó que la credencial recién autorizada vuelve a ser
+aceptada automáticamente con la TV encendida. El caso pendiente es abrir la app
+con la Samsung apagada, quedar en Conectando y encender por WOL desde OmniRemote.
+
+Esta variante experimental conserva ese recorrido. Al pulsar encender en el mando
+(o WOL en la ficha de la Samsung seleccionada), envía el mismo WOL y espera
+automáticamente 30 segundos antes de abrir una conexión Samsung. La pantalla
+identifica la prueba. No requiere otro acceso de Android ni el mando original
+para realizar el encendido. Si después vuelve a aparecer el permiso, el usuario
+puede aceptarlo para recuperar el control y copiar el informe habitual.
+
+Los eventos `wake_connection_wait` y `wake_connection_resume` delimitan la espera;
+`wake_wait_reused` identifica una pulsación repetida y `wake_connection_cancelled`
+una cancelación. Durante la espera no deben aparecer conexiones nuevas de Samsung.
+El intento previo se aborta con `cancel()`, no solo con un cierre WebSocket en cola.
+Una respuesta de UI antigua no debe cambiar el estado del nuevo encendido.
+
+La pausa es deliberada y diagnóstica. No demuestra que el arranque sea la causa ni
+se presenta como una solución permanente. Las pruebas locales verifican la
+coordinación de la app; la respuesta del firmware requiere el siguiente registro
+del usuario en su TV física.

@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.omnitvremote.qvrtm"
     minSdk = 24
     targetSdk = 36
-    versionCode = 8
-    versionName = "1.7"
+    versionCode = 9
+    versionName = "1.7-wol30-test"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
