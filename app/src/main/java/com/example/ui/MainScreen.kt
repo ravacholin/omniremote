@@ -367,8 +367,7 @@ fun MainScreen(
                         volume = macVolume,
                         onKeyPress = { key -> viewModel.sendKey(key) },
                         onVolumeChange = { level -> viewModel.setMacVolume(level) },
-                        modifier = if (isShortScreen) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().weight(1f),
-                        fillHeight = !isShortScreen
+                        modifier = if (isShortScreen) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().weight(1f)
                     )
                 } else {
                     // Navigation and gestures share the D-pad; apps and numpad have their own tabs.

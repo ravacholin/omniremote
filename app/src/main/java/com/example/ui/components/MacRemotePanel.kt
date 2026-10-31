@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +25,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.model.RemoteKey
 import com.example.network.MacVolume
+import com.example.ui.theme.Ash
+import com.example.ui.theme.Hairline
+import com.example.ui.theme.Paper
+import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextPrimary
 import kotlin.math.roundToInt
 
 /** Volume and media for a Mac: the only controls macOS exposes without installing an app. */
@@ -30,15 +38,14 @@ fun MacRemotePanel(
     volume: MacVolume?,
     onKeyPress: (RemoteKey) -> Unit,
     onVolumeChange: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-    fillHeight: Boolean = true
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     fun press(key: RemoteKey) {
         HapticUtil.triggerKeyHaptic(context)
         onKeyPress(key)
     }
-    // Follows the Mac, except while the finger is on the fader.
+    // Follows the Mac, except while the finger is on the slider.
     var dragLevel by remember { mutableStateOf<Float?>(null) }
     val shownLevel = dragLevel ?: volume?.level?.toFloat() ?: 0f
 
@@ -46,35 +53,43 @@ fun MacRemotePanel(
         modifier = modifier.testTag("mac_remote_panel"),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        MonoLabel(if (volume?.muted == true) "Volumen // silencio" else "Volumen")
-
-        // A tall fader with the step keys stacked beside it: one block, one thumb.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (fillHeight) Modifier.weight(1f) else Modifier.height(320.dp)),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            VolumeFader(
-                level = volume?.let { shownLevel },
-                muted = volume?.muted == true,
-                onLevelChange = { level ->
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            MonoLabel(if (volume?.muted == true) "Volumen // silencio" else "Volumen")
+            Text(
+                text = if (volume == null) "—" else shownLevel.roundToInt().toString(),
+                style = MaterialTheme.typography.displayMedium,
+                color = if (volume?.muted == true) TextMuted else TextPrimary,
+                modifier = Modifier.testTag("mac_volume_level")
+            )
+            Slider(
+                value = shownLevel,
+                onValueChange = { level ->
                     dragLevel = level
                     onVolumeChange(level.roundToInt())
                 },
-                onLevelChangeFinished = { dragLevel = null },
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                testTag = "mac_volume_slider"
+                onValueChangeFinished = { dragLevel = null },
+                valueRange = 0f..100f,
+                enabled = volume != null,
+                colors = SliderDefaults.colors(
+                    thumbColor = Paper,
+                    activeTrackColor = Paper,
+                    inactiveTrackColor = Hairline,
+                    disabledThumbColor = Ash,
+                    disabledActiveTrackColor = Hairline,
+                    disabledInactiveTrackColor = Hairline
+                ),
+                modifier = Modifier.fillMaxWidth().testTag("mac_volume_slider")
             )
-            Column(
-                modifier = Modifier.width(88.dp).fillMaxHeight().hairlineGrid(),
-                verticalArrangement = Arrangement.spacedBy(GridGap)
-            ) {
-                val cell = Modifier.weight(1f).fillMaxWidth()
-                IconKey(RemoteIcons.VolumeUp, "Vol +", { press(RemoteKey.VOL_UP) }, cell, "mac_vol_up", repeatable = true)
-                IconKey(RemoteIcons.Mute, "Mute", { press(RemoteKey.MUTE) }, cell, "mac_mute")
-                IconKey(RemoteIcons.VolumeDown, "Vol -", { press(RemoteKey.VOL_DOWN) }, cell, "mac_vol_down", repeatable = true)
-            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().height(64.dp).hairlineGrid(),
+            horizontalArrangement = Arrangement.spacedBy(GridGap)
+        ) {
+            val cell = Modifier.weight(1f).fillMaxHeight()
+            IconKey(RemoteIcons.VolumeDown, "Vol -", { press(RemoteKey.VOL_DOWN) }, cell, "mac_vol_down", repeatable = true)
+            IconKey(RemoteIcons.Mute, "Mute", { press(RemoteKey.MUTE) }, cell, "mac_mute")
+            IconKey(RemoteIcons.VolumeUp, "Vol +", { press(RemoteKey.VOL_UP) }, cell, "mac_vol_up", repeatable = true)
         }
 
         Row(
