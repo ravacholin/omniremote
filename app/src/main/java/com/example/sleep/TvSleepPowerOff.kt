@@ -33,7 +33,9 @@ class TvSleepPowerOff(private val context: Context) {
     }
 
     private suspend fun androidPowerOff(device: TvDeviceEntity, canSend: () -> Boolean): Boolean {
-        val client = AndroidTvClient(context, TvTokenStore.getInstance(context), remotePort = device.port)
+        // Discovery may have saved a Cast, ADB or pairing port. Use the same
+        // Remote v2 control endpoint as the interactive remote, including for saved devices.
+        val client = AndroidTvClient(context, TvTokenStore.getInstance(context))
         return try {
             client.connect(device.ipAddress, device.port) && client.powerOff(canSend)
         } finally {

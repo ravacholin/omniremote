@@ -16,8 +16,11 @@ Si llega a cero antes de que el servicio tome la alarma, muestra «Vencido» y
 «Esperando apagado»; el resultado posterior indica si se confirmó el reposo.
 
 Funciona con Samsung Tizen y Google/Android TV. No se ofrece para Mac. Usa las
-credenciales ya guardadas. En Samsung envía `KEY_POWEROFF`. En Android TV consulta
-el estado de encendido que informa la sesión autenticada: si ya está en reposo no
+credenciales ya guardadas. En Samsung envía `KEY_POWEROFF`. En Android TV usa
+el puerto de control Remote v2 (6466), igual que el mando, aunque el dispositivo
+se haya guardado con el puerto de Cast, ADB o vinculación durante el descubrimiento.
+No hace falta eliminar ni volver a vincular el dispositivo por esa diferencia.
+Luego consulta el estado de encendido que informa la sesión autenticada: si ya está en reposo no
 envía ninguna tecla; si está encendido envía una sola pulsación de `POWER` (26),
 igual que el botón normal del mando. Algunos aparatos HDMI no responden a `SLEEP`
 (223). Sin un estado de encendido conocido o sin soporte de estado de energía,
@@ -56,6 +59,8 @@ alarmas, persistencia del destino, permiso denegado, reinicio del teléfono y ap
 por una conexión TLS real a un servidor que simula Android TV. Cubren `POWER` solo
 desde encendido, ausencia de teclas cuando ya está en reposo, confirmación de reposo,
 rechazo y falta de respuesta. No prueban hardware físico ni HDMI-CEC.
+La prueba TLS también cubre dispositivos guardados con puertos 8008, 8009, 6467 y
+5555: Sleep debe conectar al control 6466 y recibir la confirmación de reposo.
 También verifican que la cuenta visual avance sin modificar la alarma, se recupere
 al volver a la app, se reinicie al reprogramar y nunca muestre tiempo negativo.
 

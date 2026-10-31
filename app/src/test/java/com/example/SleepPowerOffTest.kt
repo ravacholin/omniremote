@@ -36,9 +36,15 @@ import javax.net.ssl.SSLSocket
 class SleepPowerOffTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
 
-    @Test fun `a fresh authenticated session uses normal power and waits for standby`() = runBlocking {
+    @Test fun `sleep uses the remote control port even when discovery saved another service port`() = runBlocking {
+        for (savedPort in listOf(8009, 8008, 6467, 5555, 6466)) {
+            checkSavedPortPowerOff(savedPort)
+        }
+    }
+
+    private suspend fun checkSavedPortPowerOff(savedPort: Int) {
         val server = (AndroidTvCertificateManager.getOrCreateSslContext(context).serverSocketFactory
-            .createServerSocket(0, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
+            .createServerSocket(6466, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
             needClientAuth = true
             soTimeout = 10000
         }
@@ -61,8 +67,9 @@ class SleepPowerOffTest {
         }
         try {
             val device = TvDeviceEntity(id = 7, name = "Saved TV", deviceType = DeviceType.ANDROID_TV,
-                ipAddress = "127.0.0.1", port = server.localPort)
-            assertTrue(TvSleepPowerOff(context).powerOff(device))
+                ipAddress = "127.0.0.1", port = savedPort)
+            assertTrue("Sleep must use Remote v2 even with saved discovery port $savedPort",
+                TvSleepPowerOff(context).powerOff(device))
             val key = AndroidTvProtocol.getFieldBytes(packet.get(10, TimeUnit.SECONDS), 10)!!
             assertEquals(26, AndroidTvProtocol.getFieldVarint(key, 1))
             assertEquals(3, AndroidTvProtocol.getFieldVarint(key, 2))
@@ -142,7 +149,7 @@ class SleepPowerOffTest {
     private suspend fun checkPowerResult(initiallyOn: Boolean, response: ByteArray?, expectedSuccess: Boolean,
         expectedKey: Int?, features: Int = 611, disconnectAfterKey: Boolean = false) {
         val server = (AndroidTvCertificateManager.getOrCreateSslContext(context).serverSocketFactory
-            .createServerSocket(0, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
+            .createServerSocket(6466, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
             needClientAuth = true
             soTimeout = 10000
         }
@@ -215,7 +222,7 @@ class SleepPowerOffTest {
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
         for (action in listOf("cancel", "reprogram", "delete")) {
             val server = (AndroidTvCertificateManager.getOrCreateSslContext(context).serverSocketFactory
-                .createServerSocket(0, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
+                .createServerSocket(6466, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
                 needClientAuth = true
                 soTimeout = 10000
             }
