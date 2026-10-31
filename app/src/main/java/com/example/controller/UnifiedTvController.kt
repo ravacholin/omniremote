@@ -1,5 +1,6 @@
 package com.example.controller
 
+import com.example.BuildConfig
 import android.util.Log
 import com.example.data.model.CommandLog
 import com.example.data.model.ConnectionState
@@ -557,7 +558,7 @@ class UnifiedTvController(
         val credential = tokenStore?.getSamsungToken(device.ipAddress, device.id, device.macAddress, device.authToken)
             ?: device.authToken
         val waiting = samsungClient.connectAfterWake(device.ipAddress, credential, device.id, device.macAddress,
-            SAMSUNG_WAKE_PROBE_WAIT_MS)
+            BuildConfig.SAMSUNG_WAKE_RECONNECT_DELAY_MS)
         if (waiting) _connectionState.value = ConnectionState.Connecting(device.name, device.ipAddress)
         waiting
     }
@@ -598,6 +599,5 @@ class UnifiedTvController(
 
     private companion object {
         val CONNECT_RETRY_DELAYS_MS = longArrayOf(800, 2000)
-        const val SAMSUNG_WAKE_PROBE_WAIT_MS = 30_000L
     }
 }

@@ -29,3 +29,19 @@ Esta variante cambia deliberadamente una variable temporal para medir su efecto
 en el mismo recorrido de usuario. **No es un arreglo confirmado ni una demora
 permanente justificada.** Las pruebas locales validan la coordinación, no el
 comportamiento del firmware. La respuesta de la TV física sigue siendo necesaria.
+
+## Resultado físico y variante de 15 segundos
+
+El usuario confirma que el ensayo de 30 segundos funciona sin volver a autorizar.
+La nueva captura contiene 30,015 s de espera, 162 ms para abrir el WebSocket y
+75 ms desde su apertura hasta `authorization_confirmed`. La huella de la
+credencial coincide con la previamente guardada y no se recibe otro token en ese
+intento. Esto confirma ese resultado físico; no establece el mínimo de espera
+ni el mecanismo interno del firmware. El ensayo también aborta intentos previos,
+por lo que no se atribuye el resultado únicamente a un número de segundos.
+
+A pedido del usuario se prepara **1.7-wol15-test (9)**: reduce la espera programada
+a 15 segundos, conservando toda la coordinación. El valor único de BuildConfig
+controla tanto el temporizador como el mensaje. El APK de 30 segundos se conserva
+y ambas variantes mantienen versionCode 9 y la misma firma para poder alternar
+sin borrar datos. El comportamiento físico con 15 segundos sigue pendiente.

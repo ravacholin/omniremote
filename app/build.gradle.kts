@@ -17,7 +17,9 @@ android {
     minSdk = 24
     targetSdk = 36
     versionCode = 9
-    versionName = "1.7-wol30-test"
+    // Keep the diagnostic versionCode so the signed 30s APK remains installable as a fallback.
+    versionName = "1.7-wol15-test"
+    buildConfigField("long", "SAMSUNG_WAKE_RECONNECT_DELAY_MS", "15000L")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
