@@ -53,6 +53,7 @@ class AndroidTvClient(
     @Volatile private var remotePowerOn: Boolean? = null
     private val writeLock = Any()
     private var pairingIp: String = ""
+    private var activeDeviceId: Long? = null
     private val tag = "AndroidTvClient"
     private val localNetwork = TvLocalNetwork(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -103,10 +104,11 @@ class AndroidTvClient(
     @Volatile
     private var serverCertForPairing: X509Certificate? = null
 
-    suspend fun connect(ipAddress: String, port: Int = 6466): Boolean = withContext(Dispatchers.IO) {
+    suspend fun connect(ipAddress: String, port: Int = 6466, deviceId: Long? = null): Boolean = withContext(Dispatchers.IO) {
         closeRemoteSocket()
         closePairingSocket()
         activeIp = ipAddress.trim()
+        activeDeviceId = deviceId?.takeIf { it > 0 }
         if (activeIp.isBlank()) return@withContext false
         activePort = remotePort
         val ports = coroutineScope {
@@ -140,6 +142,7 @@ class AndroidTvClient(
      * Connects persistent SSL control session on port 6466 for Google TV Remote v2.
      */
     private suspend fun initRemoteV2Connection(ip: String): Boolean = remoteConnectMutex.withLock {
+        val deviceId = activeDeviceId
         withContext(Dispatchers.IO) {
             // Several rapid commands can observe a lost connection before the first
             // reconnect finishes. Reuse its result instead of tearing it down again.
@@ -153,6 +156,12 @@ class AndroidTvClient(
                 socket.tcpNoDelay = true
                 socket.soTimeout = 8000
                 socket.startHandshake()
+                val serverCertificate = socket.session.peerCertificates.first() as X509Certificate
+                val serverKey = android.util.Base64.encodeToString(serverCertificate.publicKey.encoded, android.util.Base64.NO_WRAP)
+                val savedServerKey = deviceId?.let { tokenStore?.getAndroidTvServerKey(it) }
+                check(savedServerKey == null || savedServerKey == serverKey) {
+                    "Cambió la identidad de la TV. Revisá su IP y volvé a vincularla si corresponde."
+                }
                 val out = socket.getOutputStream()
                 val input = socket.getInputStream()
                 remoteOutput = out
@@ -215,6 +224,11 @@ class AndroidTvClient(
                 }
                 socket.soTimeout = 0
                 currentCoroutineContext().ensureActive()
+                if (deviceId != null && tokenStore != null) {
+                    check(tokenStore.verifyOrRememberAndroidTvServerKey(deviceId, serverKey)) {
+                        "Cambió la identidad de la TV durante la conexión. Revisá su IP."
+                    }
+                }
                 isPaired = true
                 isConnected = true
                 tokenStore?.setAndroidTvPaired(ip, true)
@@ -364,6 +378,7 @@ class AndroidTvClient(
             return@withContext false
         }
         val targetIp = pairingIp
+        val targetDeviceId = activeDeviceId
         val serverCert = serverCertForPairing ?: run {
             Log.e(tag, "No server certificate captured for pairing")
             return@withContext false
@@ -384,6 +399,11 @@ class AndroidTvClient(
             val secretAck = AndroidTvProtocol.readPacket(inStream)
             AndroidTvProtocol.validatePairingResponse(secretAck, AndroidTvProtocol.FIELD_SECRET_ACK)
             if (pairingSocket !== socket) return@withContext false
+            if (targetDeviceId != null) {
+                // Pairing and remote ports need not share a server certificate.
+                // Only a validated PIN ACK permits registering a replacement remote key.
+                tokenStore?.forgetAndroidTvServerKeyAfterPairing(targetDeviceId)
+            }
             closePairingSocket(socket)
             isPaired = true
             tokenStore?.setAndroidTvPaired(targetIp, true)

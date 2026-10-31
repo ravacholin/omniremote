@@ -19,6 +19,9 @@ import java.security.SecureRandom
 import java.security.Signature
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import java.security.Security
+import java.security.spec.RSAPrivateCrtKeySpec
+import java.security.spec.RSAPublicKeySpec
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.text.SimpleDateFormat
@@ -49,6 +52,8 @@ object AndroidTvCertificateManager {
     @Volatile
     private var cachedKey: PrivateKey? = null
 
+    private var cachedIdentityPersisted = false
+
     val trustAllManager = object : X509TrustManager {
         override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
         override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
@@ -57,11 +62,13 @@ object AndroidTvCertificateManager {
 
     @Synchronized
     fun getOrCreateSslContext(context: Context? = null): SSLContext {
+        preparePersistentIdentity(context)
         cachedSslContext?.let { return it }
 
         val (cert, key) = getOrCreateKeyPairAndCertificate(context)
         cachedCert = cert
         cachedKey = key
+        cachedIdentityPersisted = context != null
 
         val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
         val inMemoryKeyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
@@ -80,11 +87,28 @@ object AndroidTvCertificateManager {
 
     @Synchronized
     fun getClientCertificate(context: Context? = null): X509Certificate {
+        preparePersistentIdentity(context)
         cachedCert?.let { return it }
         val (cert, key) = getOrCreateKeyPairAndCertificate(context)
         cachedKey = key
         cachedCert = cert
+        cachedIdentityPersisted = context != null
         return cert
+    }
+
+    /** A contextless caller must not hide the disk identity from later production callers. */
+    private fun preparePersistentIdentity(context: Context?) {
+        if (context == null || cachedIdentityPersisted || cachedCert == null || cachedKey == null) return
+        val store = TvTokenStore.getInstance(context)
+        if (store.getCertDer() == null && store.getPrivateKeyPkcs8() == null) {
+            store.saveCertData(Base64.encodeToString(cachedCert!!.encoded, Base64.NO_WRAP),
+                Base64.encodeToString(cachedKey!!.encoded, Base64.NO_WRAP))
+            cachedIdentityPersisted = true
+        } else {
+            cachedSslContext = null
+            cachedCert = null
+            cachedKey = null
+        }
     }
 
     @Synchronized
@@ -98,33 +122,38 @@ object AndroidTvCertificateManager {
             val tokenStore = TvTokenStore.getInstance(context)
             val certBase64 = tokenStore.getCertDer()
             val keyBase64 = tokenStore.getPrivateKeyPkcs8()
-            if (!certBase64.isNullOrBlank() && !keyBase64.isNullOrBlank()) {
-                val restored = try {
-                    val certBytes = Base64.decode(certBase64, Base64.DEFAULT)
-                    val keyBytes = Base64.decode(keyBase64, Base64.DEFAULT)
-                    val cf = CertificateFactory.getInstance("X.509")
-                    val cert = cf.generateCertificate(ByteArrayInputStream(certBytes)) as X509Certificate
-                    val key = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyBytes))
-                    cert to key
+            if (certBase64 != null || keyBase64 != null) {
+                // The RSA private key is the shared authorization identity. Never replace it
+                // just because its certificate is damaged, missing, or outside its validity.
+                val (key, publicKey) = try {
+                    check(!keyBase64.isNullOrBlank()) { "Missing saved Android TV private key" }
+                    val encoded = PKCS8EncodedKeySpec(Base64.decode(keyBase64, Base64.DEFAULT))
+                    // Some Conscrypt versions expose imported CRT keys as plain RSA
+                    // private keys. Ask providers for the key spec instead of casting.
+                    Security.getProviders("KeyFactory.RSA").firstNotNullOfOrNull { provider ->
+                        runCatching {
+                            val factory = KeyFactory.getInstance("RSA", provider)
+                            val privateKey = factory.generatePrivate(encoded)
+                            val spec = factory.getKeySpec(privateKey, RSAPrivateCrtKeySpec::class.java)
+                            privateKey to factory.generatePublic(RSAPublicKeySpec(spec.modulus, spec.publicExponent))
+                        }.getOrNull()
+                    } ?: error("No provider could restore the saved RSA key")
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to restore persisted cert: ${e.message}")
-                    null
+                    throw IllegalStateException("Could not restore Android TV private identity; saved credentials were preserved", e)
                 }
-                if (restored != null) {
-                    val (cert, key) = restored
-                    val effectiveCert = try {
-                        cert.checkValidity()
-                        cert
-                    } catch (_: java.security.cert.CertificateExpiredException) {
-                        // Repair certificates from versions which encoded 2050+ as UTCTime.
-                        // Keep the authorized RSA key instead of silently rotating identity.
-                        val renewed = generateSelfSignedCertDer(KeyPair(cert.publicKey, key))
-                        tokenStore.saveCertData(Base64.encodeToString(renewed.encoded, Base64.NO_WRAP), keyBase64)
-                        Log.d(TAG, "Renewed expired client certificate using the existing RSA key")
-                        renewed
-                    }
-                    return effectiveCert to key
+                val restored = runCatching {
+                    val certBytes = Base64.decode(certBase64, Base64.DEFAULT)
+                    val cert = CertificateFactory.getInstance("X.509")
+                        .generateCertificate(ByteArrayInputStream(certBytes)) as X509Certificate
+                    cert.checkValidity()
+                    check(cert.publicKey.encoded.contentEquals(publicKey.encoded)) { "Saved certificate and key do not match" }
+                    cert
+                }.getOrNull()
+                val certificate = restored ?: generateSelfSignedCertDer(KeyPair(publicKey, key)).also {
+                    tokenStore.saveCertData(Base64.encodeToString(it.encoded, Base64.NO_WRAP), keyBase64!!)
+                    Log.d(TAG, "Repaired client certificate using the existing RSA key")
                 }
+                return certificate to key
             }
         }
 

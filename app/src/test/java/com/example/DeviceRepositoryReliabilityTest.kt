@@ -57,6 +57,44 @@ class DeviceRepositoryReliabilityTest {
         assertEquals("AA:BB:CC:DD:EE:10", saved.macAddress)
     }
 
+    @Test fun `saving stale device metadata cannot overwrite a newly issued token`() = runBlocking {
+        val id = repo.saveDevice(tv("192.168.1.10").copy(authToken = "old-token"))
+        val snapshotBeforeReconnect = repo.getDeviceById(id)!!
+        repo.updateAuthToken(id, "new-token")
+        repo.saveDevice(snapshotBeforeReconnect.copy(macAddress = "AA:BB:CC:DD:EE:10"))
+        assertEquals("new-token", repo.getDeviceById(id)!!.authToken)
+        assertEquals("AA:BB:CC:DD:EE:10", repo.getDeviceById(id)!!.macAddress)
+    }
+
+    @Test fun `rediscovered hardware keeps its saved identity after a DHCP address change`() = runBlocking {
+        val id = repo.saveDevice(tv("192.168.1.10").copy(macAddress = "AA:BB:CC:DD:EE:10", authToken = "authorized"))
+        val appId = db.tvAppDao().insert(TvAppEntity(deviceId = id, appName = "My app", appIdentifier = "my.app"))
+        val rediscoveredId = repo.saveDevice(tv("192.168.1.99").copy(macAddress = "aa-bb-cc-dd-ee-10"))
+        assertEquals(id, rediscoveredId)
+        assertEquals("192.168.1.99", repo.getDeviceById(id)!!.ipAddress)
+        assertEquals("authorized", repo.getDeviceById(id)!!.authToken)
+        assertNotNull(db.tvAppDao().getAppById(appId))
+    }
+
+    @Test fun `different hardware at a reused IP cannot replace the saved timer target or inherit credentials`() = runBlocking {
+        val id = repo.saveDevice(tv("192.168.1.10").copy(macAddress = "AA:BB:CC:DD:EE:10", authToken = "authorized"))
+        val replacement = tv("192.168.1.10").copy(macAddress = "AA:BB:CC:DD:EE:20")
+        val replacementId = repo.saveDevice(replacement)
+        assertNotEquals(id, replacementId)
+        assertEquals("AA:BB:CC:DD:EE:10", repo.getDeviceById(id)!!.macAddress)
+        assertEquals("authorized", repo.getDeviceById(id)!!.authToken)
+        assertEquals("", repo.getDeviceById(replacementId)!!.authToken)
+        assertEquals(replacementId, repo.saveDevice(replacement))
+    }
+
+    @Test fun `a different protocol at a reused IP does not convert an existing saved device`() = runBlocking {
+        val id = repo.saveDevice(tv("192.168.1.10").copy(authToken = "samsung-token"))
+        val androidId = repo.saveDevice(tv("192.168.1.10").copy(deviceType = DeviceType.ANDROID_TV, port = 6466))
+        assertNotEquals(id, androidId)
+        assertEquals(DeviceType.SAMSUNG_TIZEN, repo.getDeviceById(id)!!.deviceType)
+        assertEquals("", repo.getDeviceById(androidId)!!.authToken)
+    }
+
     @Test fun `surrounding whitespace does not create duplicate TVs`() = runBlocking {
         val id = repo.saveDevice(tv("192.168.1.10"))
         assertEquals(id, repo.saveDevice(tv(" 192.168.1.10 ")))

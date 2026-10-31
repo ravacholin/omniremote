@@ -202,6 +202,79 @@ class SleepPowerOffTest {
             deviceType = DeviceType.ANDROID_TV, ipAddress = "127.0.0.2", port = 6466)))
     }
 
+    @Test fun `Sleep refuses a different hardware identity at the saved Android TV address`() = runBlocking {
+        val cast = ServerSocket(8008, 1, InetAddress.getLoopbackAddress()).apply { soTimeout = 2000 }
+        val remote = ServerSocket(6466, 1, InetAddress.getLoopbackAddress()).apply { soTimeout = 800 }
+        val executor = Executors.newFixedThreadPool(2)
+        val api = executor.submit {
+            cast.accept().use { socket ->
+                socket.soTimeout = 2000
+                val reader = socket.getInputStream().bufferedReader()
+                check(reader.readLine().startsWith("GET /setup/eureka_info"))
+                while (!reader.readLine().isNullOrEmpty()) { }
+                val body = "{\"device_info\":{\"mac_address\":\"AA:BB:CC:DD:EE:20\"}}"
+                socket.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n" + body).toByteArray())
+            }
+        }
+        val contactedRemote = executor.submit<Boolean> {
+            try { remote.accept().use { remote.close(); true } } catch (_: SocketTimeoutException) { false }
+        }
+        try {
+            assertFalse(TvSleepPowerOff(context).powerOff(TvDeviceEntity(id = 7, name = "Saved Android TV",
+                deviceType = DeviceType.ANDROID_TV, ipAddress = "127.0.0.1", port = remote.localPort,
+                macAddress = "AA:BB:CC:DD:EE:10")))
+            assertFalse("A different TV at the saved IP must not receive a control connection", contactedRemote.get(3, TimeUnit.SECONDS))
+            api.get(3, TimeUnit.SECONDS)
+            Unit
+        } finally {
+            cast.close()
+            remote.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test fun `Sleep rejects a different Android server key even when its MAC API is unavailable`() = runBlocking {
+        val store = com.example.data.local.TvTokenStore.getInstance(context)
+        val prefs = com.example.data.local.TvTokenStore::class.java.getDeclaredField("prefs").let {
+            it.isAccessible = true
+            it.get(store) as android.content.SharedPreferences
+        }
+        prefs.edit().putString("android_tv_server_key_id_987", "previous-tv-public-key").commit()
+        val server = (AndroidTvCertificateManager.getOrCreateSslContext(context).serverSocketFactory
+            .createServerSocket(6466, 10, InetAddress.getLoopbackAddress()) as SSLServerSocket).apply {
+            needClientAuth = true
+            soTimeout = 5000
+        }
+        val executor = Executors.newSingleThreadExecutor()
+        val received = executor.submit<ByteArray?> {
+            server.accept().close()
+            (server.accept() as SSLSocket).use { socket ->
+                socket.soTimeout = 5000
+                try {
+                    val input = socket.inputStream
+                    val output = socket.outputStream
+                    AndroidTvProtocol.writePacket(output, bytes(1, byteArrayOf(8, 0xE3.toByte(), 4)))
+                    AndroidTvProtocol.readPacket(input)
+                    AndroidTvProtocol.writePacket(output, bytes(2, byteArrayOf(8, 0xE3.toByte(), 4)))
+                    AndroidTvProtocol.readPacket(input)
+                    AndroidTvProtocol.writePacket(output, bytes(40, byteArrayOf(8, 1)))
+                    AndroidTvProtocol.readPacket(input).also {
+                        AndroidTvProtocol.writePacket(output, bytes(40, byteArrayOf()))
+                    }
+                } catch (_: java.io.IOException) { null }
+            }
+        }
+        try {
+            assertFalse(TvSleepPowerOff(context).powerOff(TvDeviceEntity(id = 987, name = "Saved Android TV",
+                deviceType = DeviceType.ANDROID_TV, ipAddress = "127.0.0.1", port = server.localPort)))
+            assertNull("No command may be sent to a different server identity", received.get(5, TimeUnit.SECONDS))
+        } finally {
+            prefs.edit().remove("android_tv_server_key_id_987").commit()
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
     @Test fun `Samsung without saved authorization never opens its remote channel`() = runBlocking {
         val server = ServerSocket(8002, 1, InetAddress.getByName("127.0.0.9")).apply { soTimeout = 800 }
         val executor = Executors.newSingleThreadExecutor()
@@ -212,6 +285,25 @@ class SleepPowerOffTest {
             assertFalse(TvSleepPowerOff(context).powerOff(TvDeviceEntity(id = 654, name = "Unpaired",
                 deviceType = DeviceType.SAMSUNG_TIZEN, ipAddress = "127.0.0.9")))
             assertFalse("Sleep must not trigger a Samsung authorization prompt", connection.get(3, TimeUnit.SECONDS))
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test fun `Samsung Sleep cannot resurrect a token belonging to different hardware`() = runBlocking {
+        val store = com.example.data.local.TvTokenStore.getInstance(context)
+        store.saveSamsungToken("127.0.0.8", "old-hardware-token", 765, "AA:BB:CC:DD:EE:10")
+        val server = ServerSocket(8002, 1, InetAddress.getByName("127.0.0.8")).apply { soTimeout = 800 }
+        val executor = Executors.newSingleThreadExecutor()
+        val connection = executor.submit<Boolean> {
+            try { server.accept().use { true } } catch (_: SocketTimeoutException) { false }
+        }
+        try {
+            assertFalse(TvSleepPowerOff(context).powerOff(TvDeviceEntity(id = 765, name = "Replacement",
+                deviceType = DeviceType.SAMSUNG_TIZEN, ipAddress = "127.0.0.8",
+                macAddress = "AA:BB:CC:DD:EE:20", authToken = "old-hardware-token")))
+            assertFalse("Sleep must not use the old occupant's authorization", connection.get(3, TimeUnit.SECONDS))
         } finally {
             server.close()
             executor.shutdownNow()

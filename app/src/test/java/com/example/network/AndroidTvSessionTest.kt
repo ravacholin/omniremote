@@ -41,6 +41,45 @@ class AndroidTvSessionTest {
         soTimeout = 10000
     }
 
+    @Test fun `successful PIN pairing allows the remote port to register its own server identity`() = runBlocking {
+        val store = TvTokenStore.getInstance(context)
+        val deviceId = 986L
+        store.saveAndroidTvServerKey(deviceId, "previous-remote-server-key")
+        val pairServer = server()
+        val executor = Executors.newSingleThreadExecutor()
+        val serverTask = executor.submit {
+            (pairServer.accept() as SSLSocket).use { socket ->
+                socket.soTimeout = 5000
+                for ((request, response) in listOf(10 to 11, 20 to 20, 30 to 31, 40 to 41)) {
+                    assertTrue(AndroidTvProtocol.hasField(AndroidTvProtocol.readPacket(socket.inputStream), request))
+                    AndroidTvProtocol.writePacket(socket.outputStream, ack(response))
+                }
+            }
+        }
+        val client = AndroidTvClient(context, store, pairingPort = pairServer.localPort)
+        AndroidTvClient::class.java.getDeclaredField("activeDeviceId").apply { isAccessible = true; set(client, deviceId) }
+        val rsa = AndroidTvCertificateManager.getClientCertificate(context).publicKey as RSAPublicKey
+        val hash = MessageDigest.getInstance("SHA-256").apply {
+            repeat(2) {
+                update(AndroidTvProtocol.bigIntegerToHexBytes(rsa.modulus))
+                update(AndroidTvProtocol.bigIntegerToHexBytes(rsa.publicExponent))
+            }
+            update(byteArrayOf(0x12, 0x34))
+        }.digest()
+        try {
+            var prompted = false
+            client.startPairing("127.0.0.1", { prompted = true }, { _, _ -> })
+            assertTrue(prompted)
+            assertTrue(client.submitPairingPin("%02X1234".format(hash[0].toInt() and 255)))
+            serverTask.get(5, TimeUnit.SECONDS)
+            assertNull("Pairing and remote services may use different server keys", store.getAndroidTvServerKey(deviceId))
+        } finally {
+            client.disconnect()
+            pairServer.close()
+            executor.shutdownNow()
+        }
+    }
+
     @Test fun `app rejection preserves paired TLS ping and keys while real EOF disconnects`() = runBlocking {
         val executor = Executors.newFixedThreadPool(2)
         val pairServer = server()

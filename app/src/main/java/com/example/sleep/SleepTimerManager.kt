@@ -37,7 +37,7 @@ class SleepTimerManager(context: Context) {
     private val alarms = this.context.getSystemService(AlarmManager::class.java)
     private val _timer = MutableStateFlow(readTimer())
     val timer = _timer.asStateFlow()
-    private val _result = MutableStateFlow(prefs.getString("result", null))
+    private val _result = MutableStateFlow(readResult())
     val result = _result.asStateFlow()
     // A live service owns this claim. It must remain cancellable while connecting.
     private var execution: SleepTimerState? = null
@@ -64,7 +64,7 @@ class SleepTimerManager(context: Context) {
         )
         val operation = operation(next.token)
         alarms.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, next.deadlineElapsed, operation)
-        if (!prefs.edit().putString("timer", encode(next)).remove("result").commit()) {
+        if (!prefs.edit().putString("timer", encode(next)).remove("execution").remove("result").commit()) {
             alarms.cancel(operation)
             operation.cancel()
             error("No se pudo guardar el temporizador")
@@ -79,7 +79,7 @@ class SleepTimerManager(context: Context) {
     @Synchronized
     fun cancel() {
         val previous = _timer.value
-        check(prefs.edit().remove("timer").remove("result").commit()) { "No se pudo cancelar Sleep" }
+        check(prefs.edit().remove("timer").remove("execution").remove("result").commit()) { "No se pudo cancelar Sleep" }
         _timer.value = null
         execution = null
         _result.value = null
@@ -97,7 +97,7 @@ class SleepTimerManager(context: Context) {
         val current = _timer.value ?: return null
         if (current.token != token || current.bootCount != bootCount() ||
             SystemClock.elapsedRealtime() < current.deadlineElapsed) return null
-        check(prefs.edit().remove("timer").commit()) { "No se pudo iniciar el apagado" }
+        check(prefs.edit().remove("timer").putString("execution", encode(current)).commit()) { "No se pudo iniciar el apagado" }
         execution = current
         _timer.value = null
         cancelAlarm(current.token)
@@ -110,8 +110,9 @@ class SleepTimerManager(context: Context) {
     @Synchronized
     fun finishExecution(token: String, message: String) {
         if (execution?.token != token) return
+        check(prefs.edit().remove("execution").putString("result", message).commit()) { "No se pudo guardar el resultado de Sleep" }
         execution = null
-        reportResult(message)
+        _result.value = message
     }
 
     @Synchronized
@@ -155,6 +156,17 @@ class SleepTimerManager(context: Context) {
             return null
         }
         return state
+    }
+
+    private fun readResult(): String? {
+        if (prefs.contains("execution")) {
+            // A new process cannot know whether the last POWER reached the TV. Report
+            // the interruption without retrying a toggle which could wake it again.
+            val message = "Sleep se interrumpió antes de confirmar el apagado. Revisá el estado de la TV."
+            prefs.edit().remove("execution").putString("result", message).commit()
+            return message
+        }
+        return prefs.getString("result", null)
     }
 
     private fun encode(state: SleepTimerState) = JSONObject().apply {

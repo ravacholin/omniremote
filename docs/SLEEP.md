@@ -26,6 +26,16 @@ igual que el botón normal del mando. Algunos aparatos HDMI no responden a `SLEE
 (223). Sin un estado de encendido conocido o sin soporte de estado de energía,
 no envía `POWER`. No usa Wake-on-LAN ni reintenta esa pulsación.
 
+La TV guardada conserva su ID cuando se redescubre su MAC en otra IP. Otra TV
+identificada en la misma IP recibe una fila distinta y no hereda sus credenciales
+ni el destino del temporizador. En Android se registra la clave pública del
+servicio remoto por dispositivo y se rechaza una clave distinta antes de enviar
+órdenes. Una vinculación explícita por PIN permite registrar otra clave. Si la API
+local publica una MAC y difiere de la guardada, Sleep tampoco conecta al mando.
+Las instalaciones anteriores registran la clave en su próxima conexión autenticada;
+sin clave previa ni una MAC comprobable no se puede verificar la identidad histórica
+de una IP. Se recomienda reservar las IP de las TVs en DHCP.
+
 Después de enviar `POWER`, espera hasta cinco segundos a que Android TV informe
 reposo. Un rechazo, una desconexión o la falta de confirmación se informa como
 apagado sin confirmar; escribir la orden en la conexión no basta para informar
@@ -40,6 +50,9 @@ la pantalla o el proceso de la app. En Android 12+ puede requerir habilitar
 **Alarmas y recordatorios**. Si se rechaza, Sleep no se activa. Al vencer se inicia
 un servicio breve, con notificación mientras conecta y envía la orden. El resultado
 se conserva y se muestra en la app, incluyendo fallos de conexión o autorización.
+Si el proceso termina mientras se está ejecutando el apagado, al volver a abrir
+la app se informa que Sleep se interrumpió. No se vuelve a enviar POWER porque
+no se puede saber si la orden anterior llegó a la TV.
 
 El teléfono debe mantener conexión a la red local de la TV. Una orden enviada no
 demuestra que el hardware se haya apagado. Forzar la detención de la app, reiniciar

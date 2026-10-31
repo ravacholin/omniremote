@@ -153,6 +153,39 @@ class SleepTimerTest {
         }
     }
 
+    @Test fun `process loss during power off is reported without repeating the power command`() {
+        val manager = SleepTimerManager(context)
+        val timer = manager.advance(tv)!!
+        ShadowSystemClock.advanceBy(Duration.ofMinutes(30))
+        assertNotNull(manager.consumeDue(timer.token))
+
+        val restarted = SleepTimerManager(context)
+        assertNull(restarted.timer.value)
+        assertNull(restarted.consumeDue(timer.token))
+        assertFalse(restarted.isExecutionCurrent(timer.token))
+        assertTrue("An interrupted Sleep must not silently disappear",
+            restarted.result.value?.contains("interrump", ignoreCase = true) == true)
+    }
+
+    @Test fun `completed cancelled and replaced executions are not reported as interrupted`() {
+        for (action in listOf("finish", "cancel", "replace")) {
+            val manager = SleepTimerManager(context)
+            manager.cancel()
+            val timer = manager.advance(tv)!!
+            ShadowSystemClock.advanceBy(Duration.ofMinutes(30))
+            assertNotNull(manager.consumeDue(timer.token))
+            when (action) {
+                "finish" -> manager.finishExecution(timer.token, "Confirmed standby")
+                "cancel" -> manager.cancel()
+                "replace" -> manager.advance(tv)
+            }
+            val restarted = SleepTimerManager(context)
+            assertFalse(action, restarted.result.value?.contains("interrump", ignoreCase = true) == true)
+            if (action == "finish") assertEquals("Confirmed standby", restarted.result.value)
+            if (action == "replace") assertNotNull(restarted.timer.value)
+        }
+    }
+
     @Test fun `power off uses explicit sleep rather than Android power toggle`() {
         assertEquals(223, RemoteKey.POWER_OFF.androidKeyCode)
         assertEquals("KEY_POWEROFF", RemoteKey.POWER_OFF.samsungKey)

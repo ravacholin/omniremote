@@ -49,6 +49,8 @@ class SamsungTvClient(
 
     private var currentIp: String = ""
     private var currentPort: Int = 8002
+    private var currentDeviceId: Long? = null
+    private var currentMacAddress: String? = null
     @Volatile private var currentToken: String = ""
     /** Token of the current session, as last issued by the TV. */
     val token: String get() = currentToken
@@ -84,20 +86,21 @@ class SamsungTvClient(
     }
 
     @Synchronized
-    fun connect(ipAddress: String, port: Int = 8002, token: String = "") {
+    fun connect(ipAddress: String, port: Int = 8002, token: String? = null,
+        deviceId: Long? = null, macAddress: String? = null) {
         disconnect()
         val generation = connectionGeneration.get()
         val sessionIp = ipAddress.trim()
         currentIp = sessionIp
+        currentDeviceId = deviceId
+        currentMacAddress = macAddress
         // Modern Samsung Smart TVs (Tizen 2016-2024) require secure WSS on port 8002.
         // Port 8001 is unencrypted and invalidates/conflicts with secure token sessions.
         currentPort = 8002
 
         // The controller resolves the TV's IP/id/MAC identity before passing a token.
-        val resolvedToken = when {
-            token.isNotBlank() -> token.trim()
-            else -> tokenStore?.getSamsungToken(currentIp) ?: ""
-        }
+        // null requests lookup; an explicit empty token means identity lookup rejected it.
+        val resolvedToken = token?.trim() ?: tokenStore?.getSamsungToken(sessionIp, deviceId, macAddress).orEmpty()
         currentToken = resolvedToken
         connecting = true
 
@@ -131,7 +134,7 @@ class SamsungTvClient(
                                 // Only this event confirms authorization. A replaced socket must
                                 // never overwrite the token of the current session.
                                 extractTokenFromJson(json)?.let { receivedToken ->
-                                    tokenStore?.saveSamsungToken(sessionIp, receivedToken)
+                                    tokenStore?.saveSamsungToken(sessionIp, receivedToken, deviceId, macAddress)
                                     currentToken = receivedToken
                                     onTokenReceived?.invoke(receivedToken)
                                 }
@@ -251,8 +254,9 @@ class SamsungTvClient(
         // so reconnect at most once per window and never while the TV prompt is on screen.
         if (!sent && currentIp.isNotBlank() && !connecting && !awaitingAuth && now - lastAutoReconnectAt > AUTO_RECONNECT_WINDOW_MS) {
             lastAutoReconnectAt = now
-            val latestToken = tokenStore?.getSamsungToken(currentIp).orEmpty().ifBlank { currentToken }
-            connect(currentIp, 8002, latestToken)
+            val latestToken = tokenStore?.getSamsungToken(currentIp, currentDeviceId, currentMacAddress, currentToken)
+                ?: currentToken
+            connect(currentIp, 8002, latestToken, currentDeviceId, currentMacAddress)
         }
         return sent
     }

@@ -110,6 +110,41 @@ class PairingReliabilityTest {
         restored.checkValidity()
     }
 
+    @Test fun `damaged certificate is repaired without replacing the saved private key`() {
+        val certificate = AndroidTvCertificateManager.getClientCertificate(context)
+        val privateKey = store.getPrivateKeyPkcs8()!!
+        store.saveCertData("damaged-certificate", privateKey)
+        resetCertificateCache()
+        val repaired = AndroidTvCertificateManager.getClientCertificate(context)
+        repaired.checkValidity()
+        assertArrayEquals(certificate.publicKey.encoded, repaired.publicKey.encoded)
+        assertEquals(privateKey, store.getPrivateKeyPkcs8())
+        resetCertificateCache()
+        AndroidTvCertificateManager.getOrCreateSslContext(context)
+        assertArrayEquals(repaired.encoded, AndroidTvCertificateManager.getClientCertificate(context).encoded)
+    }
+
+    @Test fun `unreadable private identity is preserved instead of silently rotating every TV authorization`() {
+        AndroidTvCertificateManager.getClientCertificate(context)
+        val certificate = store.getCertDer()!!
+        store.saveCertData(certificate, "damaged-private-key")
+        resetCertificateCache()
+        assertThrows(IllegalStateException::class.java) {
+            AndroidTvCertificateManager.getOrCreateSslContext(context)
+        }
+        assertEquals(certificate, store.getCertDer())
+        assertEquals("damaged-private-key", store.getPrivateKeyPkcs8())
+    }
+
+    @Test fun `ephemeral cache cannot hide the persisted identity when context becomes available`() {
+        val persisted = AndroidTvCertificateManager.getClientCertificate(context)
+        resetCertificateCache()
+        AndroidTvCertificateManager.getOrCreateSslContext()
+        AndroidTvCertificateManager.getOrCreateSslContext(context)
+        assertArrayEquals(persisted.encoded, AndroidTvCertificateManager.getClientCertificate(context).encoded)
+        assertArrayEquals(persisted.encoded, android.util.Base64.decode(store.getCertDer(), android.util.Base64.DEFAULT))
+    }
+
     @Test fun `expired certificate is renewed while keeping the authorized RSA key`() {
         val certBytes = javaClass.getResourceAsStream("/expired-tv-cert.der")!!.use { it.readBytes() }
         val keyBytes = javaClass.getResourceAsStream("/test-only-tv-key.pk8")!!.use { it.readBytes() }
