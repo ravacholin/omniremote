@@ -3,6 +3,7 @@ package com.example.data.repository
 import com.example.data.local.TvDeviceDao
 import com.example.data.model.DeviceType
 import com.example.data.model.TvDeviceEntity
+import com.example.network.WakeOnLan
 import kotlinx.coroutines.flow.Flow
 
 class TvDeviceRepository(private val dao: TvDeviceDao) {
@@ -22,7 +23,8 @@ class TvDeviceRepository(private val dao: TvDeviceDao) {
     suspend fun getDefaultDevice(): TvDeviceEntity? = dao.getDefaultDevice()
 
     suspend fun saveDevice(device: TvDeviceEntity): Long {
-        return dao.saveDevice(device.copy(ipAddress = device.ipAddress.trim()))
+        return dao.saveDevice(device.copy(ipAddress = device.ipAddress.trim(),
+            macAddress = WakeOnLan.formatMacAddress(device.macAddress) ?: device.macAddress.trim()))
     }
 
     suspend fun deleteDevice(device: TvDeviceEntity) = dao.deleteAndSelectDefault(device)

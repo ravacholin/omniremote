@@ -53,7 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "omni_remote_database.db"
-                ).addMigrations(MIGRATION_2_3).fallbackToDestructiveMigration().build()
+                ).addMigrations(MIGRATION_2_3).build()
                 INSTANCE = instance
                 instance
             }

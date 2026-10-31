@@ -8,6 +8,8 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import com.example.data.model.TvDeviceEntity
+import com.example.data.model.DeviceType
+import com.example.network.WakeOnLan
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -21,6 +23,12 @@ interface TvDeviceDao {
     @Query("SELECT * FROM tv_devices WHERE ipAddress = :ipAddress LIMIT 1")
     suspend fun getDeviceByIp(ipAddress: String): TvDeviceEntity?
 
+    @Query("SELECT * FROM tv_devices WHERE ipAddress = :ipAddress AND deviceType = :deviceType ORDER BY id")
+    suspend fun getDevicesAtAddress(ipAddress: String, deviceType: DeviceType): List<TvDeviceEntity>
+
+    @Query("SELECT * FROM tv_devices WHERE deviceType = :deviceType AND UPPER(REPLACE(REPLACE(TRIM(macAddress), ':', ''), '-', '')) = :mac LIMIT 1")
+    suspend fun getDeviceByHardware(mac: String, deviceType: DeviceType): TvDeviceEntity?
+
     @Query("SELECT * FROM tv_devices WHERE isDefault = 1 LIMIT 1")
     suspend fun getDefaultDevice(): TvDeviceEntity?
 
@@ -30,12 +38,23 @@ interface TvDeviceDao {
     // Serialize identity lookup and writes so concurrent discovery cannot create duplicates.
     @Transaction
     suspend fun saveDevice(device: TvDeviceEntity): Long {
-        val existing = if (device.id == 0L) getDeviceByIp(device.ipAddress) else getDeviceById(device.id)
+        val mac = WakeOnLan.formatMacAddress(device.macAddress)
+        val existing = if (device.id == 0L) {
+            // A DHCP address is a location, not a device identity. Keep the saved
+            // ID (and Sleep target) with its hardware, across address changes.
+            val sameHardware = mac?.let { getDeviceByHardware(it.replace(":", ""), device.deviceType) }
+            sameHardware ?: getDevicesAtAddress(device.ipAddress, device.deviceType).firstOrNull { candidate ->
+                val savedMac = WakeOnLan.formatMacAddress(candidate.macAddress)
+                mac == null || savedMac == null || mac == savedMac
+            }
+        } else getDeviceById(device.id)
         // A delayed update for a deleted TV must not change the remaining default.
         if (device.id != 0L && existing == null) return device.id
         val saved = device.copy(
             id = existing?.id ?: device.id,
-            authToken = device.authToken.ifBlank { existing?.authToken.orEmpty() },
+            // Metadata and discovery snapshots may predate a token renewal. Only
+            // updateAuthToken is allowed to replace an existing saved credential.
+            authToken = existing?.authToken?.ifBlank { device.authToken } ?: device.authToken,
             macAddress = device.macAddress.ifBlank { existing?.macAddress.orEmpty() },
             isDefault = device.isDefault || existing?.isDefault == true || getDefaultDevice() == null,
             isDemoMode = false

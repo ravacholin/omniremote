@@ -7,6 +7,7 @@ import com.example.data.model.RemoteKey
 import com.example.data.model.TvDeviceEntity
 import com.example.network.AndroidTvClient
 import com.example.network.SamsungTvClient
+import com.example.network.WakeOnLan
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -33,11 +34,16 @@ class TvSleepPowerOff(private val context: Context) {
     }
 
     private suspend fun androidPowerOff(device: TvDeviceEntity, canSend: () -> Boolean): Boolean {
+        val savedMac = WakeOnLan.formatMacAddress(device.macAddress)
+        if (savedMac != null) {
+            val observedMac = WakeOnLan.fetchMacFromTv(device.ipAddress, device.deviceType)
+            if (observedMac != null && observedMac != savedMac) return false
+        }
         // Discovery may have saved a Cast, ADB or pairing port. Use the same
         // Remote v2 control endpoint as the interactive remote, including for saved devices.
         val client = AndroidTvClient(context, TvTokenStore.getInstance(context))
         return try {
-            client.connect(device.ipAddress, device.port) && client.powerOff(canSend)
+            client.connect(device.ipAddress, device.port, device.id) && client.powerOff(canSend)
         } finally {
             client.disconnect()
         }
@@ -45,19 +51,18 @@ class TvSleepPowerOff(private val context: Context) {
 
     private suspend fun samsungPowerOff(device: TvDeviceEntity, canSend: () -> Boolean): Boolean {
         val store = TvTokenStore.getInstance(context)
-        val token = store.getSamsungToken(device.ipAddress, device.id, device.macAddress).ifBlank { device.authToken }
+        val token = store.getSamsungToken(device.ipAddress, device.id, device.macAddress, device.authToken)
         if (token.isBlank()) return false
         val ready = CompletableDeferred<Boolean>()
         val client = SamsungTvClient(
             tokenStore = store,
-            onTokenReceived = { store.saveSamsungToken(device.ipAddress, it, device.id, device.macAddress) },
             onConnectionChanged = { connected, error ->
                 if (connected) ready.complete(true) else if (error != null) ready.complete(false)
             },
             onWaitingAuthPrompt = { ready.complete(false) }
         )
         return try {
-            client.connect(device.ipAddress, 8002, token)
+            client.connect(device.ipAddress, 8002, token, device.id, device.macAddress)
             ready.await() && canSend() && client.sendKey(RemoteKey.POWER_OFF)
         } finally {
             // OkHttp drains queued messages before its graceful WebSocket close.

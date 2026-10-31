@@ -64,10 +64,12 @@ class UnifiedTvController(
     private val samsungClient = SamsungTvClient(
         tokenStore = tokenStore,
         onTokenReceived = { token ->
-            activeDevice = activeDevice?.copy(authToken = token)
             activeDevice?.let { dev ->
-                tokenStore?.saveSamsungToken(dev.ipAddress, token, dev.id, dev.macAddress)
-                onTokenReceived?.invoke(dev.id, token)
+                // The client already persisted this event. A separate Sleep session
+                // may have renewed it again before this callback runs.
+                val latest = tokenStore?.getSamsungToken(dev.ipAddress, dev.id, dev.macAddress, token) ?: token
+                activeDevice = dev.copy(authToken = latest)
+                onTokenReceived?.invoke(dev.id, latest)
             }
         },
         onConnectionChanged = { connected, error ->
@@ -248,13 +250,9 @@ class UnifiedTvController(
     fun setActiveDevice(device: TvDeviceEntity) {
         // Resolve token from persistent store to ensure latest token is always present
         val effectiveDevice = if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
-            val savedToken = tokenStore?.getSamsungToken(device.ipAddress, device.id, device.macAddress) ?: ""
-            val tokenToUse = if (savedToken.isNotBlank()) savedToken else device.authToken
-            if (tokenToUse.isNotBlank() && device.authToken != tokenToUse) {
-                device.copy(authToken = tokenToUse)
-            } else {
-                device
-            }
+            val tokenToUse = tokenStore?.getSamsungToken(device.ipAddress, device.id, device.macAddress, device.authToken)
+                ?: device.authToken
+            device.copy(authToken = tokenToUse)
         } else {
             device
         }
@@ -284,13 +282,13 @@ class UnifiedTvController(
         when (device.deviceType) {
             DeviceType.SAMSUNG_TIZEN -> {
                 // Re-read on every attempt: a retry must use a token accepted since the last one.
-                val token = tokenStore?.getSamsungToken(device.ipAddress, device.id, device.macAddress).orEmpty()
-                    .ifBlank { device.authToken }
-                samsungClient.connect(device.ipAddress, 8002, token)
+                val token = tokenStore?.getSamsungToken(device.ipAddress, device.id, device.macAddress, device.authToken)
+                    ?: device.authToken
+                samsungClient.connect(device.ipAddress, 8002, token, device.id, device.macAddress)
             }
             DeviceType.ANDROID_TV -> {
                 connectionJob = scope.launch {
-                    val ok = androidClient.connect(device.ipAddress, device.port)
+                    val ok = androidClient.connect(device.ipAddress, device.port, device.id)
                     if (ok) addLog(device.name, "Conectado a ${device.name}", true)
                     // The client emits the specific connection or authorization error.
                 }
@@ -515,10 +513,8 @@ class UnifiedTvController(
             activeDevice = activeDevice?.copy(macAddress = mac)
             onDeviceMacResolved?.invoke(device.id, mac)
             if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
-                // Save the token this session is using; looking it up by the new MAC could
-                // return an older token and overwrite the one the TV just issued.
                 val token = samsungClient.token.ifBlank { activeDevice?.authToken.orEmpty() }
-                tokenStore?.saveSamsungToken(device.ipAddress, token, device.id, mac)
+                tokenStore?.bindSamsungIdentity(device.ipAddress, device.id, mac, token)
             }
             addLog(device.name, "Dirección MAC guardada para Wake-on-LAN: $mac", true)
         }

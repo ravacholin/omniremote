@@ -20,26 +20,28 @@ class TvTokenStore(context: Context) : MacLoginStore {
     )
 
     fun saveSamsungToken(ipAddress: String, token: String, deviceId: Long? = null, macAddress: String? = null) {
-        if (token.isBlank()) return
-        val cleanIp = ipAddress.trim()
-        Log.d(TAG, "Persisting Samsung TV token for IP: $cleanIp (length: ${token.length})")
+        synchronized(CREDENTIAL_LOCK) {
+            if (token.isBlank()) return
+            val cleanIp = ipAddress.trim()
+            Log.d(TAG, "Persisting Samsung TV token for IP: $cleanIp (length: ${token.length})")
 
-        // Every write gets a newer sequence number so lookups can tell which copy is current.
-        val seq = prefs.getLong(KEY_SEQ, 0) + 1
-        prefs.edit().apply {
-            putLong(KEY_SEQ, seq)
-            putToken(KEY_PREFIX_IP + cleanIp, token, seq)
-            if (deviceId != null && deviceId > 0) {
-                putToken(KEY_PREFIX_ID + deviceId, token, seq)
-                putLong(KEY_IP_OWNER_ID + cleanIp, deviceId)
+            // Every write gets a newer sequence number so lookups can tell which copy is current.
+            val seq = prefs.getLong(KEY_SEQ, 0) + 1
+            prefs.edit().apply {
+                putLong(KEY_SEQ, seq)
+                putToken(KEY_PREFIX_IP + cleanIp, token, seq)
+                if (deviceId != null && deviceId > 0) {
+                    putToken(KEY_PREFIX_ID + deviceId, token, seq)
+                    putLong(KEY_IP_OWNER_ID + cleanIp, deviceId)
+                }
+                WakeOnLan.formatMacAddress(macAddress)?.let { mac ->
+                    putToken(KEY_PREFIX_MAC + mac, token, seq)
+                    putString(KEY_IP_OWNER_MAC + cleanIp, mac)
+                    if (deviceId != null && deviceId > 0) putString(KEY_ID_OWNER_MAC + deviceId, mac)
+                }
+                // Written synchronously: losing a fresh token means the TV asks for permission again.
+                if (!commit()) Log.w(TAG, "Could not persist Samsung TV token for $cleanIp")
             }
-            WakeOnLan.formatMacAddress(macAddress)?.let { mac ->
-                putToken(KEY_PREFIX_MAC + mac, token, seq)
-                putString(KEY_IP_OWNER_MAC + cleanIp, mac)
-                if (deviceId != null && deviceId > 0) putString(KEY_ID_OWNER_MAC + deviceId, mac)
-            }
-            // Written synchronously: losing a fresh token means the TV asks for permission again.
-            if (!commit()) Log.w(TAG, "Could not persist Samsung TV token for $cleanIp")
         }
     }
 
@@ -53,7 +55,8 @@ class TvTokenStore(context: Context) : MacLoginStore {
      * Samsung TVs can issue a new token on reconnect, so an older copy stored under
      * another identity (IP, id or MAC) must never win over the latest one.
      */
-    fun getSamsungToken(ipAddress: String, deviceId: Long? = null, macAddress: String? = null): String {
+    fun getSamsungToken(ipAddress: String, deviceId: Long? = null, macAddress: String? = null,
+        fallbackToken: String = ""): String = synchronized(CREDENTIAL_LOCK) {
         val cleanIp = ipAddress.trim()
         val requestedMac = WakeOnLan.formatMacAddress(macAddress)
         val keys = mutableListOf<String>()
@@ -64,6 +67,7 @@ class TvTokenStore(context: Context) : MacLoginStore {
         }
         val hasMacToken = keys.any { !prefs.getString(it, null).isNullOrBlank() }
         var conflict = false
+        var allowFallback = true
         if (deviceId != null && deviceId > 0) {
             val owner = prefs.getString(KEY_ID_OWNER_MAC + deviceId, null)
             if (owner != null && requestedMac != null && owner != requestedMac) conflict = true
@@ -75,16 +79,25 @@ class TvTokenStore(context: Context) : MacLoginStore {
             val macMismatch = requestedMac != null && ownerMac != null && requestedMac != ownerMac
             val idMismatch = deviceId != null && deviceId > 0 && ownerId > 0 && deviceId != ownerId
             if (!macMismatch && !idMismatch) keys += KEY_PREFIX_IP + cleanIp
+            else allowFallback = false
         } else if (!hasMacToken) {
-            return ""
+            return@synchronized ""
         }
         // Ties (tokens saved before sequence numbers existed) keep the MAC > id > IP order.
-        return keys.mapNotNull { key -> prefs.getString(key, null)?.takeIf { it.isNotBlank() }?.let { key to it } }
+        keys.mapNotNull { key -> prefs.getString(key, null)?.takeIf { it.isNotBlank() }?.let { key to it } }
             .maxByOrNull { (key, _) -> prefs.getLong(KEY_PREFIX_SEQ + key, 0) }
-            ?.second.orEmpty()
+            ?.second ?: if (!conflict && allowFallback) fallbackToken else ""
     }
 
-    fun clearSamsungToken(ipAddress: String) {
+    /** Bind newly discovered hardware without promoting an older session's token. */
+    fun bindSamsungIdentity(ipAddress: String, deviceId: Long, macAddress: String,
+        fallbackToken: String = ""): String = synchronized(CREDENTIAL_LOCK) {
+        val latest = getSamsungToken(ipAddress, deviceId, macAddress, fallbackToken)
+        saveSamsungToken(ipAddress, latest, deviceId, macAddress)
+        latest
+    }
+
+    fun clearSamsungToken(ipAddress: String) = synchronized(CREDENTIAL_LOCK) {
         val cleanIp = ipAddress.trim()
         prefs.edit().apply {
             remove(KEY_PREFIX_IP + cleanIp)
@@ -100,7 +113,7 @@ class TvTokenStore(context: Context) : MacLoginStore {
             .toSet()
     }
 
-    fun clearAllTokens() {
+    fun clearAllTokens() = synchronized(CREDENTIAL_LOCK) {
         // The client identity is shared by all Android TVs. Rotating it would invalidate
         // their existing authorizations, including after a process restart.
         val editor = prefs.edit()
@@ -117,6 +130,33 @@ class TvTokenStore(context: Context) : MacLoginStore {
     fun setAndroidTvPaired(ipAddress: String, paired: Boolean) {
         val cleanIp = ipAddress.trim()
         prefs.edit().putBoolean(KEY_PREFIX_ANDROID_PAIRED + cleanIp, paired).apply()
+    }
+
+    fun getAndroidTvServerKey(deviceId: Long): String? = synchronized(CREDENTIAL_LOCK) {
+        prefs.getString(KEY_PREFIX_ANDROID_SERVER + deviceId, null)
+    }
+
+    /** First authenticated connection records a server; later connections must match. */
+    fun verifyOrRememberAndroidTvServerKey(deviceId: Long, key: String): Boolean = synchronized(CREDENTIAL_LOCK) {
+        val saved = getAndroidTvServerKey(deviceId)
+        if (saved != null) saved == key else {
+            saveAndroidTvServerKey(deviceId, key)
+            true
+        }
+    }
+
+    fun saveAndroidTvServerKey(deviceId: Long, key: String) = synchronized(CREDENTIAL_LOCK) {
+        require(deviceId > 0 && key.isNotBlank())
+        check(prefs.edit().putString(KEY_PREFIX_ANDROID_SERVER + deviceId, key).commit()) {
+            "Could not persist Android TV server identity"
+        }
+    }
+
+    /** A confirmed PIN authorizes registering the remote service's identity again. */
+    fun forgetAndroidTvServerKeyAfterPairing(deviceId: Long) = synchronized(CREDENTIAL_LOCK) {
+        check(prefs.edit().remove(KEY_PREFIX_ANDROID_SERVER + deviceId).commit()) {
+            "Could not update Android TV server identity after pairing"
+        }
     }
 
     fun saveCertData(certDerBase64: String, privateKeyPkcs8Base64: String) {
@@ -157,6 +197,7 @@ class TvTokenStore(context: Context) : MacLoginStore {
     }
 
     companion object {
+        private val CREDENTIAL_LOCK = Any()
         private const val TAG = "TvTokenStore"
         private const val PREFS_NAME = "omni_remote_tokens"
         private const val KEY_PREFIX_IP = "samsung_token_ip_"
@@ -166,6 +207,7 @@ class TvTokenStore(context: Context) : MacLoginStore {
         private const val KEY_IP_OWNER_ID = "samsung_ip_owner_id_"
         private const val KEY_ID_OWNER_MAC = "samsung_id_owner_mac_"
         private const val KEY_PREFIX_ANDROID_PAIRED = "android_tv_paired_"
+        private const val KEY_PREFIX_ANDROID_SERVER = "android_tv_server_key_id_"
         private const val KEY_CLIENT_CERT_DER = "android_tv_client_cert_der"
         private const val KEY_CLIENT_KEY_PKCS8 = "android_tv_client_key_pkcs8"
         private const val KEY_PREFIX_MAC_LOGIN = "mac_login_"

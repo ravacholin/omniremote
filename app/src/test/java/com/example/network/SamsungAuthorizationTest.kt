@@ -77,6 +77,14 @@ class SamsungAuthorizationTest {
         assertTrue(restored.sendKey(RemoteKey.HOME))
     }
 
+    @Test fun `explicitly empty credential does not fall back to an IP token`() {
+        store.saveSamsungToken(ip, "belongs-to-another-tv", 1, "AA:BB:CC:DD:EE:10")
+        val client = client()
+        client.connect(ip, token = "")
+        assertNull(factory.sockets.single().request().url.queryParameter("token"))
+        client.disconnect()
+    }
+
     @Test fun `transport failure releases authorization wait so keys can reconnect with saved token`() {
         store.saveSamsungToken(ip, "12345678")
         val client = client()
