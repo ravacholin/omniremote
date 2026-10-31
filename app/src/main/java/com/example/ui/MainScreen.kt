@@ -86,6 +86,8 @@ import com.example.ui.components.MacLoginDialog
 import com.example.ui.components.MacRemotePanel
 import com.example.ui.components.DeviceManagerDialog
 import com.example.ui.components.DeviceSelectorBar
+import com.example.ui.components.SleepTimerNotice
+import com.example.ui.components.rememberSleepTimerRemainingSeconds
 import com.example.ui.components.RemoteIcons
 import com.example.ui.components.HapticUtil
 import com.example.ui.components.GridGap
@@ -142,6 +144,7 @@ fun MainScreen(
     val isMacLoginInProgress by viewModel.isMacLoginInProgress.collectAsStateWithLifecycle()
     val macLoginError by viewModel.macLoginError.collectAsStateWithLifecycle()
     val sleepTimer by viewModel.sleepTimer.collectAsStateWithLifecycle()
+    val sleepRemainingSeconds = rememberSleepTimerRemainingSeconds(sleepTimer)
     val sleepTimerResult by viewModel.sleepTimerResult.collectAsStateWithLifecycle()
     var showSleepPermission by rememberSaveable { mutableStateOf(false) }
     var pendingSleepDeviceId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -276,7 +279,7 @@ fun MainScreen(
                         HapticUtil.triggerKeyHaptic(context)
                         viewModel.powerToggle()
                     },
-                    sleepMinutes = sleepTimer?.minutes,
+                    sleepRemainingSeconds = sleepRemainingSeconds,
                     onSleepClick = {
                         HapticUtil.triggerKeyHaptic(context)
                         if (!viewModel.cycleSleepTimer()) {
@@ -287,11 +290,10 @@ fun MainScreen(
                 )
 
                 sleepTimer?.let { timer ->
-                    Notice(
-                        label = "Sleep · ${timer.minutes} min",
-                        message = timer.deviceName,
-                        modifier = Modifier.testTag("sleep_timer_notice"),
-                        actions = listOf(NoticeAction("Cancelar") { viewModel.cancelSleepTimer() })
+                    SleepTimerNotice(
+                        timer = timer,
+                        remainingSeconds = sleepRemainingSeconds ?: 0L,
+                        onCancel = { viewModel.cancelSleepTimer() }
                     )
                 }
                 sleepTimerResult?.let { result ->

@@ -22,7 +22,13 @@ data class SleepTimerState(
     val minutes: Int,
     val deadlineElapsed: Long,
     val bootCount: Int
-)
+) {
+    /** Use the alarm's monotonic deadline, including time spent with the phone asleep. */
+    fun remainingSeconds(nowElapsed: Long = SystemClock.elapsedRealtime()): Long {
+        val millis = (deadlineElapsed - nowElapsed).coerceAtLeast(0L)
+        return millis / 1_000 + if (millis % 1_000 == 0L) 0 else 1
+    }
+}
 
 /** One OS-owned timer. No Activity, ViewModel or live TV session needs to survive. */
 class SleepTimerManager(context: Context) {

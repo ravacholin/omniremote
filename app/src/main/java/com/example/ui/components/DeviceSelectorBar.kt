@@ -69,7 +69,7 @@ fun DeviceSelectorBar(
     onOpenScan: () -> Unit,
     onPowerClick: () -> Unit,
     modifier: Modifier = Modifier,
-    sleepMinutes: Int? = null,
+    sleepRemainingSeconds: Long? = null,
     onSleepClick: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -274,7 +274,7 @@ fun DeviceSelectorBar(
 
             if (activeDevice?.deviceType != DeviceType.MACOS) {
                 SleepTimerButton(
-                    minutes = sleepMinutes,
+                    remainingSeconds = sleepRemainingSeconds,
                     enabled = activeDevice != null,
                     onClick = onSleepClick
                 )
