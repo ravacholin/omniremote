@@ -45,3 +45,14 @@ a 15 segundos, conservando toda la coordinación. El valor único de BuildConfig
 controla tanto el temporizador como el mensaje. El APK de 30 segundos se conserva
 y ambas variantes mantienen versionCode 9 y la misma firma para poder alternar
 sin borrar datos. El comportamiento físico con 15 segundos sigue pendiente.
+
+## Resultado de 15 segundos y variante de 5 segundos
+
+El usuario confirma que la variante de 15 segundos funciona perfectamente y pide
+probar si cinco segundos alcanzan. Se prepara **1.7-wol5-test (9)** cambiando
+únicamente el valor de espera a 5000 ms y la identificación de la variante.
+La coordinación de los intentos y la identidad de autorización se conservan.
+
+La aceptación física con cinco segundos no se deduce de los resultados con 15 o
+30 segundos. Sigue pendiente de comprobación. Se conserva el APK de 15 segundos
+que el usuario confirmó, con la misma firma y versionCode, como alternativa.
