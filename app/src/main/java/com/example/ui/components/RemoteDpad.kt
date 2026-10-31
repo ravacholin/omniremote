@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -71,13 +72,15 @@ fun RemoteDpad(
         val navHeight = cell + GridGap * 2
         val controlsHeight = cell * 4 + GridGap * 5
         val gap = if (isShortScreen) 12.dp else 20.dp
+        val faderWidth = if (isShortScreen) 64.dp else 76.dp
+        val faderGap = 12.dp
 
-        // The pad takes whatever height the rows leave, but never more than the width.
+        // The pad takes whatever height the rows leave, but never more than the width beside the fader.
         val padSize = if (isShortScreen) {
             216.dp
         } else {
             (maxHeight - navHeight - controlsHeight - gap * 2).coerceIn(192.dp, 320.dp)
-        }.coerceAtMost(maxWidth)
+        }.coerceAtMost(maxWidth - faderWidth - faderGap)
 
         Column(
             modifier = Modifier
@@ -108,97 +111,107 @@ fun RemoteDpad(
                 }
             }
 
-            // Directional pad: a ruled 3×3 field with an inverted OK at its centre.
-            Column(
-                modifier = Modifier
-                    .size(padSize)
-                    .hairlineGrid()
-                    .testTag("dpad_circle")
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(
-                                requireUnconsumed = false,
-                                pass = PointerEventPass.Initial
-                            )
-                            var swiping = false
-                            var displacement = Offset.Zero
-                            var now = down.uptimeMillis
-                            var nextRepeatAt = Long.MAX_VALUE
-                            var repeats = 0
-                            fun sendSwipe() {
-                                HapticUtil.triggerKeyHaptic(context)
-                                currentOnKeyPress(swipeDirection(displacement))
-                            }
-                            // Observe before child clicks and surrounding scroll containers.
-                            // Leave taps alone; once dragging, cancel the child click.
-                            // Holding at the end of a swipe repeats it, steered by the finger.
-                            while (true) {
-                                val event = if (swiping) {
-                                    withTimeoutOrNull((nextRepeatAt - now).coerceAtLeast(0)) {
+            // Volume jog strip beside the pad, within reach of the same thumb.
+            Row(
+                modifier = Modifier.fillMaxWidth().height(padSize),
+                horizontalArrangement = Arrangement.spacedBy(faderGap, Alignment.CenterHorizontally)
+            ) {
+                VolumeJogFader(
+                    onStep = { key -> handlePress(key) },
+                    modifier = Modifier.width(faderWidth).fillMaxHeight()
+                )
+                // Directional pad: a ruled 3×3 field with an inverted OK at its centre.
+                Column(
+                    modifier = Modifier
+                        .size(padSize)
+                        .hairlineGrid()
+                        .testTag("dpad_circle")
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial
+                                )
+                                var swiping = false
+                                var displacement = Offset.Zero
+                                var now = down.uptimeMillis
+                                var nextRepeatAt = Long.MAX_VALUE
+                                var repeats = 0
+                                fun sendSwipe() {
+                                    HapticUtil.triggerKeyHaptic(context)
+                                    currentOnKeyPress(swipeDirection(displacement))
+                                }
+                                // Observe before child clicks and surrounding scroll containers.
+                                // Leave taps alone; once dragging, cancel the child click.
+                                // Holding at the end of a swipe repeats it, steered by the finger.
+                                while (true) {
+                                    val event = if (swiping) {
+                                        withTimeoutOrNull((nextRepeatAt - now).coerceAtLeast(0)) {
+                                            awaitPointerEvent(PointerEventPass.Initial)
+                                        }
+                                    } else {
                                         awaitPointerEvent(PointerEventPass.Initial)
                                     }
-                                } else {
-                                    awaitPointerEvent(PointerEventPass.Initial)
-                                }
-                                if (event == null) {
-                                    now = nextRepeatAt
-                                    repeats++
-                                    sendSwipe()
-                                    nextRepeatAt = now + KeyRepeat.intervalAfter(repeats)
-                                    continue
-                                }
-                                val change = event.changes.firstOrNull { it.id == down.id }
-                                    ?: break
-                                if (change.isConsumed) break
-                                now = change.uptimeMillis
-                                displacement = change.position - down.position
-                                if (!swiping && displacement.getDistance() > viewConfiguration.touchSlop) {
-                                    swiping = true
-                                    nextRepeatAt = now + KeyRepeat.HOLD_DELAY_MS
-                                }
-                                if (swiping) change.consume()
-                                if (!change.pressed) {
-                                    if (swiping && repeats == 0 && displacement != Offset.Zero) {
+                                    if (event == null) {
+                                        now = nextRepeatAt
+                                        repeats++
                                         sendSwipe()
+                                        nextRepeatAt = now + KeyRepeat.intervalAfter(repeats)
+                                        continue
                                     }
-                                    break
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                        ?: break
+                                    if (change.isConsumed) break
+                                    now = change.uptimeMillis
+                                    displacement = change.position - down.position
+                                    if (!swiping && displacement.getDistance() > viewConfiguration.touchSlop) {
+                                        swiping = true
+                                        nextRepeatAt = now + KeyRepeat.HOLD_DELAY_MS
+                                    }
+                                    if (swiping) change.consume()
+                                    if (!change.pressed) {
+                                        if (swiping && repeats == 0 && displacement != Offset.Zero) {
+                                            sendSwipe()
+                                        }
+                                        break
+                                    }
                                 }
                             }
-                        }
-                    },
-                verticalArrangement = Arrangement.spacedBy(GridGap)
-            ) {
-                val arrowSize = if (padSize >= 260.dp) 30.dp else 26.dp
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(GridGap)) {
-                    PadCorner()
-                    IconKey(RemoteIcons.Up, "Up", { handlePress(RemoteKey.UP) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_up", iconSize = arrowSize, repeatable = true)
-                    PadCorner()
-                }
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(GridGap)) {
-                    IconKey(RemoteIcons.Left, "Left", { handlePress(RemoteKey.LEFT) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_left", iconSize = arrowSize, repeatable = true)
-                    GridKey(
-                        onClick = { handlePress(RemoteKey.ENTER) },
-                        inverted = true,
-                        testTag = "key_dpad_enter",
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    ) { tint ->
-                        Text(
-                            text = "OK",
-                            style = MaterialTheme.typography.headlineSmall.copy(
-                                fontWeight = FontWeight.Light,
-                                letterSpacing = 1.sp
-                            ),
-                            color = tint
-                        )
+                        },
+                    verticalArrangement = Arrangement.spacedBy(GridGap)
+                ) {
+                    val arrowSize = if (padSize >= 260.dp) 30.dp else 26.dp
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(GridGap)) {
+                        PadCorner()
+                        IconKey(RemoteIcons.Up, "Up", { handlePress(RemoteKey.UP) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_up", iconSize = arrowSize, repeatable = true)
+                        PadCorner()
                     }
-                    IconKey(RemoteIcons.Right, "Right", { handlePress(RemoteKey.RIGHT) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_right", iconSize = arrowSize, repeatable = true)
-                }
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(GridGap)) {
-                    PadCorner()
-                    IconKey(RemoteIcons.Down, "Down", { handlePress(RemoteKey.DOWN) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_down", iconSize = arrowSize, repeatable = true)
-                    PadCorner()
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(GridGap)) {
+                        IconKey(RemoteIcons.Left, "Left", { handlePress(RemoteKey.LEFT) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_left", iconSize = arrowSize, repeatable = true)
+                        GridKey(
+                            onClick = { handlePress(RemoteKey.ENTER) },
+                            inverted = true,
+                            testTag = "key_dpad_enter",
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        ) { tint ->
+                            Text(
+                                text = "OK",
+                                style = MaterialTheme.typography.headlineSmall.copy(
+                                    fontWeight = FontWeight.Light,
+                                    letterSpacing = 1.sp
+                                ),
+                                color = tint
+                            )
+                        }
+                        IconKey(RemoteIcons.Right, "Right", { handlePress(RemoteKey.RIGHT) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_right", iconSize = arrowSize, repeatable = true)
+                    }
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(GridGap)) {
+                        PadCorner()
+                        IconKey(RemoteIcons.Down, "Down", { handlePress(RemoteKey.DOWN) }, Modifier.weight(1f).fillMaxHeight(), "key_dpad_down", iconSize = arrowSize, repeatable = true)
+                        PadCorner()
+                    }
                 }
             }
 

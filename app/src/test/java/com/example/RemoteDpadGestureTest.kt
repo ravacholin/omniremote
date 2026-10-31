@@ -224,4 +224,37 @@ class RemoteDpadGestureTest {
         assertTrue(KeyRepeat.intervalAfter(4) < KeyRepeat.intervalAfter(1))
         assertEquals(KeyRepeat.MIN_INTERVAL_MS, KeyRepeat.intervalAfter(100))
     }
+
+    @Test fun draggingVolumeJogUpStepsVolumeUp() {
+        showDpad()
+        compose.onNodeWithTag("volume_jog").performTouchInput {
+            down(center)
+            moveTo(center + Offset(0f, -200f), delayMillis = 100)
+            up()
+        }
+        compose.runOnIdle {
+            assertTrue("expected several steps, got $keys", keys.size >= 2)
+            assertTrue(keys.all { it == RemoteKey.VOL_UP })
+        }
+    }
+
+    @Test fun draggingVolumeJogDownStepsVolumeDown() {
+        showDpad()
+        compose.onNodeWithTag("volume_jog").performTouchInput {
+            down(center)
+            moveTo(center + Offset(0f, 200f), delayMillis = 100)
+            up()
+        }
+        compose.runOnIdle {
+            assertTrue("expected several steps, got $keys", keys.size >= 2)
+            assertTrue(keys.all { it == RemoteKey.VOL_DOWN })
+        }
+    }
+
+    @Test fun tappingVolumeJogHalvesStepsOnce() {
+        showDpad()
+        compose.onNodeWithTag("volume_jog").performTouchInput { click(Offset(centerX, height * 0.2f)) }
+        compose.onNodeWithTag("volume_jog").performTouchInput { click(Offset(centerX, height * 0.8f)) }
+        compose.runOnIdle { assertEquals(listOf(RemoteKey.VOL_UP, RemoteKey.VOL_DOWN), keys) }
+    }
 }
