@@ -55,7 +55,7 @@ class SamsungWakeFlowTest {
                 runCurrent()
                 assertTrue("Old $event must not replace the current wake state",
                     controller.connectionState.value is ConnectionState.Connecting)
-                advanceTimeBy(29_999)
+                advanceTimeBy(14_999)
                 runCurrent()
                 controller.reconnect()
                 controller.setActiveDevice(device)
@@ -100,7 +100,7 @@ class SamsungWakeFlowTest {
             while (model.powerOnStatusMessage.value?.startsWith("Prueba Samsung") != true &&
                 System.nanoTime() < deadline) Thread.sleep(10)
             assertTrue("The in-app WOL operation must complete", model.powerOnStatusMessage.value.orEmpty().startsWith("Prueba Samsung"))
-            advanceTimeBy(30_000)
+            advanceTimeBy(15_000)
             runCurrent()
             assertEquals(2, sockets.size)
             val resumed = sockets.last()

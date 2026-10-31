@@ -54,3 +54,13 @@ Validación de la variante: 196 pruebas en 34 suites, 0 fallos, 0 errores, 0 omi
 
 - [ ] Obtener el resultado físico de esta variante usando el mismo botón WOL.
 - [ ] Confirmar o descartar el efecto temporal antes de proponer una solución permanente.
+
+## Reducción a 15 segundos solicitada por el usuario
+
+El usuario confirma que la variante de 30 s funciona: conserva la credencial guardada y la TV autoriza automáticamente 75 ms después de abrir el WebSocket, sin emitir otro token. Es un resultado físico positivo de ese recorrido, no una medición del mínimo ni una explicación interna del firmware.
+
+Se prepara 1.7-wol15-test (9), con una única configuración de 15000 ms compartida por el temporizador y el mensaje. Se conserva el APK de 30 s; se verificó igualdad de aplicación, versionCode y certificado de firma entre las dos variantes para mantener la posibilidad de alternarlas sin borrar datos. Dos pruebas de flujo fallaron al exigir 15 s con el valor anterior y pasan con la nueva configuración.
+
+Validación final: 196 pruebas, 34 suites, sin fallos, errores u omisiones; assembleDebug correcto y revisión independiente sin hallazgos importantes.
+
+- [ ] Confirmar en la TV física si 15 segundos mantienen la autorización automática.

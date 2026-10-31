@@ -97,3 +97,15 @@ La pausa es deliberada y diagnóstica. No demuestra que el arranque sea la causa
 se presenta como una solución permanente. Las pruebas locales verifican la
 coordinación de la app; la respuesta del firmware requiere el siguiente registro
 del usuario en su TV física.
+
+## Variante 1.7-wol15-test (9): reducir la espera
+
+El usuario confirmó funcionamiento sin permiso repetido con la variante de 30 s.
+En ese ciclo Samsung aceptó la misma credencial en 75 ms después de abrir el
+WebSocket, sin emitir otro token. La demora programada es un margen de arranque,
+no el tiempo de autenticación ni un mínimo medido.
+
+La siguiente variante prueba 15 s usando el mismo botón y la misma coordinación.
+La pantalla muestra el tiempo configurado. Se conserva el APK de 30 s que ya
+funcionó; ambas variantes usan la misma firma y versionCode 9. El siguiente
+resultado físico permitirá comprobar si esta reducción mantiene el funcionamiento.

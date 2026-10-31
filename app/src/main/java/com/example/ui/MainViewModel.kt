@@ -1,5 +1,6 @@
 package com.example.ui
 
+import com.example.BuildConfig
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -451,7 +452,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             _powerOnStatusMessage.value = if (samsungProbe)
-                "Prueba Samsung: WOL enviado. La conexión se intentará automáticamente a los 30 segundos."
+                "Prueba Samsung: WOL enviado. La conexión se intentará automáticamente a los ${BuildConfig.SAMSUNG_WAKE_RECONNECT_DELAY_MS / 1000} segundos."
             else result.message
 
             // Polling loop to auto-connect once TV hardware powers up network interfaces
