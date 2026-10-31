@@ -9,6 +9,7 @@ import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
 import com.example.data.model.TvDeviceEntity
 import com.example.sleep.SleepTimerManager
+import com.example.sleep.SleepTimerState
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -50,6 +51,17 @@ class SleepTimerTest {
         assertNull(manager.timer.value)
         assertTrue(shadowOf(alarms).scheduledAlarms.isEmpty())
         assertEquals(30, manager.advance(tv)!!.minutes)
+    }
+
+    @Test fun `remaining seconds round up until the exact deadline and never become negative`() {
+        val timer = SleepTimerState("countdown", 7, "Living", 30, 1_800_000L, 0)
+        for ((elapsed, seconds) in listOf(
+            0L to 1_800L, 1L to 1_800L, 999L to 1_800L, 1_000L to 1_799L,
+            65_000L to 1_735L, 1_799_000L to 1L, 1_799_999L to 1L,
+            1_800_000L to 0L, 2_000_000L to 0L
+        )) {
+            assertEquals("At elapsed $elapsed", seconds, timer.remainingSeconds(elapsed))
+        }
     }
 
     @Test fun `restored timer retains its TV regardless of a different selection`() {

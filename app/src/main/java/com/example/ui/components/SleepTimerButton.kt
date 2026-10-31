@@ -21,8 +21,8 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.Void
 
 @Composable
-fun SleepTimerButton(minutes: Int?, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val active = minutes != null
+fun SleepTimerButton(remainingSeconds: Long?, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val active = remainingSeconds != null
     val tint = when { !enabled -> TextMuted; active -> Void; else -> Paper }
     Column(
         modifier = modifier
@@ -30,13 +30,17 @@ fun SleepTimerButton(minutes: Int?, enabled: Boolean, onClick: () -> Unit, modif
             .background(if (active) Paper else Void)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics(mergeDescendants = true) {
-                contentDescription = "Sleep: ${minutes?.let { "$it minutos" } ?: "OFF"}"
+                contentDescription = when {
+                    remainingSeconds == null -> "Sleep: OFF"
+                    remainingSeconds > 0 -> "Sleep: quedan ${formatSleepCountdown(remainingSeconds)}"
+                    else -> "Sleep: vencido, esperando apagado"
+                }
             }
             .testTag("sleep_button"),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)
     ) {
         Icon(Icons.Outlined.Bedtime, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp))
-        MonoLabel(minutes?.let { "${it}m" } ?: "Sleep", color = tint)
+        MonoLabel(remainingSeconds?.let { formatSleepCountdown(it) } ?: "Sleep", color = tint)
     }
 }
