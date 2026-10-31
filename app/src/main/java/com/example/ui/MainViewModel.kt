@@ -431,6 +431,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun powerOnTv() {
         val device = _activeDevice.value ?: return
+        controller.recordWakeRequest()
         viewModelScope.launch {
             _powerOnStatusMessage.value = "Enviando ráfaga Wake-on-LAN a ${device.name}..."
             val result = com.example.network.WakeOnLan.powerOnTv(device, localSubnetPrefix, getApplication())
@@ -505,6 +506,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendWakeOnLan(device: TvDeviceEntity) {
+        controller.recordWakeRequest(device)
         viewModelScope.launch {
             _powerOnStatusMessage.value = "Enviando ráfaga Wake-on-LAN a ${device.name}..."
             val result = com.example.network.WakeOnLan.powerOnTv(device, localSubnetPrefix, getApplication())

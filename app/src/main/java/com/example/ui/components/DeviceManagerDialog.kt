@@ -97,6 +97,7 @@ fun DeviceManagerDialog(
     isHapticEnabled: Boolean = true,
     onToggleHaptic: (Boolean) -> Unit = {},
     onClearSavedTokens: () -> Unit = {},
+    onCopySamsungDiagnostics: () -> Unit = {},
     onDismiss: () -> Unit,
     onSelectDevice: (TvDeviceEntity) -> Unit,
     onSaveDevice: (TvDeviceEntity) -> Unit,
@@ -1109,7 +1110,7 @@ fun DeviceManagerDialog(
                                                 )
                                             )
                                             Text(
-                                                text = "Auto-Authorization Active",
+                                                text = "Credenciales guardadas por TV",
                                                 style = MaterialTheme.typography.labelSmall.copy(
                                                     color = StatusGreen,
                                                     fontWeight = FontWeight.SemiBold,
@@ -1121,7 +1122,7 @@ fun DeviceManagerDialog(
 
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Text(
-                                        text = "When your Samsung TV grants authorization, OmniRemote permanently locks in your security token. Subsequent reconnects and app launches use this token directly so you never see the TV permission dialog again.",
+                                        text = "La app reutiliza la autorización recibida de cada TV. Si vuelve a pedir permiso, copiá el diagnóstico de la conexión para comprobar qué ocurrió.",
                                         style = MaterialTheme.typography.bodySmall.copy(
                                             color = TextSecondary,
                                             fontSize = 12.sp,
@@ -1130,6 +1131,13 @@ fun DeviceManagerDialog(
                                     )
 
                                     Spacer(modifier = Modifier.height(12.dp))
+                                    OutlinedButton(
+                                        onClick = onCopySamsungDiagnostics,
+                                        modifier = Modifier.fillMaxWidth().testTag("copy_samsung_diagnostics"),
+                                        shape = Sharp
+                                    ) {
+                                        Text("Copiar diagnóstico Samsung", fontSize = 11.sp)
+                                    }
                                     OutlinedButton(
                                         onClick = onClearSavedTokens,
                                         modifier = Modifier

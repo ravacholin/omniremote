@@ -480,6 +480,12 @@ fun MainScreen(
         isHapticEnabled = isHapticEnabled,
         onToggleHaptic = { enabled -> viewModel.setHapticEnabled(enabled) },
         onClearSavedTokens = { viewModel.clearSavedTokens() },
+        onCopySamsungDiagnostics = {
+            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Diagnóstico Samsung",
+                com.example.network.SamsungConnectionDiagnostics(context).report()))
+            Toast.makeText(context, "Diagnóstico copiado sin tokens", Toast.LENGTH_SHORT).show()
+        },
         onDismiss = { viewModel.setDeviceManagerOpen(false) },
         onSelectDevice = { dev ->
             HapticUtil.triggerKeyHaptic(context)
