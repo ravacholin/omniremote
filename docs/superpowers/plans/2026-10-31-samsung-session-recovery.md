@@ -64,3 +64,11 @@ Se prepara 1.7-wol15-test (9), con una única configuración de 15000 ms compart
 Validación final: 196 pruebas, 34 suites, sin fallos, errores u omisiones; assembleDebug correcto y revisión independiente sin hallazgos importantes.
 
 - [ ] Confirmar en la TV física si 15 segundos mantienen la autorización automática.
+
+## Variante de cinco segundos solicitada por el usuario
+
+El usuario confirma funcionamiento perfecto con la variante de 15 s y pregunta si cinco segundos alcanzarían. Se prepara 1.7-wol5-test (9), cambiando solo el valor de BuildConfig a 5000 ms y la identificación de la variante. Se conserva el APK confirmado de 15 s; aplicación, versionCode y certificado de firma coinciden entre ambos APK. No se cambia la coordinación ni la credencial.
+
+Dos pruebas de flujo fallaron al exigir el intento a los cinco segundos con la configuración anterior. La validación final de la nueva variante pasa 196 pruebas en 34 suites, sin fallos, errores u omisiones; assembleDebug y verificación de firma correctos.
+
+- [ ] Comprobar físicamente si cinco segundos alcanzan en la UN50RU7100GCFV. Los resultados de 15 y 30 s no garantizan este valor ni determinan el mínimo fiable.

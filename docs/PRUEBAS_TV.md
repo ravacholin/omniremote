@@ -109,3 +109,16 @@ La siguiente variante prueba 15 s usando el mismo botón y la misma coordinació
 La pantalla muestra el tiempo configurado. Se conserva el APK de 30 s que ya
 funcionó; ambas variantes usan la misma firma y versionCode 9. El siguiente
 resultado físico permitirá comprobar si esta reducción mantiene el funcionamiento.
+
+## Variante 1.7-wol5-test (9): siguiente ensayo
+
+El usuario confirma funcionamiento correcto con 15 segundos. A su pedido se
+reduce la espera programada a cinco segundos, conservando el mismo botón WOL,
+la credencial, la cancelación del intento anterior y el único intento posterior.
+La interfaz muestra el nuevo valor de cinco segundos desde BuildConfig.
+
+Esta variante todavía no tiene comprobación física. La de 15 segundos se
+conserva como alternativa, con la misma aplicación, firma y versionCode para
+permitir volver sin borrar datos. Si reaparece el permiso, el resultado descarta
+cinco segundos como espera fiable en las condiciones de ese ciclo; no se debe
+presentar el cambio de parámetro como una solución garantizada.
