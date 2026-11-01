@@ -25,6 +25,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
+import java.io.IOException
 import java.security.SecureRandom
 import com.example.data.local.TvTokenStore
 import java.security.cert.X509Certificate
@@ -416,15 +417,22 @@ class SamsungTvClient(
             }
             check(generation == connectionGeneration.get() && currentIp == ipAddress && isConnected) { "La conexión con la TV cambió." }
             val target = installed ?: SamsungInstalledApp(appId, name.orEmpty(), if (appId == "3201807016597") 1 else 2)
-            if (webSocket?.send(SamsungAppProtocol.launch(target)) == true) return@withContext Result.success(Unit)
-            // Legacy REST fallback: a rejected HTTP response must never report a successful launch.
+            // A queued WebSocket write is not an app-launch acknowledgment. Some TVs
+            // silently ignore ed.apps.launch, so try the HTTP application API first.
             val request = Request.Builder().url("http://$ipAddress:8001/api/v2/applications/${target.id}")
                 .post("".toRequestBody(null)).build()
-            okHttpClient.newBuilder().readTimeout(4, TimeUnit.SECONDS).callTimeout(6, TimeUnit.SECONDS).build()
-                .newCall(request).execute().use { response ->
-                    check(response.isSuccessful) { "La TV rechazó abrir la app (HTTP ${response.code})." }
-                }
-            Result.success(Unit)
+            val httpFailure = try {
+                okHttpClient.newBuilder().readTimeout(4, TimeUnit.SECONDS).callTimeout(6, TimeUnit.SECONDS).build()
+                    .newCall(request).execute().use { response ->
+                        check(generation == connectionGeneration.get() && currentIp == ipAddress && isConnected) { "La conexión con la TV cambió." }
+                        if (response.isSuccessful) return@withContext Result.success(Unit)
+                        IllegalStateException("La TV rechazó abrir la app (HTTP ${response.code}).")
+                    }
+            } catch (e: IOException) { e }
+            // Retain the type-specific protocol for TVs without the HTTP app API.
+            check(generation == connectionGeneration.get() && currentIp == ipAddress && isConnected) { "La conexión con la TV cambió." }
+            if (webSocket?.send(SamsungAppProtocol.launch(target)) == true) Result.success(Unit)
+            else Result.failure(httpFailure)
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { Result.failure(e) }
     }
