@@ -15,6 +15,7 @@ import com.example.ui.MainViewModel
 import com.example.ui.components.AddTvAppDialog
 import com.example.ui.components.ConnectionDiagnosisDialog
 import com.example.ui.components.ConnectionDiagnosisUiState
+import com.example.ui.components.SleepTimerOptionsDialog
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +52,12 @@ class DialogHardwareVolumeTest {
         verifyVolumeWithDialog {
             ConnectionDiagnosisDialog(ConnectionDiagnosisUiState("Remote"),
                 onDismiss = {}, onRecheck = {}, onAction = {})
+        }
+    }
+
+    @Test fun `volume controls the remote while custom Sleep fields have focus`() {
+        verifyVolumeWithDialog {
+            SleepTimerOptionsDialog("Remote", onDismiss = {}, onDuration = {}, onTime = { _, _ -> })
         }
     }
 

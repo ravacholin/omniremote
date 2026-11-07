@@ -70,7 +70,8 @@ fun DeviceSelectorBar(
     onPowerClick: () -> Unit,
     modifier: Modifier = Modifier,
     sleepRemainingSeconds: Long? = null,
-    onSleepClick: () -> Unit = {}
+    onSleepClick: () -> Unit = {},
+    onSleepLongClick: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var expanded by remember { mutableStateOf(false) }
@@ -276,7 +277,8 @@ fun DeviceSelectorBar(
                 SleepTimerButton(
                     remainingSeconds = sleepRemainingSeconds,
                     enabled = activeDevice != null,
-                    onClick = onSleepClick
+                    onClick = onSleepClick,
+                    onLongClick = onSleepLongClick
                 )
             }
 
