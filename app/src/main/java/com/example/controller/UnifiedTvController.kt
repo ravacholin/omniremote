@@ -65,6 +65,7 @@ class UnifiedTvController(
     private var connectRetriesLeft = 0
     private val samsungDiagnostics = context?.let { SamsungConnectionDiagnostics(it) }
     private val samsungUiGeneration = AtomicLong()
+    private val commandGeneration = AtomicLong()
 
     private val samsungClient = SamsungTvClient(
         tokenStore = tokenStore,
@@ -226,8 +227,12 @@ class UnifiedTvController(
     }
 
     /** Runs [script] on the Mac; returns whether it succeeded and logs why when it did not. */
-    private fun runMacScript(device: TvDeviceEntity, script: MacScript, reportsVolume: Boolean): Boolean {
-        val result = macClient.run(script)
+    private fun runMacScript(device: TvDeviceEntity, script: MacScript, reportsVolume: Boolean,
+        expectedGeneration: Long = commandGeneration.get()): Boolean {
+        val result = macClient.run(script) {
+            commandGeneration.get() == expectedGeneration && activeDevice?.id == device.id &&
+                activeDevice?.ipAddress == device.ipAddress
+        }
         if (activeDevice?.id != device.id) return false
         return when (result) {
             is MacResult.Ok -> {
@@ -346,6 +351,24 @@ class UnifiedTvController(
             (_connectionState.value is ConnectionState.Disconnected && activeDevice != null)) reconnect()
     }
 
+    /** Resume after a background-only disconnect without cancelling an ongoing PIN exchange. */
+    fun resumeDevice(device: TvDeviceEntity) {
+        synchronized(samsungClient) {
+            val current = activeDevice
+            if (current?.id == device.id && current.ipAddress == device.ipAddress && current.deviceType == device.deviceType) {
+                reconnectIfFailed()
+            } else {
+                if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
+                    val credential = tokenStore?.getSamsungToken(device.ipAddress, device.id, device.macAddress, device.authToken)
+                        ?: device.authToken
+                    samsungDiagnostics?.record(device.ipAddress, 0, "app_foreground", credential,
+                        "state=${_connectionState.value.javaClass.simpleName}")
+                }
+                setActiveDeviceLocked(device)
+            }
+        }
+    }
+
     fun reconnect() {
         synchronized(samsungClient) { reconnectLocked() }
     }
@@ -367,6 +390,7 @@ class UnifiedTvController(
     }
 
     fun disconnectCurrent() {
+        commandGeneration.incrementAndGet()
         samsungUiGeneration.incrementAndGet()
         cancelBluetoothNavigation()
         connectionJob?.cancel()
@@ -385,20 +409,23 @@ class UnifiedTvController(
     fun sendKey(key: RemoteKey) {
         cancelBluetoothNavigation()
         val device = activeDevice ?: return
+        val expectedGeneration = commandGeneration.get()
         _lastDispatchedKey.value = key
 
         if (device.deviceType == DeviceType.MACOS) {
-            sendMacKey(device, key)
+            sendMacKey(device, key, expectedGeneration)
             return
         }
 
         scope.launch(Dispatchers.IO) {
             val success: Boolean = when (device.deviceType) {
                 DeviceType.SAMSUNG_TIZEN -> {
-                    samsungClient.sendKey(key)
+                    synchronized(samsungClient) {
+                        commandGeneration.get() == expectedGeneration && samsungClient.sendKey(key)
+                    }
                 }
                 DeviceType.ANDROID_TV -> {
-                    androidClient.sendKey(key)
+                    androidClient.sendKey(key) { commandGeneration.get() == expectedGeneration }
                 }
                 DeviceType.MACOS -> false
             }
@@ -412,7 +439,7 @@ class UnifiedTvController(
         }
     }
 
-    private fun sendMacKey(device: TvDeviceEntity, key: RemoteKey) {
+    private fun sendMacKey(device: TvDeviceEntity, key: RemoteKey, expectedGeneration: Long) {
         val script = MacScripts.forKey(key) ?: run {
             addLog(device.name, "${key.label} no está disponible en la Mac.", false)
             return
@@ -421,7 +448,7 @@ class UnifiedTvController(
         if (volumeKey && !macVolumeKeyBusy.compareAndSet(false, true)) return
         scope.launch(Dispatchers.IO) {
             try {
-                if (runMacScript(device, script, reportsVolume = volumeKey)) addLog(device.name, "Mac: ${key.label}", true)
+                if (runMacScript(device, script, reportsVolume = volumeKey, expectedGeneration = expectedGeneration)) addLog(device.name, "Mac: ${key.label}", true)
             } finally {
                 if (volumeKey) macVolumeKeyBusy.set(false)
             }

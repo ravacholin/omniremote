@@ -4,4 +4,24 @@
     <string name="tile_remote_desc">Abrir control remoto de TV</string>
     <string name="tile_power_label">Encender TV</string>
     <string name="tile_power_desc">Encender TV por Wake-on-LAN</string>
+    <string name="quick_channel">Mini mando</string>
+    <string name="quick_vol_up">Vol. +</string>
+    <string name="quick_vol_down">Vol. −</string>
+    <string name="quick_mute">Mute</string>
+    <string name="quick_play_pause">Play/pause</string>
+    <string name="quick_power">Encender/apagar</string>
+    <string name="quick_close">Cerrar</string>
+    <string name="quick_volume_up_desc">Subir volumen</string>
+    <string name="quick_volume_down_desc">Bajar volumen</string>
+    <string name="quick_mute_desc">Silenciar</string>
+    <string name="quick_play_pause_desc">Reproducir o pausar</string>
+    <string name="quick_power_desc">Encender o apagar</string>
+    <string name="quick_close_desc">Cerrar mini mando</string>
+    <string name="quick_mac_power">Dormir pantalla</string>
+    <string name="quick_mac_power_desc">Dormir pantalla de la Mac</string>
+    <string name="quick_connected">Conectado</string>
+    <string name="quick_connecting">Conectando…</string>
+    <string name="quick_authorize">Abre OmniRemote para autorizar el dispositivo</string>
+    <string name="quick_disconnected">Sin conexión · Encendido por red disponible si el dispositivo lo admite</string>
+    <string name="quick_permission_denied">El mini mando necesita permiso de notificaciones. Puedes habilitarlo en Ajustes de Android.</string>
 </resources>

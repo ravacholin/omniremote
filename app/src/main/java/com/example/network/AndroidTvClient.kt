@@ -466,13 +466,18 @@ class AndroidTvClient(
     suspend fun sendKey(key: RemoteKey, canSend: () -> Boolean = { true }): Boolean = withContext(Dispatchers.IO) {
         if (!canSend()) return@withContext false
         if (activeIp.isBlank() || !isPaired) return@withContext false
+        // Never carry a POWER tap across a reconnect: its effect may have changed.
+        if (!isConnected && (key == RemoteKey.POWER || key == RemoteKey.POWER_OFF)) return@withContext false
         if (!isConnected && !initRemoteV2Connection(activeIp)) return@withContext false
         try {
+            val socket = remoteSocket ?: return@withContext false
             val out = remoteOutput ?: return@withContext false
             // A scheduled command may be cancelled while authentication/reconnection waits.
-            if (!canSend()) return@withContext false
-            // A short press is one atomic frame; concurrent taps cannot interleave packets.
-            writeRemotePacket(out, AndroidTvProtocol.buildRemoteKeyInject(key.androidKeyCode))
+            synchronized(writeLock) {
+                if (!canSend() || remoteSocket !== socket || !isConnected) return@withContext false
+                // A short press is one atomic frame; concurrent taps cannot interleave packets.
+                writeRemotePacket(out, AndroidTvProtocol.buildRemoteKeyInject(key.androidKeyCode))
+            }
             true
         } catch (e: Exception) {
             closeRemoteSocket()
