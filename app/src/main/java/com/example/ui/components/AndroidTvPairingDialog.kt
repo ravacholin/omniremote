@@ -76,6 +76,7 @@ fun AndroidTvPairingDialog(
         containerColor = Ink,
         shape = Sharp,
         title = {
+            ForwardRemoteVolumeKeys()
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)

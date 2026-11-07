@@ -136,6 +136,7 @@ fun DeviceManagerDialog(
         tonalElevation = 8.dp,
         modifier = Modifier.testTag("device_manager_sheet")
     ) {
+        ForwardRemoteVolumeKeys()
         Column(
             modifier = Modifier
                 .fillMaxWidth()

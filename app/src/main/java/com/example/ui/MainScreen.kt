@@ -83,6 +83,7 @@ import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
 import com.example.ui.components.AndroidTvPairingDialog
 import com.example.ui.components.MacLoginDialog
+import com.example.ui.components.ForwardRemoteVolumeKeys
 import com.example.ui.components.MacRemotePanel
 import com.example.ui.components.DeviceManagerDialog
 import com.example.ui.components.DeviceSelectorBar
@@ -160,7 +161,10 @@ fun MainScreen(
     if (showSleepPermission) {
         AlertDialog(
             onDismissRequest = { showSleepPermission = false; pendingSleepDeviceId = null },
-            title = { Text("Activar Sleep") },
+            title = {
+                ForwardRemoteVolumeKeys()
+                Text("Activar Sleep")
+            },
             text = { Text("Permití Alarmas y recordatorios para apagar la TV a tiempo, incluso con el teléfono bloqueado.") },
             confirmButton = {
                 TextButton(onClick = {

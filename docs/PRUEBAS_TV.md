@@ -45,6 +45,25 @@ puede impedir el envío. «Señal enviada» confirma el envío de paquetes, no q
 La renovación de certificados antiguos mantiene la misma clave RSA. Algunos firmwares pueden
 exigir una vinculación inicial después de renovar un certificado que ya estaba caducado.
 
+## Botones físicos de volumen: Android TV, Samsung y Mac
+
+Con OmniRemote en primer plano y el dispositivo seleccionado conectado, los botones
+de volumen del teléfono envían los mismos comandos que Vol + / Vol − del mando.
+También funciona con los diálogos y el panel de dispositivos de la app abiertos.
+Mantener pulsado repite el comando, usando el control de concurrencia existente
+de cada dispositivo. Al soltar no se envía un comando adicional.
+
+Para cada tipo de dispositivo, comprobar pulsaciones cortas y mantenidas y verificar
+que cambia el volumen remoto sin mostrar el panel de volumen del teléfono. Después,
+salir de la app o desconectar el dispositivo: una nueva pulsación debe controlar
+el volumen local. Si la conexión se pierde durante una pulsación remota, soltar
+el botón antes de volver a pulsarlo para controlar el teléfono.
+
+`HardwareVolumeTest` cubre el despacho desde la Activity, los tres tipos de dispositivo,
+repeticiones, segundo plano y cambios de conexión. `DialogHardwareVolumeTest` verifica
+el despacho desde una ventana de diálogo real. La recepción de los comandos y el
+cambio audible de volumen requieren comprobarse con el dispositivo real.
+
 
 ## Samsung UN50RU7100GCFV: permiso repetido después de POWER
 
