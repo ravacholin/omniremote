@@ -6,6 +6,39 @@ Un solo timer controla la TV seleccionada cuando se programa; el aviso identific
 esa TV y ofrece Cancelar. Cambiar de TV no cambia un timer existente. Volver a tocar
 Sleep programa el siguiente plazo para la TV seleccionada en ese momento.
 
+Mantener pulsado **Sleep** abre las opciones para la TV seleccionada:
+
+- **Duración:** entre 1 y 1440 minutos.
+- **Hora:** hora local del teléfono, en formato de 24 horas. Se programa la próxima
+  ocurrencia y se muestra **Hoy** o **Mañana**, con fecha y hora, antes de confirmar.
+  Si ya no queda ninguna coincidencia futura de esa hora hoy, corresponde al día
+  siguiente. En un día sin cambio de horario, el minuto actual también se programa
+  para mañana.
+
+Cerrar el diálogo no modifica la programación. Cambiar/eliminar la TV seleccionada
+descarta sus opciones. Después de programar una duración u hora personalizada, el
+próximo toque rápido empieza en 30 minutos. Extender un preset conserva su lugar
+en el ciclo 30 → 60 → 120 → OFF.
+
+El aviso de un Sleep pendiente ofrece **+15 min**: añade quince minutos a su
+vencimiento, conservando la TV original aunque se haya seleccionado otra. Por
+ejemplo, si quedan veinte minutos, pasarán a quedar treinta y cinco. Se puede
+repetir mientras no haya vencido. Una vez vencido o iniciado el apagado no se puede
+extender; Cancelar sigue disponible mientras exista el aviso.
+
+La hora se convierte al programar en un plazo de reloj monotónico, igual que los
+presets. Cambiar después la hora o zona horaria del teléfono no modifica ese plazo.
+No hay repeticiones diarias. La selección de fecha considera los días locales,
+incluidos los cambios de horario de verano.
+Si una hora se repite, se elige la primera coincidencia futura. Si no existe por
+el adelanto del reloj, se elige la siguiente fecha en la que esa hora sí existe.
+
+Sleep conserva su alarma y destino propios cuando el mini mando en notificaciones
+comparte la sesión de la app (PR #43). Cerrar el mini mando en segundo plano libera
+su conexión y mantiene Sleep programado. Al volver a la app se puede consultar,
+extender o cancelar ese mismo temporizador. El apagado usa las credenciales y la
+fila actual del dispositivo guardado, incluidas las actualizaciones seguras de IP.
+
 El botón y el aviso muestran el **tiempo restante en minutos y segundos** (por
 ejemplo, 29:59), actualizado cada segundo mientras la app está visible. Se calcula
 desde el vencimiento de la alarma, por lo que al volver del segundo plano o abrir

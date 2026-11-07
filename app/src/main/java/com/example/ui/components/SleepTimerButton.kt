@@ -1,7 +1,8 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
@@ -20,15 +21,18 @@ import com.example.ui.theme.Paper
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.Void
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun SleepTimerButton(remainingSeconds: Long?, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun SleepTimerButton(remainingSeconds: Long?, enabled: Boolean, onClick: () -> Unit,
+    modifier: Modifier = Modifier, onLongClick: () -> Unit = {}) {
     val active = remainingSeconds != null
     val tint = when { !enabled -> TextMuted; active -> Void; else -> Paper }
     Column(
         modifier = modifier
             .size(56.dp)
             .background(if (active) Paper else Void)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .combinedClickable(enabled = enabled, role = Role.Button, onClick = onClick,
+                onLongClickLabel = "Personalizar Sleep", onLongClick = onLongClick)
             .semantics(mergeDescendants = true) {
                 contentDescription = when {
                     remainingSeconds == null -> "Sleep: OFF"

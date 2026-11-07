@@ -1,10 +1,7 @@
 package com.example.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import android.content.Intent
-import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
@@ -44,7 +41,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,9 +52,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -83,13 +76,12 @@ import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
 import com.example.ui.components.AndroidTvPairingDialog
 import com.example.ui.components.MacLoginDialog
-import com.example.ui.components.ForwardRemoteVolumeKeys
 import com.example.ui.components.MacRemotePanel
 import com.example.ui.components.DeviceManagerDialog
 import com.example.ui.components.ConnectionDiagnosisDialog
 import com.example.network.DiagnosticAction
 import com.example.ui.components.DeviceSelectorBar
-import com.example.ui.components.SleepTimerNotice
+import com.example.ui.components.SleepTimerControls
 import com.example.ui.components.rememberSleepTimerRemainingSeconds
 import com.example.ui.components.RemoteIcons
 import com.example.ui.components.HapticUtil
@@ -150,8 +142,6 @@ fun MainScreen(
     val sleepTimer by viewModel.sleepTimer.collectAsStateWithLifecycle()
     val sleepRemainingSeconds = rememberSleepTimerRemainingSeconds(sleepTimer)
     val sleepTimerResult by viewModel.sleepTimerResult.collectAsStateWithLifecycle()
-    var showSleepPermission by rememberSaveable { mutableStateOf(false) }
-    var pendingSleepDeviceId by rememberSaveable { mutableStateOf<Long?>(null) }
     connectionDiagnosis?.let { diagnosis ->
         ConnectionDiagnosisDialog(
             state = diagnosis,
@@ -168,41 +158,6 @@ fun MainScreen(
             }
         )
     }
-    val alarmPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (pendingSleepDeviceId != null && viewModel.activeDevice.value?.id == pendingSleepDeviceId) {
-            if (!viewModel.cycleSleepTimer()) {
-                Toast.makeText(context, "Sleep no se activó: falta permitir Alarmas y recordatorios", Toast.LENGTH_LONG).show()
-            }
-        }
-        pendingSleepDeviceId = null
-    }
-
-    if (showSleepPermission) {
-        AlertDialog(
-            onDismissRequest = { showSleepPermission = false; pendingSleepDeviceId = null },
-            title = {
-                ForwardRemoteVolumeKeys()
-                Text("Activar Sleep")
-            },
-            text = { Text("Permití Alarmas y recordatorios para apagar la TV a tiempo, incluso con el teléfono bloqueado.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showSleepPermission = false
-                    try {
-                        alarmPermissionLauncher.launch(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                            Uri.parse("package:${context.packageName}")))
-                    } catch (_: android.content.ActivityNotFoundException) {
-                        pendingSleepDeviceId = null
-                        Toast.makeText(context, "Habilitá Alarmas y recordatorios para OmniRemote en Ajustes", Toast.LENGTH_LONG).show()
-                    }
-                }) { Text("Permitir") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSleepPermission = false; pendingSleepDeviceId = null }) { Text("Cancelar") }
-            }
-        )
-    }
-
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     if (isScanResultsScreenOpen) {
@@ -279,44 +234,48 @@ fun MainScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(if (isShortScreen) 10.dp else 16.dp)
             ) {
-                // Header: Device Selector Bar with seamless switcher & power button
-                DeviceSelectorBar(
+                SleepTimerControls(
                     activeDevice = activeDevice,
-                    allDevices = allDevices,
-                    connectionState = connectionState,
-                    isHapticEnabled = isHapticEnabled,
-                    onToggleHaptic = { viewModel.toggleHapticEnabled() },
-                    onSelectDevice = { dev ->
-                        HapticUtil.triggerKeyHaptic(context)
-                        viewModel.selectDevice(dev)
-                    },
-                    onOpenManager = {
-                        HapticUtil.triggerKeyHaptic(context)
-                        viewModel.setDeviceManagerOpen(true)
-                    },
-                    onOpenScan = {
-                        HapticUtil.triggerKeyHaptic(context)
-                        viewModel.openScanResultsScreen()
-                    },
-                    onPowerClick = {
-                        HapticUtil.triggerKeyHaptic(context)
-                        viewModel.powerToggle()
-                    },
-                    sleepRemainingSeconds = sleepRemainingSeconds,
-                    onSleepClick = {
-                        HapticUtil.triggerKeyHaptic(context)
-                        if (!viewModel.cycleSleepTimer()) {
-                            pendingSleepDeviceId = activeDevice?.id
-                            showSleepPermission = true
+                    timer = sleepTimer,
+                    remainingSeconds = sleepRemainingSeconds,
+                    onQuick = { viewModel.cycleSleepTimer(it) },
+                    onDuration = viewModel::scheduleSleepFor,
+                    onTime = viewModel::scheduleSleepAt,
+                    onExtend = viewModel::extendSleepTimer,
+                    onCancel = viewModel::cancelSleepTimer
+                ) { onSleepClick, onSleepLongClick ->
+                    // Header: Device Selector Bar with seamless switcher & power button
+                    DeviceSelectorBar(
+                        activeDevice = activeDevice,
+                        allDevices = allDevices,
+                        connectionState = connectionState,
+                        isHapticEnabled = isHapticEnabled,
+                        onToggleHaptic = { viewModel.toggleHapticEnabled() },
+                        onSelectDevice = { dev ->
+                            HapticUtil.triggerKeyHaptic(context)
+                            viewModel.selectDevice(dev)
+                        },
+                        onOpenManager = {
+                            HapticUtil.triggerKeyHaptic(context)
+                            viewModel.setDeviceManagerOpen(true)
+                        },
+                        onOpenScan = {
+                            HapticUtil.triggerKeyHaptic(context)
+                            viewModel.openScanResultsScreen()
+                        },
+                        onPowerClick = {
+                            HapticUtil.triggerKeyHaptic(context)
+                            viewModel.powerToggle()
+                        },
+                        sleepRemainingSeconds = sleepRemainingSeconds,
+                        onSleepClick = {
+                            HapticUtil.triggerKeyHaptic(context)
+                            onSleepClick()
+                        },
+                        onSleepLongClick = {
+                            HapticUtil.triggerKeyHaptic(context)
+                            onSleepLongClick()
                         }
-                    }
-                )
-
-                sleepTimer?.let { timer ->
-                    SleepTimerNotice(
-                        timer = timer,
-                        remainingSeconds = sleepRemainingSeconds ?: 0L,
-                        onCancel = { viewModel.cancelSleepTimer() }
                     )
                 }
                 sleepTimerResult?.let { result ->

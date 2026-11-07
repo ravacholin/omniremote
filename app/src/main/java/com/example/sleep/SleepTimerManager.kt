@@ -21,7 +21,8 @@ data class SleepTimerState(
     val deviceName: String,
     val minutes: Int,
     val deadlineElapsed: Long,
-    val bootCount: Int
+    val bootCount: Int,
+    val quickPresetMinutes: Int? = minutes.takeIf { it == 30 || it == 60 || it == 120 }
 ) {
     /** Use the alarm's monotonic deadline, including time spent with the phone asleep. */
     fun remainingSeconds(nowElapsed: Long = SystemClock.elapsedRealtime()): Long {
@@ -49,19 +50,55 @@ class SleepTimerManager(context: Context) {
     fun advance(device: TvDeviceEntity): SleepTimerState? {
         require(device.id > 0 && device.deviceType != DeviceType.MACOS) { "Seleccioná una TV guardada" }
         val previous = _timer.value
-        val currentMinutes = previous?.takeIf { it.deadlineElapsed > SystemClock.elapsedRealtime() }?.minutes
+        val currentMinutes = previous?.takeIf { it.deadlineElapsed > SystemClock.elapsedRealtime() }?.quickPresetMinutes
         val minutes = when (currentMinutes) {
             30 -> 60
             60 -> 120
             120 -> { cancel(); return null }
             else -> 30
         }
-        checkExactPermission()
-        val next = SleepTimerState(
+        return replaceTimer(SleepTimerState(
             token = UUID.randomUUID().toString(), deviceId = device.id, deviceName = device.name,
             minutes = minutes, deadlineElapsed = SystemClock.elapsedRealtime() + minutes * 60_000L,
             bootCount = bootCount()
-        )
+        ))
+    }
+
+    @Synchronized
+    fun scheduleFor(device: TvDeviceEntity, minutes: Int): SleepTimerState {
+        require(minutes in 1..1440) { "Elegí entre 1 y 1440 minutos" }
+        return scheduleCustom(device, minutes * 60_000L)
+    }
+
+    @Synchronized
+    fun scheduleAt(device: TvDeviceEntity, hour: Int, minute: Int): SleepTimerState {
+        val now = System.currentTimeMillis()
+        return scheduleCustom(device, nextSleepOccurrence(hour, minute, now) - now)
+    }
+
+    private fun scheduleCustom(device: TvDeviceEntity, durationMillis: Long): SleepTimerState {
+        require(device.id > 0 && device.deviceType != DeviceType.MACOS) { "Seleccioná una TV guardada" }
+        return replaceTimer(SleepTimerState(
+            token = UUID.randomUUID().toString(), deviceId = device.id, deviceName = device.name,
+            minutes = ((durationMillis + 59_999) / 60_000).toInt(),
+            deadlineElapsed = SystemClock.elapsedRealtime() + durationMillis,
+            bootCount = bootCount(), quickPresetMinutes = null
+        ))
+    }
+
+    /** A stale UI/permission result cannot extend a replacement timer or an executing expiry. */
+    @Synchronized
+    fun extend(token: String): SleepTimerState? {
+        val current = _timer.value ?: return null
+        if (current.token != token || current.bootCount != bootCount() ||
+            current.deadlineElapsed <= SystemClock.elapsedRealtime()) return null
+        return replaceTimer(current.copy(token = UUID.randomUUID().toString(),
+            deadlineElapsed = current.deadlineElapsed + 15 * 60_000L))
+    }
+
+    private fun replaceTimer(next: SleepTimerState): SleepTimerState {
+        checkExactPermission()
+        val previous = _timer.value
         val operation = operation(next.token)
         alarms.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, next.deadlineElapsed, operation)
         if (!prefs.edit().putString("timer", encode(next)).remove("execution").remove("result").commit()) {
@@ -147,8 +184,11 @@ class SleepTimerManager(context: Context) {
         val saved = prefs.getString("timer", null) ?: return null
         val state = runCatching {
             val json = JSONObject(saved)
+            val minutes = json.getInt("minutes")
+            val preset = if (!json.has("quickPresetMinutes")) minutes.takeIf { it == 30 || it == 60 || it == 120 }
+                else if (json.isNull("quickPresetMinutes")) null else json.getInt("quickPresetMinutes")
             SleepTimerState(json.getString("token"), json.getLong("deviceId"), json.getString("deviceName"),
-                json.getInt("minutes"), json.getLong("deadlineElapsed"), json.getInt("bootCount"))
+                minutes, json.getLong("deadlineElapsed"), json.getInt("bootCount"), preset)
         }.getOrNull()
         if (state == null || state.bootCount != bootCount()) {
             state?.let { cancelAlarm(it.token) }
@@ -176,6 +216,7 @@ class SleepTimerManager(context: Context) {
         put("minutes", state.minutes)
         put("deadlineElapsed", state.deadlineElapsed)
         put("bootCount", state.bootCount)
+        put("quickPresetMinutes", state.quickPresetMinutes ?: JSONObject.NULL)
     }.toString()
 
     companion object {

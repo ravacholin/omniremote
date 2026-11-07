@@ -338,8 +338,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun powerToggle() = session.powerToggle { openMacConfigDialog(it) }
 
     /** False asks the UI to offer Android's exact-alarm permission; no timer is changed. */
-    fun cycleSleepTimer(): Boolean {
-        val device = _activeDevice.value?.takeIf { it.deviceType != DeviceType.MACOS } ?: return true
+    fun cycleSleepTimer(expectedDeviceId: Long? = _activeDevice.value?.id): Boolean {
+        val device = sleepDevice(expectedDeviceId) ?: return true
         return try {
             val timer = sleepTimerManager.advance(device)
             Toast.makeText(getApplication(), timer?.let { "Sleep: ${it.minutes} minutos · ${it.deviceName}" }
@@ -351,6 +351,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Toast.makeText(getApplication(), "No se pudo programar Sleep. Reintentá.", Toast.LENGTH_SHORT).show()
             true
         }
+    }
+
+    private fun sleepDevice(expectedDeviceId: Long?) = _activeDevice.value?.takeIf {
+        it.id == expectedDeviceId && it.id !in deletedDeviceIds && it.deviceType != DeviceType.MACOS
+    }
+
+    fun scheduleSleepFor(deviceId: Long, minutes: Int): Boolean {
+        val device = sleepDevice(deviceId) ?: return true
+        return changeSleepTimer { sleepTimerManager.scheduleFor(device, minutes) }
+    }
+
+    fun scheduleSleepAt(deviceId: Long, hour: Int, minute: Int): Boolean {
+        val device = sleepDevice(deviceId) ?: return true
+        return changeSleepTimer { sleepTimerManager.scheduleAt(device, hour, minute) }
+    }
+
+    fun extendSleepTimer(token: String): Boolean = changeSleepTimer { sleepTimerManager.extend(token) }
+
+    private fun changeSleepTimer(action: () -> com.example.sleep.SleepTimerState?): Boolean = try {
+        val timer = action()
+        val message = if (timer == null) "Sleep ya venció o cambió; no se modificó."
+            else "Sleep · ${timer.deviceName}: quedan ${com.example.ui.components.formatSleepCountdown(timer.remainingSeconds())}"
+        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+        true
+    } catch (_: SecurityException) {
+        false
+    } catch (_: Exception) {
+        Toast.makeText(getApplication(), "No se pudo programar Sleep. Reintentá.", Toast.LENGTH_SHORT).show()
+        true
     }
 
     fun cancelSleepTimer() {
