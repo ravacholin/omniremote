@@ -108,13 +108,15 @@ class MacSshClient(private val store: MacLoginStore?) {
         MacResult.Ok("")
     }
 
-    fun run(script: MacScript): MacResult = synchronized(lock) {
+    fun run(script: MacScript, canSend: () -> Boolean = { true }): MacResult = synchronized(lock) {
+        if (!canSend()) return MacResult.Failed("Orden cancelada: cambió el dispositivo.")
         val current = session?.takeIf { it.isConnected } ?: run {
             // Wi-Fi drops and Mac display sleep close idle sessions; reopen silently.
             val reopened = openWithSavedLogin()
             if (reopened !is MacResult.Ok) return reopened
             session ?: return MacResult.Failed("Sin sesión con la Mac.")
         }
+        if (!canSend()) return MacResult.Failed("Orden cancelada: cambió el dispositivo.")
         exec(current, script.command, script.source)
     }
 

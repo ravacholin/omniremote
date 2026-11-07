@@ -1,10 +1,8 @@
 package com.example.ui
 
-import com.example.BuildConfig
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.controller.UnifiedTvController
 import com.example.data.local.AppDatabase
 import com.example.data.model.CommandLog
 import com.example.data.model.ConnectionState
@@ -64,31 +62,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val sleepTimerResult = sleepTimerManager.result
     val nsdDiscoveryService = com.example.network.NsdTvDiscoveryService(application)
 
-    private val controller = UnifiedTvController(
-        context = application,
-        tokenStore = tokenStore,
-        onTokenReceived = { deviceId, token ->
-            viewModelScope.launch(Dispatchers.IO) {
-                repository.updateAuthToken(deviceId, token)
-                _activeDevice.value = _activeDevice.value?.let { current ->
-                    if (current.id == deviceId) current.copy(authToken = token) else current
-                }
-            }
-        },
-        onDeviceMacResolved = { deviceId, mac ->
-            viewModelScope.launch(Dispatchers.IO) {
-                repository.updateDeviceMac(deviceId, mac)
-                _activeDevice.value = _activeDevice.value?.let { current ->
-                    if (current.id == deviceId) current.copy(macAddress = mac) else current
-                }
-            }
-        }
-    )
+    private val session = com.example.controller.RemoteSession.getInstance(application)
+    private val controller = session.controller
 
     val allDevices: StateFlow<List<TvDeviceEntity>> = repository.allDevices
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _activeDevice = MutableStateFlow<TvDeviceEntity?>(null)
+    private val _activeDevice = session.selectedDevice
     private val deletedDeviceIds = mutableSetOf<Long>()
     val activeDevice: StateFlow<TvDeviceEntity?> = _activeDevice.asStateFlow()
 
@@ -149,7 +129,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Playback State: tracks whether TV is currently playing or paused
     // Defaults to true (active playback) so pressing the button pauses playback
-    private val _isPlaying = MutableStateFlow(true)
+    private val _isPlaying = session.playing
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
     // Android TV Pairing State
@@ -165,7 +145,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _pairingSuccessMessage = MutableStateFlow<String?>(null)
     val pairingSuccessMessage: StateFlow<String?> = _pairingSuccessMessage.asStateFlow()
 
-    private val _powerOnStatusMessage = MutableStateFlow<String?>(null)
+    private val _powerOnStatusMessage = session.powerStatus
     val powerOnStatusMessage: StateFlow<String?> = _powerOnStatusMessage.asStateFlow()
 
     private val _showMacConfigDialog = MutableStateFlow(false)
@@ -262,8 +242,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // An older device-list emission can finish app initialization after deletion.
         if (device.id in deletedDeviceIds) return
         if (_activeDevice.value?.id != device.id || _activeDevice.value?.ipAddress != device.ipAddress) closeConnectionDiagnosis()
-        _activeDevice.value = device
-        controller.setActiveDevice(device)
+        session.selectDevice(device)
         viewModelScope.launch(Dispatchers.IO) {
             repository.markLastConnected(device.id)
             appRepository.ensureDefaultAppsForDevice(device.id, device.deviceType)
@@ -346,74 +325,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun sendKey(key: RemoteKey) {
-        // The Mac toggles whatever is playing; a guessed play/pause state would drift.
-        if (key == RemoteKey.PLAY_PAUSE && controller.isCurrentDeviceMac()) {
-            controller.sendKey(key)
-            return
-        }
-        when (key) {
-            RemoteKey.PLAY -> _isPlaying.value = true
-            RemoteKey.PAUSE, RemoteKey.STOP -> _isPlaying.value = false
-            RemoteKey.PLAY_PAUSE -> {
-                togglePlayPause()
-                return
-            }
-            RemoteKey.POWER -> {
-                powerToggle()
-                return
-            }
-            else -> {}
-        }
-        controller.sendKey(key)
-    }
+    fun sendKey(key: RemoteKey) = session.sendKey(key)
 
-    /**
-     * Toggles playback between Play and Pause.
-     * If currently playing -> sends RemoteKey.PAUSE and updates state to paused.
-     * If currently paused -> sends RemoteKey.PLAY and updates state to playing.
-     */
-    fun togglePlayPause() {
-        val currentlyPlaying = _isPlaying.value
-        if (currentlyPlaying) {
-            _isPlaying.value = false
-            controller.sendKey(RemoteKey.PAUSE)
-        } else {
-            _isPlaying.value = true
-            controller.sendKey(RemoteKey.PLAY)
-        }
-    }
+    fun togglePlayPause() = session.sendKey(RemoteKey.PLAY_PAUSE)
 
-    fun pressPlay() {
-        _isPlaying.value = true
-        controller.sendKey(RemoteKey.PLAY)
-    }
+    fun pressPlay() = session.sendKey(RemoteKey.PLAY)
 
-    fun pressPause() {
-        _isPlaying.value = false
-        controller.sendKey(RemoteKey.PAUSE)
-    }
+    fun pressPause() = session.sendKey(RemoteKey.PAUSE)
 
-    fun pressStop() {
-        _isPlaying.value = false
-        controller.sendKey(RemoteKey.STOP)
-    }
+    fun pressStop() = session.sendKey(RemoteKey.STOP)
 
-    /**
-     * Smart Power Toggle:
-     * - If TV is connected: sends POWER command to put TV to sleep/standby.
-     * - If TV is disconnected or in error: executes multi-vector Wake-on-LAN power-on sequence
-     *   (Broadcast + Subnet + Unicast + Google Cast wake + ADB wake) and begins auto-reconnecting!
-     */
-    fun powerToggle() {
-        val device = _activeDevice.value ?: return
-        val isConnected = controller.connectionState.value is ConnectionState.Connected
-        if (!isConnected) {
-            powerOnTv()
-        } else {
-            controller.sendKey(RemoteKey.POWER)
-        }
-    }
+    fun powerToggle() = session.powerToggle { openMacConfigDialog(it) }
 
     /** False asks the UI to offer Android's exact-alarm permission; no timer is changed. */
     fun cycleSleepTimer(): Boolean {
@@ -444,62 +366,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * fires manufacturer-specific wake vectors (Cast wake-on-cast, Samsung HTTP wake, Sony IRCC),
      * and automatically polls to connect as the TV boots up!
      */
-    fun powerOnTv() {
-        val device = _activeDevice.value ?: return
-        val samsungProbe = controller.prepareWakeRequest(device)
-        viewModelScope.launch {
-            _powerOnStatusMessage.value = "Enviando ráfaga Wake-on-LAN a ${device.name}..."
-            val result = com.example.network.WakeOnLan.powerOnTv(device, localSubnetPrefix, getApplication())
-            if (result.resolvedMac != null && device.macAddress.isBlank()) {
-                val updated = device.copy(macAddress = result.resolvedMac)
-                repository.saveDevice(updated)
-                _activeDevice.value = updated
-            }
-            if (!result.success) {
-                controller.cancelWakeRequest(device)
-                // TV cannot wake because MAC address is missing: open prompt immediately!
-                _powerOnStatusMessage.value = result.message
-                if (com.example.network.WakeOnLan.formatMacAddress(device.macAddress) == null) {
-                    openMacConfigDialog(device)
-                }
-                return@launch
-            }
-
-            _powerOnStatusMessage.value = if (samsungProbe)
-                "Prueba Samsung: WOL enviado. La conexión se intentará automáticamente a los ${BuildConfig.SAMSUNG_WAKE_RECONNECT_DELAY_MS / 1000} segundos."
-            else result.message
-
-            // Polling loop to auto-connect once TV hardware powers up network interfaces
-            repeat(if (samsungProbe) 30 else 10) {
-                delay(1500)
-                if (_activeDevice.value?.id != device.id) return@launch
-                when (controller.connectionState.value) {
-                    is ConnectionState.Connected -> {
-                        _powerOnStatusMessage.value = null
-                        return@launch
-                    }
-                    // Reconnecting would close the socket the TV prompt belongs to; the token
-                    // the user grants arrives on it, otherwise the TV asks again next time.
-                    is ConnectionState.WaitingAuth -> {
-                        _powerOnStatusMessage.value = null
-                        return@launch
-                    }
-                    is ConnectionState.Connecting -> Unit
-                    else -> {
-                        // The probe schedules one attempt itself. A generic retry
-                        // here would invalidate the timing experiment after failure.
-                        if (samsungProbe) {
-                            _powerOnStatusMessage.value = null
-                            return@launch
-                        }
-                        controller.reconnect()
-                    }
-                }
-            }
-            delay(1500)
-            _powerOnStatusMessage.value = null
-        }
-    }
+    fun powerOnTv() = session.powerOnTv { openMacConfigDialog(it) }
 
     fun openMacConfigDialog(device: TvDeviceEntity) {
         _macConfigDevice.value = device
@@ -513,12 +380,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateDeviceMac(device: TvDeviceEntity, newMac: String, andPowerOn: Boolean = true) {
         val cleanMac = com.example.network.WakeOnLan.formatMacAddress(newMac) ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            repository.updateDeviceMac(device.id, cleanMac)
-            val updated = device.copy(macAddress = cleanMac)
-            if (_activeDevice.value?.id == device.id) {
-                _activeDevice.value = updated
-                controller.setActiveDevice(updated)
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.updateDeviceMac(device.id, cleanMac) }
+            _activeDevice.value?.takeIf { it.id == device.id && it.ipAddress == device.ipAddress }?.let {
+                session.selectDevice(it.copy(macAddress = cleanMac))
             }
             closeMacConfigDialog()
             if (andPowerOn) {
@@ -663,9 +528,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveDevice(device: TvDeviceEntity) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val id = repository.saveDevice(device)
-            val updatedDevice = repository.getDeviceById(id)
+        viewModelScope.launch {
+            val updatedDevice = withContext(Dispatchers.IO) {
+                val id = repository.saveDevice(device)
+                repository.getDeviceById(id)
+            }
             if (updatedDevice != null) {
                 selectDevice(updatedDevice)
                 // The saved TLS identity is tried first; a changed DHCP IP does not
@@ -688,8 +555,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (remaining != null) {
                     selectDevice(remaining)
                 } else {
-                    controller.disconnectCurrent()
-                    _activeDevice.value = null
+                    session.clearDevice()
                 }
             }
         }
@@ -841,7 +707,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             sleepTimerManager.cancel()
             sleepTimerManager.reportResult("Sleep cancelado: habilitá Alarmas y recordatorios para volver a programarlo")
         }
-        controller.reconnectIfFailed()
+        session.resumeConnection()
     }
 
     fun testPing(ip: String, port: Int, callback: (Boolean) -> Unit) {
