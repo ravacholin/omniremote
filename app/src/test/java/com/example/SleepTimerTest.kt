@@ -10,6 +10,7 @@ import com.example.data.model.RemoteKey
 import com.example.data.model.TvDeviceEntity
 import com.example.sleep.SleepTimerManager
 import com.example.sleep.SleepTimerState
+import com.example.sleep.nextSleepOccurrence
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -20,6 +21,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowAlarmManager
 import org.robolectric.shadows.ShadowSystemClock
 import java.time.Duration
+import java.time.Instant
+import java.util.TimeZone
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -51,6 +54,137 @@ class SleepTimerTest {
         assertNull(manager.timer.value)
         assertTrue(shadowOf(alarms).scheduledAlarms.isEmpty())
         assertEquals(30, manager.advance(tv)!!.minutes)
+    }
+
+    @Test fun `custom duration persists and resets the quick cycle even when it is thirty minutes`() {
+        val manager = SleepTimerManager(context)
+        val now = SystemClock.elapsedRealtime()
+        val custom = manager.scheduleFor(tv, 30)
+        assertEquals(now + 1_800_000L, custom.deadlineElapsed)
+        assertEquals(custom, SleepTimerManager(context).timer.value)
+        assertEquals(30, manager.advance(tv)!!.minutes)
+        assertEquals(60, manager.advance(tv)!!.minutes)
+    }
+
+    @Test fun `invalid durations do not replace the existing alarm`() {
+        val manager = SleepTimerManager(context)
+        val original = manager.advance(tv)!!
+        for (minutes in listOf(0, -1, 1441, Int.MAX_VALUE)) {
+            assertThrows(IllegalArgumentException::class.java) { manager.scheduleFor(tv, minutes) }
+            assertEquals(original, manager.timer.value)
+        }
+        assertEquals(original.deadlineElapsed, shadowOf(alarms).scheduledAlarms.single().triggerAtTime)
+        assertEquals(86_400L, manager.scheduleFor(tv, 1440).remainingSeconds())
+    }
+
+    @Test fun `legacy timers restore their preset and custom extensions keep the next quick tap at thirty`() {
+        val manager = SleepTimerManager(context)
+        val preset = manager.advance(tv)!!
+        val prefs = context.getSharedPreferences("sleep_timer", Context.MODE_PRIVATE)
+        val json = org.json.JSONObject(prefs.getString("timer", null)!!)
+        json.remove("quickPresetMinutes")
+        prefs.edit().putString("timer", json.toString()).commit()
+        val restored = SleepTimerManager(context)
+        assertEquals(preset, restored.timer.value)
+        assertEquals(60, restored.advance(tv)!!.minutes)
+        val custom = restored.scheduleFor(tv, 30)
+        val firstExtension = restored.extend(custom.token)!!
+        val secondExtension = restored.extend(firstExtension.token)!!
+        assertEquals(custom.deadlineElapsed + 1_800_000L, secondExtension.deadlineElapsed)
+        assertEquals(30, SleepTimerManager(context).advance(tv)!!.minutes)
+    }
+
+    @Test fun `extension adds to the saved deadline rather than starting a new duration`() {
+        val manager = SleepTimerManager(context)
+        val original = manager.advance(tv)!!
+        ShadowSystemClock.advanceBy(Duration.ofMinutes(10))
+        val extended = manager.extend(original.token)!!
+        assertEquals(original.deadlineElapsed + 900_000L, extended.deadlineElapsed)
+        assertEquals(2_100L, extended.remainingSeconds())
+        assertEquals(tv.id, extended.deviceId)
+        assertEquals(tv.name, extended.deviceName)
+        assertNotEquals(original.token, extended.token)
+        assertEquals(extended, SleepTimerManager(context).timer.value)
+        assertEquals(extended.deadlineElapsed, shadowOf(alarms).scheduledAlarms.single().triggerAtTime)
+        ShadowSystemClock.advanceBy(Duration.ofMinutes(20))
+        assertNull(manager.consumeDue(original.token))
+        assertEquals(60, manager.advance(tv.copy(id = 8))!!.minutes)
+    }
+
+    @Test fun `stale expired and executing timers cannot be extended`() {
+        val manager = SleepTimerManager(context)
+        val old = manager.advance(tv)!!
+        val current = manager.scheduleFor(tv.copy(id = 8), 1)
+        assertNull(manager.extend(old.token))
+        assertEquals(current, manager.timer.value)
+        ShadowSystemClock.advanceBy(Duration.ofMinutes(1))
+        assertNull(manager.extend(current.token))
+        assertEquals(current, manager.timer.value)
+        assertNotNull(manager.consumeDue(current.token))
+        assertNull(manager.extend(current.token))
+        assertTrue(manager.isExecutionCurrent(current.token))
+    }
+
+    @Test fun `denied permission preserves a timer during custom schedule and extension`() {
+        val manager = SleepTimerManager(context)
+        val current = manager.advance(tv)!!
+        ShadowAlarmManager.setCanScheduleExactAlarms(false)
+        assertThrows(SecurityException::class.java) { manager.scheduleFor(tv, 15) }
+        assertThrows(SecurityException::class.java) { manager.scheduleAt(tv, 0, 30) }
+        assertThrows(SecurityException::class.java) { manager.extend(current.token) }
+        assertEquals(current, manager.timer.value)
+    }
+
+    @Test fun `clock schedule uses the next local occurrence and the existing monotonic alarm`() {
+        val originalZone = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+            val wallNow = System.currentTimeMillis()
+            val target = java.util.Calendar.getInstance().apply {
+                timeInMillis = wallNow
+                add(java.util.Calendar.MINUTE, 10)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }
+            val now = SystemClock.elapsedRealtime()
+            val manager = SleepTimerManager(context)
+            val timer = manager.scheduleAt(tv, target.get(java.util.Calendar.HOUR_OF_DAY), target.get(java.util.Calendar.MINUTE))
+            // JVM wall time advances independently of Robolectric's monotonic clock.
+            val expected = now + target.timeInMillis - wallNow
+            assertTrue(timer.deadlineElapsed in (expected - 1_000)..(expected + 1_000))
+            assertTrue(timer.remainingSeconds() in 540L..600L)
+            assertEquals(timer.deadlineElapsed, shadowOf(alarms).scheduledAlarms.single().triggerAtTime)
+            assertEquals(timer, SleepTimerManager(context).timer.value)
+            assertEquals(30, manager.advance(tv)!!.minutes)
+        } finally { TimeZone.setDefault(originalZone) }
+    }
+
+    @Test fun `next time handles today tomorrow equal minute and DST without assuming twenty four hours`() {
+        val cases = listOf(
+            Triple("UTC", "2026-11-07T20:00:00Z", "2026-11-08T00:30:00Z"),
+            Triple("UTC", "2026-11-07T00:30:00Z", "2026-11-08T00:30:00Z"),
+            Triple("America/Argentina/Buenos_Aires", "2026-11-07T20:00:00Z", "2026-11-08T03:30:00Z"),
+            Triple("America/New_York", "2026-03-08T05:45:00Z", "2026-03-09T04:30:00Z")
+        )
+        for ((zone, now, expected) in cases) {
+            assertEquals(zone, Instant.parse(expected).toEpochMilli(), nextSleepOccurrence(
+                0, 30, Instant.parse(now).toEpochMilli(), TimeZone.getTimeZone(zone)))
+        }
+        assertThrows(IllegalArgumentException::class.java) { nextSleepOccurrence(24, 0) }
+        assertThrows(IllegalArgumentException::class.java) { nextSleepOccurrence(0, 60) }
+    }
+
+    @Test fun `ambiguous clock time chooses the earliest future occurrence and nonexistent time skips the gap`() {
+        val zone = TimeZone.getTimeZone("America/New_York")
+        val cases = listOf(
+            listOf("2026-11-01T04:00:00Z", "1", "30", "2026-11-01T05:30:00Z"),
+            listOf("2026-11-01T05:45:00Z", "1", "30", "2026-11-01T06:30:00Z"),
+            listOf("2026-03-08T05:00:00Z", "2", "30", "2026-03-09T06:30:00Z")
+        )
+        for ((now, hour, minute, expected) in cases) {
+            assertEquals(now, Instant.parse(expected).toEpochMilli(), nextSleepOccurrence(
+                hour.toInt(), minute.toInt(), Instant.parse(now).toEpochMilli(), zone))
+        }
     }
 
     @Test fun `remaining seconds round up until the exact deadline and never become negative`() {

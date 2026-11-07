@@ -17,6 +17,7 @@ import com.example.data.model.TvDeviceEntity
 import com.example.service.QuickRemoteManager
 import com.example.service.QuickRemoteNotification
 import com.example.service.QuickRemoteService
+import com.example.sleep.SleepTimerManager
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -26,6 +27,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowAlarmManager
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -86,6 +88,27 @@ class QuickRemoteServiceTest {
         session.selectDevice(device.copy(id = 8, ipAddress = "127.0.0.2"))
         sockets.last().connect(); idle()
         assertNull(shadowOf(app).nextStartedService)
+    }
+
+    @Test fun `closing the mini remote in background preserves and allows extending custom Sleep`() {
+        ShadowAlarmManager.setCanScheduleExactAlarms(true)
+        // Own this fixture's Application/prefs; other Robolectric cases may have
+        // initialized the production singleton with a previous fake Application.
+        val timers = SleepTimerManager(app)
+        timers.cancel()
+        try {
+            val scheduled = timers.scheduleFor(device, 45)
+            service = createService(connectAndRequest())
+            manager.onAppBackground(false)
+            service!!.onStartCommand(manager.actionIntent("close"), 0, 2)
+            assertFalse(manager.isRunning)
+            assertEquals(ConnectionState.Disconnected, session.controller.connectionState.value)
+            assertEquals(scheduled, timers.timer.value)
+            val extended = timers.extend(scheduled.token)!!
+            assertEquals(scheduled.deadlineElapsed + 900_000L, extended.deadlineElapsed)
+            assertEquals(device.id, extended.deviceId)
+            assertEquals(extended, SleepTimerManager(app).timer.value)
+        } finally { timers.cancel() }
     }
 
     @Test fun `late service start after closing cannot restore notification`() {

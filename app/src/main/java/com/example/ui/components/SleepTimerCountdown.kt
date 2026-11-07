@@ -37,12 +37,16 @@ fun formatSleepCountdown(remainingSeconds: Long): String {
 }
 
 @Composable
-fun SleepTimerNotice(timer: SleepTimerState, remainingSeconds: Long, onCancel: () -> Unit) {
+fun SleepTimerNotice(timer: SleepTimerState, remainingSeconds: Long, onCancel: () -> Unit,
+    onExtend: (() -> Unit)? = null) {
     Notice(
         label = if (remainingSeconds > 0) "Sleep · ${formatSleepCountdown(remainingSeconds)} restantes"
             else "Sleep · Vencido",
         message = if (remainingSeconds > 0) timer.deviceName else "${timer.deviceName} · Esperando apagado",
         modifier = Modifier.testTag("sleep_timer_notice"),
-        actions = listOf(NoticeAction("Cancelar", onClick = onCancel))
+        actions = buildList {
+            if (remainingSeconds > 0 && onExtend != null) add(NoticeAction("+15 min", onClick = onExtend))
+            add(NoticeAction("Cancelar", onClick = onCancel))
+        }
     )
 }
