@@ -75,6 +75,7 @@ fun MacAddressConfigDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        ForwardRemoteVolumeKeys()
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.92f)

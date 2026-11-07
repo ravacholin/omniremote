@@ -70,6 +70,7 @@ fun MacLoginDialog(
         containerColor = Ink,
         shape = Sharp,
         title = {
+            ForwardRemoteVolumeKeys()
             Column {
                 Text("Conectar la Mac", style = MaterialTheme.typography.titleMedium, color = Paper)
                 MonoLabel("$deviceName // $deviceIp")

@@ -119,6 +119,7 @@ fun AddTvAppDialog(
         onDismissRequest = onDismiss,
         containerColor = RemoteCardBg,
         title = {
+            ForwardRemoteVolumeKeys()
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
