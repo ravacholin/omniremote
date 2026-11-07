@@ -86,6 +86,8 @@ import com.example.ui.components.MacLoginDialog
 import com.example.ui.components.ForwardRemoteVolumeKeys
 import com.example.ui.components.MacRemotePanel
 import com.example.ui.components.DeviceManagerDialog
+import com.example.ui.components.ConnectionDiagnosisDialog
+import com.example.network.DiagnosticAction
 import com.example.ui.components.DeviceSelectorBar
 import com.example.ui.components.SleepTimerNotice
 import com.example.ui.components.rememberSleepTimerRemainingSeconds
@@ -115,6 +117,7 @@ fun MainScreen(
     val allDevices by viewModel.allDevices.collectAsStateWithLifecycle()
     val activeDevice by viewModel.activeDevice.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val connectionDiagnosis by viewModel.connectionDiagnosis.collectAsStateWithLifecycle()
     val activeTab by viewModel.activeTab.collectAsStateWithLifecycle()
     val isDeviceManagerOpen by viewModel.isDeviceManagerOpen.collectAsStateWithLifecycle()
     val recentLogs by viewModel.recentLogs.collectAsStateWithLifecycle()
@@ -149,6 +152,22 @@ fun MainScreen(
     val sleepTimerResult by viewModel.sleepTimerResult.collectAsStateWithLifecycle()
     var showSleepPermission by rememberSaveable { mutableStateOf(false) }
     var pendingSleepDeviceId by rememberSaveable { mutableStateOf<Long?>(null) }
+    connectionDiagnosis?.let { diagnosis ->
+        ConnectionDiagnosisDialog(
+            state = diagnosis,
+            onDismiss = viewModel::closeConnectionDiagnosis,
+            onRecheck = viewModel::diagnoseConnection,
+            onAction = { action ->
+                if (action == DiagnosticAction.NETWORK_SETTINGS) {
+                    try {
+                        context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        Toast.makeText(context, "Abrí los ajustes de Wi-Fi del teléfono", Toast.LENGTH_LONG).show()
+                    }
+                } else viewModel.performDiagnosticAction(action)
+            }
+        )
+    }
     val alarmPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (pendingSleepDeviceId != null && viewModel.activeDevice.value?.id == pendingSleepDeviceId) {
             if (!viewModel.cycleSleepTimer()) {
@@ -363,6 +382,12 @@ fun MainScreen(
                         )
                     }
                     else -> {}
+                }
+
+                if (activeDevice != null && connectionState !is ConnectionState.Connected) {
+                    TextButton(onClick = viewModel::diagnoseConnection, modifier = Modifier.fillMaxWidth()) {
+                        Text("¿Por qué no conecta?")
+                    }
                 }
 
                 // A Mac only takes volume and media, so it gets a single panel instead of the tabs.

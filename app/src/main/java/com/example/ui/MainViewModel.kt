@@ -16,6 +16,14 @@ import com.example.network.DiscoveredTv
 import com.example.network.NsdScanState
 import com.example.network.NsdTvDiscoveryService
 import com.example.network.TvScanner
+import com.example.network.AndroidDiagnosticEnvironment
+import com.example.network.ConnectionDiagnosticRunner
+import com.example.network.DiagnosticAction
+import com.example.network.DiagnosticEnvironment
+import com.example.ui.components.ConnectionDiagnosisUiState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -88,6 +96,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val recentLogs: StateFlow<List<CommandLog>> = controller.recentLogs
     val lastDispatchedKey: StateFlow<RemoteKey?> = controller.lastDispatchedKey
     val macVolume: StateFlow<com.example.network.MacVolume?> = controller.macVolume
+
+    private val diagnosticEnvironment: DiagnosticEnvironment = AndroidDiagnosticEnvironment(application, scanner, tokenStore) { connectionState.value }
+    private val _connectionDiagnosis = MutableStateFlow<ConnectionDiagnosisUiState?>(null)
+    val connectionDiagnosis = _connectionDiagnosis.asStateFlow()
+    private var diagnosticJob: Job? = null
 
     private val _isMacLoginDialogOpen = MutableStateFlow(false)
     val isMacLoginDialogOpen: StateFlow<Boolean> = _isMacLoginDialogOpen.asStateFlow()
@@ -248,6 +261,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectDevice(device: TvDeviceEntity) {
         // An older device-list emission can finish app initialization after deletion.
         if (device.id in deletedDeviceIds) return
+        if (_activeDevice.value?.id != device.id || _activeDevice.value?.ipAddress != device.ipAddress) closeConnectionDiagnosis()
         _activeDevice.value = device
         controller.setActiveDevice(device)
         viewModelScope.launch(Dispatchers.IO) {
@@ -661,6 +675,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteDevice(device: TvDeviceEntity) {
+        if (_activeDevice.value?.id == device.id) closeConnectionDiagnosis()
         deletedDeviceIds += device.id
         sleepTimerManager.cancelForDevice(device.id)
         viewModelScope.launch {
@@ -712,6 +727,113 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun retryConnection() {
         controller.reconnect()
+    }
+
+    fun diagnoseConnection() {
+        val device = _activeDevice.value ?: return
+        diagnosticJob?.cancel()
+        _connectionDiagnosis.value = ConnectionDiagnosisUiState(device.name)
+        diagnosticJob = viewModelScope.launch {
+            try {
+                val report = withContext(Dispatchers.IO) {
+                    ConnectionDiagnosticRunner(diagnosticEnvironment).run(device) { stage ->
+                        if (diagnosisTargets(device)) _connectionDiagnosis.value =
+                            _connectionDiagnosis.value?.copy(stage = stage)
+                    }
+                }
+                ensureActive()
+                if (diagnosisTargets(device)) _connectionDiagnosis.value =
+                    ConnectionDiagnosisUiState(device.name, isRunning = false, report = report)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (diagnosisTargets(device)) _connectionDiagnosis.value = ConnectionDiagnosisUiState(
+                    device.name, isRunning = false,
+                    message = "No pudimos completar las comprobaciones. Verificá la red local y volvé a intentar. La vinculación se conserva.")
+            }
+        }
+    }
+
+    fun closeConnectionDiagnosis() {
+        diagnosticJob?.cancel()
+        diagnosticJob = null
+        _connectionDiagnosis.value = null
+    }
+
+    private fun diagnosisTargets(device: TvDeviceEntity): Boolean =
+        _connectionDiagnosis.value != null && device.id !in deletedDeviceIds &&
+            _activeDevice.value?.id == device.id && _activeDevice.value?.ipAddress == device.ipAddress
+
+    fun performDiagnosticAction(action: DiagnosticAction) {
+        val ui = _connectionDiagnosis.value ?: return
+        val report = ui.report ?: return
+        val device = _activeDevice.value ?: return
+        if (ui.isRunning || action !in report.actions || device.id != report.deviceId ||
+            device.ipAddress != report.originalAddress || !diagnosisTargets(device)) return
+        val currentState = connectionState.value
+        if (currentState is ConnectionState.Connected && action != DiagnosticAction.MANAGE_DEVICE &&
+            action != DiagnosticAction.NETWORK_SETTINGS) {
+            closeConnectionDiagnosis()
+            return
+        }
+        if ((action == DiagnosticAction.AUTHORIZE && currentState !is ConnectionState.WaitingAuth) ||
+            (action in setOf(DiagnosticAction.RECONNECT, DiagnosticAction.WAKE, DiagnosticAction.USE_NEW_ADDRESS) && (currentState is ConnectionState.WaitingAuth ||
+                currentState is ConnectionState.Connecting))) {
+            diagnoseConnection()
+            return
+        }
+        when (action) {
+            DiagnosticAction.NETWORK_SETTINGS -> Unit // Handled by the screen, which owns activity launches.
+            DiagnosticAction.RECONNECT -> { closeConnectionDiagnosis(); retryConnection() }
+            DiagnosticAction.MANAGE_DEVICE -> { closeConnectionDiagnosis(); setDeviceManagerOpen(true) }
+            DiagnosticAction.WAKE -> { closeConnectionDiagnosis(); powerOnTv() }
+            DiagnosticAction.AUTHORIZE -> when (device.deviceType) {
+                DeviceType.ANDROID_TV -> { closeConnectionDiagnosis(); startAndroidTvPairing() }
+                DeviceType.MACOS -> { closeConnectionDiagnosis(); openMacLogin() }
+                DeviceType.SAMSUNG_TIZEN -> {
+                    // Keep the socket that owns the TV's pending permission prompt.
+                    _connectionDiagnosis.value = ui.copy(message =
+                        "Permití OmniRemote en la pantalla de tu Samsung con el control original. Si está bloqueado, revisá la lista de dispositivos permitidos de la TV.")
+                }
+            }
+            DiagnosticAction.USE_NEW_ADDRESS -> {
+                val newAddress = report.newAddress ?: return
+                _connectionDiagnosis.value = ui.copy(isRunning = true, stage = "Confirmando la identidad y actualizando la IP…")
+                diagnosticJob = viewModelScope.launch {
+                    try {
+                        val savedMac = com.example.network.WakeOnLan.formatMacAddress(device.macAddress)
+                        val observedMac = diagnosticEnvironment.hardwareAddress(device.copy(ipAddress = newAddress))
+                            ?.let(com.example.network.WakeOnLan::formatMacAddress)
+                        ensureActive()
+                        if (!diagnosisTargets(device)) return@launch
+                        if (savedMac == null || observedMac != savedMac) {
+                            _connectionDiagnosis.value = ui.copy(report = report.copy(actions = listOf(DiagnosticAction.MANAGE_DEVICE)),
+                                message = "La identidad ya no pudo confirmarse en la nueva IP. No cambiamos el equipo; volvé a comprobar.")
+                            return@launch
+                        }
+                        val updated = withContext(Dispatchers.IO) {
+                            if (repository.updateAddressIfUnchanged(device.id, device.ipAddress, newAddress))
+                                repository.getDeviceById(device.id) else null
+                        }
+                        ensureActive()
+                        if (!diagnosisTargets(device)) return@launch
+                        if (updated != null) {
+                            // Stable ID preserves Samsung tokens, Android TLS identity and Mac SSH login.
+                            closeConnectionDiagnosis()
+                            selectDevice(updated)
+                        } else {
+                            _connectionDiagnosis.value = ui.copy(report = report.copy(actions = listOf(DiagnosticAction.MANAGE_DEVICE)),
+                                message = "El equipo guardado cambió o esa IP ya está en uso. No se aplicó la actualización; revisá los equipos.")
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        if (diagnosisTargets(device)) _connectionDiagnosis.value = ui.copy(
+                            message = "No pudimos actualizar la dirección. La vinculación guardada se conserva.")
+                    }
+                }
+            }
+        }
     }
 
     fun onAppForeground() {

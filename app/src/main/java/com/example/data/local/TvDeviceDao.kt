@@ -106,6 +106,12 @@ interface TvDeviceDao {
     @Query("UPDATE tv_devices SET lastConnected = :timestamp WHERE id = :id")
     suspend fun updateLastConnected(id: Long, timestamp: Long)
 
+    // Conditional single-column repair preserves token/MAC updates made during discovery.
+    @Query("""UPDATE tv_devices SET ipAddress = :newAddress
+        WHERE id = :id AND ipAddress = :oldAddress
+        AND NOT EXISTS (SELECT 1 FROM tv_devices other WHERE other.id != :id AND other.ipAddress = :newAddress)""")
+    suspend fun updateAddressIfUnchanged(id: Long, oldAddress: String, newAddress: String): Int
+
     @Query("SELECT COUNT(*) FROM tv_devices")
     suspend fun getDeviceCount(): Int
 }
