@@ -215,6 +215,8 @@ class TvScanner(
         // Remote Service is authoritative, even if Cast or OEM HTTP services are absent.
         // Some boxes expose only the pairing service before their first authorization.
         if (isPortOpen(ip, 6466, 650) || isPortOpen(ip, 6467, 650)) {
+            // Keep hardware metadata for safe recovery after DHCP address changes.
+            fetchCastDeviceInfo(ip)?.let { return it.copy(port = 6466) }
             return DiscoveredTv(
                 name = "Android TV / Google TV ($ip)", ipAddress = ip,
                 deviceType = DeviceType.ANDROID_TV, port = 6466,

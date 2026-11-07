@@ -54,5 +54,20 @@ class SamsungConnectionDiagnostics(context: Context) {
             runCatching { JSONArray(prefs.getString("events", "[]")).toString(2) }.getOrDefault("[]")
     }
 
+    /** Only the latest attempt at this address is relevant; never export raw tokens/details. */
+    fun latestAuthorizationEvent(ip: String): String? = synchronized(lock) {
+        runCatching {
+            val entries = JSONArray(prefs.getString("events", "[]"))
+            val events = (0 until entries.length()).map { entries.getJSONObject(it) }
+                .filter { it.optString("tv") == ip }
+            val start = events.indexOfLast { it.optString("event") == "connect_start" }
+            val session = events.getOrNull(start)?.optLong("session")
+            val attempt = if (start >= 0) events.drop(start).filter { it.optLong("session") == session } else emptyList()
+            attempt.lastOrNull { it.optString("event") in setOf(
+                "authorization_confirmed", "authorization_rejected", "tv_authorization_timeout")
+            }?.optString("event")
+        }.getOrNull()
+    }
+
     private companion object { val lock = Any() }
 }

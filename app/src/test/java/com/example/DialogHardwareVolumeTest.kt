@@ -2,6 +2,7 @@ package com.example
 
 import android.view.KeyEvent
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -12,6 +13,8 @@ import com.example.data.model.RemoteKey
 import com.example.data.model.TvDeviceEntity
 import com.example.ui.MainViewModel
 import com.example.ui.components.AddTvAppDialog
+import com.example.ui.components.ConnectionDiagnosisDialog
+import com.example.ui.components.ConnectionDiagnosisUiState
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +41,20 @@ class DialogHardwareVolumeTest {
     }
 
     @Test fun `volume controls the remote while an app dialog has focus`() {
+        verifyVolumeWithDialog {
+            AddTvAppDialog(isOpen = true, deviceType = DeviceType.SAMSUNG_TIZEN,
+                onDismiss = {}, onConfirm = { _, _, _, _, _, _ -> })
+        }
+    }
+
+    @Test fun `volume controls the remote while the diagnosis dialog has focus`() {
+        verifyVolumeWithDialog {
+            ConnectionDiagnosisDialog(ConnectionDiagnosisUiState("Remote"),
+                onDismiss = {}, onRecheck = {}, onAction = {})
+        }
+    }
+
+    private fun verifyVolumeWithDialog(dialog: @Composable () -> Unit) {
         compose.runOnUiThread {
             val device = TvDeviceEntity(id = 1, name = "Remote", deviceType = DeviceType.SAMSUNG_TIZEN,
                 ipAddress = "127.0.0.1")
@@ -51,12 +68,7 @@ class DialogHardwareVolumeTest {
             // The Compose rule owns the frame clock and cleanup for this real window.
             compose.activity.setContent {
                 MyApplicationTheme {
-                    AddTvAppDialog(
-                        isOpen = true,
-                        deviceType = DeviceType.SAMSUNG_TIZEN,
-                        onDismiss = {},
-                        onConfirm = { _, _, _, _, _, _ -> }
-                    )
+                    dialog()
                 }
             }
         }

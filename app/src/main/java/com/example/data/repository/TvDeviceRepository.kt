@@ -44,4 +44,7 @@ class TvDeviceRepository(private val dao: TvDeviceDao) {
     suspend fun markLastConnected(id: Long) {
         dao.updateLastConnected(id, System.currentTimeMillis())
     }
+
+    suspend fun updateAddressIfUnchanged(id: Long, oldAddress: String, newAddress: String): Boolean =
+        dao.updateAddressIfUnchanged(id, oldAddress, newAddress) == 1
 }

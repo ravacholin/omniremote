@@ -35,6 +35,27 @@ class DeviceRepositoryReliabilityTest {
 
     @After fun teardown() = db.close()
 
+    @Test fun `diagnostic IP repair preserves renewed credentials apps and device metadata`() = runBlocking {
+        val id = repo.saveDevice(tv("192.168.1.10").copy(macAddress = "AA:BB:CC:DD:EE:10", authToken = "old"))
+        val appId = db.tvAppDao().insert(TvAppEntity(deviceId = id, appName = "My app", appIdentifier = "my.app"))
+        val before = repo.getDeviceById(id)!!
+        repo.updateAuthToken(id, "new-token")
+        assertTrue(repo.updateAddressIfUnchanged(id, "192.168.1.10", "192.168.1.99"))
+        assertEquals(before.copy(ipAddress = "192.168.1.99", authToken = "new-token"), repo.getDeviceById(id))
+        assertNotNull(db.tvAppDao().getAppById(appId))
+        assertFalse(repo.updateAddressIfUnchanged(id, "192.168.1.10", "192.168.1.98"))
+        repo.deleteDevice(repo.getDeviceById(id)!!)
+        assertFalse(repo.updateAddressIfUnchanged(id, "192.168.1.99", "192.168.1.98"))
+        assertNull(repo.getDeviceById(id))
+    }
+
+    @Test fun `diagnostic IP repair does not collide with another saved device`() = runBlocking {
+        val id = repo.saveDevice(tv("192.168.1.10"))
+        repo.saveDevice(tv("192.168.1.99").copy(macAddress = "AA:BB:CC:DD:EE:20"))
+        assertFalse(repo.updateAddressIfUnchanged(id, "192.168.1.10", "192.168.1.99"))
+        assertEquals("192.168.1.10", repo.getDeviceById(id)!!.ipAddress)
+    }
+
     @Test fun `adding another TV keeps a single default`() = runBlocking {
         val first = repo.saveDevice(tv("192.168.1.10"))
         repo.saveDevice(tv("192.168.1.11"))

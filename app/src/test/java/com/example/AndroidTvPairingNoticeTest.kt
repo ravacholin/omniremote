@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.Looper
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
@@ -73,6 +74,15 @@ class AndroidTvPairingNoticeTest {
         compose.setContent { MainScreen(model) }
         compose.onNodeWithText("Con el código PIN que aparece en pantalla").assertDoesNotExist()
         compose.onNodeWithText("VINCULAR GOOGLE TV").assertDoesNotExist()
+    }
+
+    @Test fun `disconnected device can open and close a readable diagnosis`() {
+        setConnection(ConnectionState.Error("Transport error"))
+        compose.setContent { MainScreen(model) }
+        compose.onNodeWithText("¿Por qué no conecta?").performClick()
+        compose.onNodeWithText("Diagnóstico de conexión").assertExists()
+        compose.onNodeWithText("Cerrar").performClick()
+        compose.onNodeWithText("Diagnóstico de conexión").assertDoesNotExist()
     }
 
     @Test fun `reconnecting and disconnected TV do not infer that a PIN is required`() {
