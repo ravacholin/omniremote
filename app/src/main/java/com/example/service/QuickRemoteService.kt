@@ -97,6 +97,9 @@ class QuickRemoteService : Service() {
             "volume_down" -> session.sendKey(RemoteKey.VOL_DOWN)
             "mute" -> session.sendKey(RemoteKey.MUTE)
             "play_pause" -> session.sendKey(RemoteKey.PLAY_PAUSE)
+            "next" -> if (session.selectedDevice.value?.deviceType == com.example.data.model.DeviceType.MACOS) {
+                session.sendKey(RemoteKey.FAST_FORWARD)
+            }
             "power" -> session.powerToggle()
         }
         return START_NOT_STICKY

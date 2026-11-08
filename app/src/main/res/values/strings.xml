@@ -17,8 +17,7 @@
     <string name="quick_play_pause_desc">Reproducir o pausar</string>
     <string name="quick_power_desc">Encender o apagar</string>
     <string name="quick_close_desc">Cerrar mini mando</string>
-    <string name="quick_mac_power">Dormir pantalla</string>
-    <string name="quick_mac_power_desc">Dormir pantalla de la Mac</string>
+    <string name="quick_next">Siguiente canción</string>
     <string name="quick_connected">Conectado</string>
     <string name="quick_connecting">Conectando…</string>
     <string name="quick_authorize">Abre OmniRemote para autorizar el dispositivo</string>

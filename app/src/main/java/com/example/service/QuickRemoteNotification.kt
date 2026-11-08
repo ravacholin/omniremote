@@ -53,21 +53,29 @@ object QuickRemoteNotification {
             else -> context.getString(R.string.quick_disconnected)
         }
         val media = session.macMedia.state.value
+        val isMac = device.deviceType == DeviceType.MACOS
+        val powerAction = if (isMac) "next" else "power"
         val status = if (device.deviceType == DeviceType.MACOS) "$connectionStatus · ${media.label}" else connectionStatus
         fun views(layout: Int): RemoteViews = RemoteViews(context.packageName, layout).apply {
             for ((id, action) in listOf(R.id.quick_volume_up to "volume_up", R.id.quick_volume_down to "volume_down",
-                R.id.quick_mute to "mute", R.id.quick_play_pause to "play_pause", R.id.quick_power to "power", R.id.quick_close to "close")) {
+                R.id.quick_mute to "mute", R.id.quick_play_pause to "play_pause", R.id.quick_power to powerAction, R.id.quick_close to "close")) {
                 pending(context, manager, action)?.let { setOnClickPendingIntent(id, it) }
+                val mediaKey = when (action) {
+                    "play_pause" -> RemoteKey.PLAY_PAUSE
+                    "next" -> RemoteKey.FAST_FORWARD
+                    else -> null
+                }
                 val enabled = action == "close" || (action == "power" && state !is ConnectionState.Connecting &&
                     state !is ConnectionState.WaitingAuth && session.powerStatus.value?.startsWith("Enviando") != true) ||
-                    (action != "power" && connected && (action != "play_pause" || device.deviceType != DeviceType.MACOS || media.canSend(RemoteKey.PLAY_PAUSE)))
+                    (action != "power" && connected && (mediaKey == null || !isMac || media.canSend(mediaKey)))
                 setBoolean(id, "setEnabled", enabled)
             }
             if (layout == R.layout.quick_remote_expanded) {
                 setTextViewText(R.id.quick_status, status)
                 if (device.deviceType == DeviceType.MACOS) {
-                    setTextViewText(R.id.quick_power_label, context.getString(R.string.quick_mac_power))
-                    setContentDescription(R.id.quick_power, context.getString(R.string.quick_mac_power_desc))
+                    setTextViewText(R.id.quick_power_label, context.getString(R.string.quick_next))
+                    setImageViewResource(R.id.quick_power_icon, R.drawable.ic_quick_next)
+                    setContentDescription(R.id.quick_power, context.getString(R.string.quick_next))
                 }
             }
         }
