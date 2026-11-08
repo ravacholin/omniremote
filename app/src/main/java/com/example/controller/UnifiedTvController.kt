@@ -226,6 +226,28 @@ class UnifiedTvController(
         return result
     }
 
+    /** Bind both the selected device and transport generation before crossing to the IO thread. */
+    suspend fun openMacLink(deviceId: Long, url: String): MacResult {
+        val device = activeDevice?.takeIf { it.id == deviceId && it.deviceType == DeviceType.MACOS }
+            ?: return MacResult.Failed("Seleccioná el Mac de este enlace.")
+        if (_connectionState.value !is ConnectionState.Connected) return MacResult.Failed("Conectá el Mac antes de abrir el enlace.")
+        val script = try { MacScripts.openLink(url) } catch (_: IllegalArgumentException) {
+            return MacResult.Failed("El enlace no es válido.")
+        }
+        val expected = commandGeneration.get()
+        val result = withContext(Dispatchers.IO) {
+            macClient.run(script) {
+                commandGeneration.get() == expected && activeDevice?.id == deviceId &&
+                    activeDevice?.ipAddress == device.ipAddress && activeDevice?.deviceType == DeviceType.MACOS
+            }
+        }
+        if (commandGeneration.get() == expected && activeDevice?.id == deviceId) {
+            if (result is MacResult.LoginNeeded) _connectionState.value = ConnectionState.WaitingAuth(device.name, result.message)
+            addLog(device.name, if (result is MacResult.Ok) "Enlace abierto en el Mac" else "No se pudo abrir el enlace", result is MacResult.Ok)
+        }
+        return result
+    }
+
     fun setMacVolume(level: Int) {
         if (activeDevice?.deviceType != DeviceType.MACOS) return
         _macVolume.value = _macVolume.value?.copy(level = level, muted = false)

@@ -22,6 +22,24 @@ data class MacScript(val language: Language, val source: String) {
  * work too), then any open player.
  */
 object MacScripts {
+    /** Encode untrusted content as data, never shell or JavaScript source. */
+    fun openLink(url: String): MacScript {
+        require(com.example.share.SharedMacLink.parse(url)?.url == url) { "Enlace no válido." }
+        val encoded = android.util.Base64.encodeToString(url.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+        return MacScript(MacScript.Language.JAVASCRIPT, """
+ObjC.import('AppKit');
+ObjC.import('Foundation');
+function run() {
+  var data = $.NSData.alloc.initWithBase64EncodedStringOptions('$encoded', 0);
+  var url = $.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding);
+  if (!$.NSWorkspace.sharedWorkspace.openURL($.NSURL.URLWithString(url))) {
+    throw new Error('No se pudo abrir el enlace en el Mac.');
+  }
+  return 'ok';
+}
+""".trimStart())
+    }
+
     const val VOLUME_STEP = 6 // macOS volume keys move in 1/16 steps (6.25%)
 
     private const val REPORT_VOLUME = """

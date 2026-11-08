@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.os.Build
 import android.os.Bundle
+import android.content.Intent
 import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -38,6 +39,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null) receiveMacShare(intent)
+        else viewModel.macLinks.restoreState(savedInstanceState)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.connectionState.collect { state ->
@@ -53,6 +56,24 @@ class MainActivity : ComponentActivity() {
                 MainScreen(viewModel = viewModel)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receiveMacShare(intent)
+    }
+
+    private fun receiveMacShare(intent: Intent) {
+        if (intent.action != Intent.ACTION_SEND) return
+        viewModel.setDeviceManagerOpen(false)
+        viewModel.closeScanResultsScreen()
+        viewModel.macLinks.receive(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        viewModel.macLinks.saveState(outState)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onStart() {

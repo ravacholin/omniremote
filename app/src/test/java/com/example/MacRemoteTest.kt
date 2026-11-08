@@ -153,7 +153,7 @@ class MacRemoteTest {
         }
     }
 
-    private class MemoryStore : MacLoginStore {
+    internal class MemoryStore : MacLoginStore {
         val logins = HashMap<Long, MacLogin>()
         override fun getMacLogin(deviceId: Long) = logins[deviceId]
         override fun saveMacLogin(deviceId: Long, login: MacLogin) { logins[deviceId] = login }
@@ -161,7 +161,8 @@ class MacRemoteTest {
     }
 
     /** SSH server standing in for macOS Remote Login; osascript always reports "44,false". */
-    private class FakeMac(hostKey: Path, acceptKeysFrom: MemoryStore? = null, smallWindow: Boolean = false) {
+    internal class FakeMac(hostKey: Path, acceptKeysFrom: MemoryStore? = null, smallWindow: Boolean = false,
+        private val scriptReply: (String) -> String = { "44,false" }) {
         @Volatile var stallInput = false
         val stallStarted = java.util.concurrent.CountDownLatch(1)
         val authorizedKeys = CopyOnWriteArrayList<String>()
@@ -198,7 +199,7 @@ class MacRemoteTest {
                     commands += command to (if (isScript) input.readBytes().toString(Charsets.UTF_8) else "")
                     if (commands.last().second == "stall-output") return@thread
                     Regex("echo '([^']+)' >>").find(command)?.let { authorizedKeys += it.groupValues[1] }
-                    if (isScript) output.write("44,false\n".toByteArray())
+                    if (isScript) output.write((scriptReply(commands.last().second) + "\n").toByteArray())
                     output.flush()
                     exit.onExit(0)
                 }
