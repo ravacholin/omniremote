@@ -63,6 +63,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val nsdDiscoveryService = com.example.network.NsdTvDiscoveryService(application)
 
     private val session = com.example.controller.RemoteSession.getInstance(application)
+    val macLinks = com.example.share.MacLinksState(application, session, viewModelScope)
     private val controller = session.controller
 
     val allDevices: StateFlow<List<TvDeviceEntity>> = repository.allDevices
@@ -576,8 +577,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteDevice(device: TvDeviceEntity) {
+        val wasActive = _activeDevice.value?.id == device.id
+        macLinks.onDeviceDeleted(device.id)
         if (_activeDevice.value?.id == device.id) closeConnectionDiagnosis()
         deletedDeviceIds += device.id
+        // Invalidate unsent Mac links before suspending for the database deletion.
+        if (wasActive && device.deviceType == DeviceType.MACOS) session.clearDevice()
         sleepTimerManager.cancelForDevice(device.id)
         viewModelScope.launch {
             val remaining = withContext(Dispatchers.IO) {
@@ -585,7 +590,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (device.deviceType == DeviceType.MACOS) tokenStore.clearMacLogin(device.id)
                 repository.getDefaultDevice()
             }
-            if (_activeDevice.value?.id == device.id) {
+            if (_activeDevice.value?.id == device.id || (wasActive && _activeDevice.value == null)) {
                 if (remaining != null) {
                     selectDevice(remaining)
                 } else {

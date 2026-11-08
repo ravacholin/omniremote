@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong
 class RemoteSession private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val repository = TvDeviceRepository(AppDatabase.getInstance(context).tvDeviceDao())
+    val macLinks = com.example.share.MacLinkQueue(AppDatabase.getInstance(context).macLinkDao())
     val tokenStore = TvTokenStore.getInstance(context)
     internal val selectedDevice = MutableStateFlow<TvDeviceEntity?>(null)
     internal val playing = MutableStateFlow(true) // Estimated state, not telemetry from the TV.

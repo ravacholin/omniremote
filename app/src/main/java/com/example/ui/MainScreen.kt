@@ -50,6 +50,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
@@ -158,6 +159,37 @@ fun MainScreen(
                 } else viewModel.performDiagnosticAction(action)
             }
         )
+    }
+    val pendingMacShare by viewModel.macLinks.pendingShare.collectAsStateWithLifecycle()
+    val macLinkBusy by viewModel.macLinks.busy.collectAsStateWithLifecycle()
+    val macLinkError by viewModel.macLinks.error.collectAsStateWithLifecycle()
+    val queueDeviceId by viewModel.macLinks.queueDeviceId.collectAsStateWithLifecycle()
+    val queuedMacLinks by viewModel.macLinks.queueLinks.collectAsStateWithLifecycle()
+    val activeLinkFlow = remember(activeDevice?.id) { viewModel.macLinks.observeLinks(activeDevice?.id ?: 0L) }
+    val activeMacLinks by activeLinkFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val selectedMacId = activeDevice?.takeIf { it.deviceType == DeviceType.MACOS }?.id
+    if (!isMacLoginDialogOpen && !isDeviceManagerOpen && !isScanResultsScreenOpen) {
+        pendingMacShare?.let { request ->
+            com.example.ui.components.MacShareDialog(
+                requestId = request.id, link = request.link,
+                macs = allDevices.filter { it.deviceType == DeviceType.MACOS },
+                activeMacId = selectedMacId, connected = connectionState is ConnectionState.Connected,
+                busy = macLinkBusy, error = macLinkError,
+                onSave = { viewModel.macLinks.submit(it, open = false) },
+                onOpen = { viewModel.macLinks.submit(it, open = true) },
+                onConnect = { id -> allDevices.firstOrNull { it.id == id && it.deviceType == DeviceType.MACOS }?.let(viewModel::selectDevice) },
+                onSetup = { viewModel.setDeviceManagerOpen(true) }, onDismiss = viewModel.macLinks::dismissShare
+            )
+        }
+        if (pendingMacShare == null) allDevices.firstOrNull { it.id == queueDeviceId && it.deviceType == DeviceType.MACOS }?.let { mac ->
+            com.example.ui.components.MacQueueDialog(
+                deviceName = mac.name, links = queuedMacLinks.filter { it.deviceId == mac.id },
+                connected = selectedMacId == mac.id && connectionState is ConnectionState.Connected,
+                busy = macLinkBusy, error = macLinkError,
+                onNext = { viewModel.macLinks.openNext(mac.id) },
+                onRemove = { viewModel.macLinks.remove(mac.id, it) }, onDismiss = viewModel.macLinks::closeQueue
+            )
+        }
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -350,8 +382,11 @@ fun MainScreen(
                     }
                 }
 
-                // A Mac only takes volume and media, so it gets a single panel instead of the tabs.
+                // The Mac has media controls and a persistent queue of shared links.
                 if (isMac) {
+                    TextButton(onClick = { selectedMacId?.let(viewModel.macLinks::showQueue) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Enlaces guardados (${activeMacLinks.count { it.deviceId == selectedMacId }})")
+                    }
                     MacRemotePanel(
                         volume = macVolume,
                         media = macMedia,

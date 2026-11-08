@@ -76,6 +76,36 @@ exercise controlled players and cannot certify the user's Chrome/service version
   Wake-on-LAN only works with "Wake for network access" turned on.
 - Digital outputs without volume control (some HDMI/USB devices) report no volume.
 
+## «Pon esto en el Mac» desde Compartir
+
+En el navegador, YouTube o la app de mapas del teléfono, usá **Compartir >
+OmniRemote** (acción «Pon esto en el Mac»). Elegí un Mac guardado y una acción:
+
+- **Abrir:** conecta el Mac elegido primero si hace falta. El enlace se abre en
+  su navegador o aplicación predeterminada. Si no puede enviarse, queda guardado.
+- **Guardar para después:** agrega el enlace a la cola de ese Mac, incluso si
+  está desconectado. No abre el navegador ni cambia el equipo del mando.
+
+En el panel del Mac, **Enlaces guardados (N)** muestra la cola persistente.
+**Abrir siguiente** abre el primero; tocá de nuevo al terminar para continuar
+con el siguiente vídeo o web. Cada envío confirmado quita únicamente ese enlace.
+Podés eliminar enlaces individuales. La cola sobrevive al cierre de la app;
+borrar un Mac elimina sus enlaces y no afecta la cola de los demás.
+
+Se aceptan enlaces HTTP/HTTPS de vídeos, webs y mapas, incluidos enlaces rodeados
+de texto. Las ubicaciones `geo:` se convierten a Apple Maps. No se transfieren
+archivos de vídeo ni se interpretan direcciones postales sin enlace. No se
+admiten esquemas ejecutables, URLs con credenciales o caracteres de control.
+
+La orden usa la sesión SSH ya autorizada y `NSWorkspace.openURL` de macOS, sin
+instalar nada en el Mac ni solicitar control del navegador. El éxito confirma
+que macOS aceptó abrir el enlace: la carga, el inicio de sesión y el autoplay
+dependen del navegador y del sitio. No hay avance automático al terminar vídeos.
+
+Abrir un enlace conserva la fuente fijada en **Controlar**. Para dirigir los
+controles multimedia a la nueva pestaña, actualizá el selector y elegila allí;
+el volumen sigue controlando la salida general del Mac.
+
 ## Validation checklist
 
 Automated: `source /workspace/.tooling/env.sh`, then

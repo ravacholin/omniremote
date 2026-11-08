@@ -1,5 +1,6 @@
 package com.example
 
+import androidx.room.withTransaction
 import android.app.Application
 import android.os.Looper
 import androidx.lifecycle.ViewModelProvider
@@ -16,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -57,6 +59,27 @@ class DeviceDeletionTest {
         runBlocking { modelJob?.join() }
         resetDatabase()
         Dispatchers.resetMain()
+    }
+
+    @Test fun `deleting an active Mac cancels its target before database deletion can finish`() = runBlocking {
+        val db = AppDatabase.getInstance(application)
+        val id = db.tvDeviceDao().insert(device().copy(deviceType = DeviceType.MACOS, port = 22))
+        val mac = db.tvDeviceDao().getDeviceById(id)!!
+        model.selectDevice(mac)
+        val session = com.example.controller.RemoteSession.getInstance(application)
+        val generation = session.targetGeneration
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val transaction = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            db.withTransaction { entered.complete(Unit); release.await() }
+        }
+        entered.await()
+        try {
+            model.deleteDevice(mac)
+            assertNull("The deleted target must be deselected before waiting for Room", model.activeDevice.value)
+            assertTrue(session.targetGeneration > generation)
+            assertEquals(ConnectionState.Disconnected, model.connectionState.value)
+        } finally { release.complete(Unit); transaction.join() }
     }
 
     @Test fun `deleting the final active TV disconnects the remote`() = runBlocking {
