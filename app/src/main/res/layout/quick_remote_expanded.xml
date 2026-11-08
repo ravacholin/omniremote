@@ -20,7 +20,7 @@
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/quick_play_pause" android:textSize="10sp" android:textColor="#FFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
         </LinearLayout>
         <LinearLayout android:id="@+id/quick_power" android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp" android:gravity="center" android:orientation="vertical" android:contentDescription="@string/quick_power_desc" android:focusable="true" android:importantForAccessibility="yes">
-            <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_quick_power" android:importantForAccessibility="no" />
+            <ImageView android:id="@+id/quick_power_icon" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_quick_power" android:importantForAccessibility="no" />
             <TextView android:id="@+id/quick_power_label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/quick_power" android:textSize="10sp" android:textColor="#FFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
         </LinearLayout>
         <LinearLayout android:id="@+id/quick_close" android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp" android:gravity="center" android:orientation="vertical" android:contentDescription="@string/quick_close_desc" android:focusable="true" android:importantForAccessibility="yes">

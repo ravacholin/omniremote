@@ -43,12 +43,28 @@ class QuickRemoteServiceTest {
         }
         mediaState.value = mediaState.value.copy(sources = listOf(source))
         val oldMedia = manager.actionIntent("play_pause")!!
+        val oldNext = manager.actionIntent("next")!!
         val oldVolume = manager.actionIntent("volume_up")!!
         session.macMedia.select(source.id)
         assertFalse(manager.valid(oldMedia))
+        assertFalse(manager.valid(oldNext))
         assertTrue(manager.valid(oldVolume))
         assertTrue(manager.valid(manager.actionIntent("play_pause")!!))
+        assertTrue(manager.valid(manager.actionIntent("next")!!))
         val notification = QuickRemoteNotification.build(app, session, manager)!!
+        val view = notification.bigContentView.apply(app, FrameLayout(app))
+        val next = view.findViewById<View>(R.id.quick_power)
+        assertEquals("Siguiente canción", next.contentDescription.toString())
+        assertFalse("A source without NEXT must disable the button", next.isEnabled)
+        mediaState.value = mediaState.value.copy(sources = listOf(source.copy(capabilities = listOf("PLAY_PAUSE", "NEXT"))))
+        val enabledView = QuickRemoteNotification.build(app, session, manager)!!.bigContentView.apply(app, FrameLayout(app))
+        val enabledNext = enabledView.findViewById<View>(R.id.quick_power)
+        assertTrue(enabledNext.isEnabled)
+        while (shadowOf(app).nextStartedService != null) { /* Drain earlier requests. */ }
+        assertTrue(enabledNext.performClick())
+        val nextIntent = shadowOf(app).nextStartedService!!
+        assertEquals("next", nextIntent.action)
+        assertTrue(manager.valid(nextIntent))
         val text = notification.extras.getCharSequence("android.text").toString()
         assertTrue(text.contains("Spotify"))
         assertFalse(text.contains("Private song title"))

@@ -107,7 +107,7 @@ class QuickRemoteManager private constructor(private val context: Context) {
         if (!currentSession) return false
         // Closing affects the mini remote itself, including a just-replaced SystemUI view.
         if (intent.action == "close") return true
-        if (intent.action == "play_pause" && device.deviceType == DeviceType.MACOS &&
+        if ((intent.action == "play_pause" || intent.action == "next") && device.deviceType == DeviceType.MACOS &&
             intent.getLongExtra(MEDIA_REVISION, -1) != session.macMedia.state.value.revision) return false
         return intent.getLongExtra(DEVICE, -1) == device.id &&
             intent.getStringExtra(IP) == device.ipAddress &&
@@ -118,7 +118,7 @@ class QuickRemoteManager private constructor(private val context: Context) {
         val device = session.selectedDevice.value ?: return null
         val current = token ?: return null
         if (!requested || dismissed) return null
-        val mediaRevision = if (action == "play_pause" && device.deviceType == DeviceType.MACOS) session.macMedia.state.value.revision else -1L
+        val mediaRevision = if ((action == "play_pause" || action == "next") && device.deviceType == DeviceType.MACOS) session.macMedia.state.value.revision else -1L
         return Intent(context, QuickRemoteService::class.java).setAction(action)
             .setData(Uri.Builder().scheme("omniremote").authority("quick")
                 .appendPath(current).appendPath(session.targetGeneration.toString())
