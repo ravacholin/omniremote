@@ -176,7 +176,7 @@ class MacSshClient(private val store: MacLoginStore?, private val commandTimeout
         return try {
             // JSch channel writes can wait on the remote window and ignore interruption.
             // Closing this channel from outside that write also bounds stdin upload.
-            watchdog = commandWatchdog.scheduleAtFixedRate({
+            watchdog = commandWatchdog.scheduleWithFixedDelay({
                 if (System.nanoTime() >= deadline) expired.set(true)
                 if (!runCatching(canSend).getOrDefault(false)) cancelled.set(true)
                 if (expired.get() || cancelled.get()) channel.disconnect()
