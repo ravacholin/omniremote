@@ -76,6 +76,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val recentLogs: StateFlow<List<CommandLog>> = controller.recentLogs
     val lastDispatchedKey: StateFlow<RemoteKey?> = controller.lastDispatchedKey
     val macVolume: StateFlow<com.example.network.MacVolume?> = controller.macVolume
+    val macMedia = session.macMedia.state
+    fun selectMacMedia(id: String?) = session.macMedia.select(id)
+    fun refreshMacMedia() {
+        if (controller.isCurrentDeviceMac() && connectionState.value is ConnectionState.Connected) session.macMedia.refresh()
+    }
 
     private val diagnosticEnvironment: DiagnosticEnvironment = AndroidDiagnosticEnvironment(application, scanner, tokenStore) { connectionState.value }
     private val _connectionDiagnosis = MutableStateFlow<ConnectionDiagnosisUiState?>(null)

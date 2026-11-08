@@ -32,6 +32,28 @@ import org.robolectric.shadows.ShadowAlarmManager
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class QuickRemoteServiceTest {
+    @Test fun `old Mac media buttons are rejected when the source changes but volume still works`() {
+        service = createService(connectAndRequest())
+        session.selectedDevice.value = device.copy(deviceType = DeviceType.MACOS)
+        val source = com.example.network.MacMediaSource("app:com.spotify.client:42", com.example.network.MacMediaService.SPOTIFY,
+            "42", title = "Private song title", verified = true, capabilities = listOf("PLAY_PAUSE"))
+        @Suppress("UNCHECKED_CAST")
+        val mediaState = com.example.controller.MacMediaController::class.java.getDeclaredField("_state").let {
+            it.isAccessible = true; it.get(session.macMedia) as kotlinx.coroutines.flow.MutableStateFlow<com.example.controller.MacMediaState>
+        }
+        mediaState.value = mediaState.value.copy(sources = listOf(source))
+        val oldMedia = manager.actionIntent("play_pause")!!
+        val oldVolume = manager.actionIntent("volume_up")!!
+        session.macMedia.select(source.id)
+        assertFalse(manager.valid(oldMedia))
+        assertTrue(manager.valid(oldVolume))
+        assertTrue(manager.valid(manager.actionIntent("play_pause")!!))
+        val notification = QuickRemoteNotification.build(app, session, manager)!!
+        val text = notification.extras.getCharSequence("android.text").toString()
+        assertTrue(text.contains("Spotify"))
+        assertFalse(text.contains("Private song title"))
+    }
+
     private val app = ApplicationProvider.getApplicationContext<Application>()
     private lateinit var session: RemoteSession
     private lateinit var manager: QuickRemoteManager

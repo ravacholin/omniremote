@@ -17,6 +17,7 @@ import com.example.R
 import com.example.controller.RemoteSession
 import com.example.data.model.ConnectionState
 import com.example.data.model.DeviceType
+import com.example.data.model.RemoteKey
 
 object QuickRemoteNotification {
     const val CHANNEL = "quick_remote"
@@ -45,19 +46,21 @@ object QuickRemoteNotification {
         val close = pending(context, manager, "close") ?: return null
         val state = session.controller.connectionState.value
         val connected = state is ConnectionState.Connected && state.ip == device.ipAddress
-        val status = session.powerStatus.value ?: when (state) {
+        val connectionStatus = session.powerStatus.value ?: when (state) {
             is ConnectionState.Connected -> context.getString(R.string.quick_connected)
             is ConnectionState.Connecting -> context.getString(R.string.quick_connecting)
             is ConnectionState.WaitingAuth -> context.getString(R.string.quick_authorize)
             else -> context.getString(R.string.quick_disconnected)
         }
+        val media = session.macMedia.state.value
+        val status = if (device.deviceType == DeviceType.MACOS) "$connectionStatus · ${media.label}" else connectionStatus
         fun views(layout: Int): RemoteViews = RemoteViews(context.packageName, layout).apply {
             for ((id, action) in listOf(R.id.quick_volume_up to "volume_up", R.id.quick_volume_down to "volume_down",
                 R.id.quick_mute to "mute", R.id.quick_play_pause to "play_pause", R.id.quick_power to "power", R.id.quick_close to "close")) {
                 pending(context, manager, action)?.let { setOnClickPendingIntent(id, it) }
                 val enabled = action == "close" || (action == "power" && state !is ConnectionState.Connecting &&
                     state !is ConnectionState.WaitingAuth && session.powerStatus.value?.startsWith("Enviando") != true) ||
-                    (action != "power" && connected)
+                    (action != "power" && connected && (action != "play_pause" || device.deviceType != DeviceType.MACOS || media.canSend(RemoteKey.PLAY_PAUSE)))
                 setBoolean(id, "setEnabled", enabled)
             }
             if (layout == R.layout.quick_remote_expanded) {

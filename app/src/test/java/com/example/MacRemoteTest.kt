@@ -29,6 +29,52 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
 class MacRemoteTest {
+    @Test fun `stalled stdin upload is bounded without closing the shared SSH session`() {
+        val server = FakeMac(Files.createTempDirectory("mac-ssh-write").resolve("host.ser"), smallWindow = true)
+        val client = MacSshClient(MemoryStore(), commandTimeoutMs = 250)
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it).apply { isDaemon = true } }
+        try {
+            assertTrue(client.login(1, "127.0.0.1", server.port, "pablo", "secret") is MacResult.Ok)
+            server.stallInput = true
+            val pending = executor.submit<MacResult> { client.run(MacScript(MacScript.Language.APPLESCRIPT, "x".repeat(128 * 1024))) }
+            assertTrue(pending.get(2, java.util.concurrent.TimeUnit.SECONDS) is MacResult.Failed)
+            server.stallInput = false
+            assertEquals(MacResult.Ok("44,false"), client.run(MacScripts.readVolume))
+        } finally { client.disconnect(); executor.shutdownNow(); server.stop() }
+    }
+
+    @Test fun `cancelling during stdin upload releases the command channel`() {
+        val server = FakeMac(Files.createTempDirectory("mac-ssh-cancel").resolve("host.ser"), smallWindow = true)
+        val client = MacSshClient(MemoryStore(), commandTimeoutMs = 6000)
+        val allowed = java.util.concurrent.atomic.AtomicBoolean(true)
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it).apply { isDaemon = true } }
+        try {
+            assertTrue(client.login(1, "127.0.0.1", server.port, "pablo", "secret") is MacResult.Ok)
+            server.stallInput = true
+            val pending = executor.submit<MacResult> { client.run(MacScript(MacScript.Language.APPLESCRIPT, "x".repeat(128 * 1024))) { allowed.get() } }
+            assertTrue(server.stallStarted.await(1, java.util.concurrent.TimeUnit.SECONDS))
+            allowed.set(false)
+            assertTrue(pending.get(2, java.util.concurrent.TimeUnit.SECONDS) is MacResult.Failed)
+            server.stallInput = false
+            assertEquals(MacResult.Ok("44,false"), client.run(MacScripts.readVolume))
+        } finally { client.disconnect(); executor.shutdownNow(); server.stop() }
+    }
+
+    @Test fun `blocked script output times out and a later volume command still succeeds`() {
+        val dir = Files.createTempDirectory("mac-ssh-stall")
+        val server = FakeMac(dir.resolve("host.ser"))
+        try {
+            val client = MacSshClient(MemoryStore(), commandTimeoutMs = 150)
+            assertTrue(client.login(1, "127.0.0.1", server.port, "pablo", "secret") is MacResult.Ok)
+            val start = System.nanoTime()
+            val result = client.run(MacScript(MacScript.Language.APPLESCRIPT, "stall-output"))
+            assertTrue(result is MacResult.Failed)
+            assertTrue("The output read must be bounded", (System.nanoTime() - start) / 1_000_000 < 2000)
+            assertEquals(MacResult.Ok("44,false"), client.run(MacScripts.readVolume))
+            client.disconnect()
+        } finally { server.stop() }
+    }
+
     @Test fun `volume and media keys map to osascript and other keys are unsupported`() {
         assertEquals(MacScript.Language.APPLESCRIPT, MacScripts.forKey(RemoteKey.VOL_UP)!!.language)
         assertTrue(MacScripts.forKey(RemoteKey.VOL_UP)!!.source.contains("(v + ${MacScripts.VOLUME_STEP})"))
@@ -115,10 +161,13 @@ class MacRemoteTest {
     }
 
     /** SSH server standing in for macOS Remote Login; osascript always reports "44,false". */
-    private class FakeMac(hostKey: Path, acceptKeysFrom: MemoryStore? = null) {
+    private class FakeMac(hostKey: Path, acceptKeysFrom: MemoryStore? = null, smallWindow: Boolean = false) {
+        @Volatile var stallInput = false
+        val stallStarted = java.util.concurrent.CountDownLatch(1)
         val authorizedKeys = CopyOnWriteArrayList<String>()
         val commands = CopyOnWriteArrayList<Pair<String, String>>()
         private val server = SshServer.setUpDefaultServer().apply {
+            if (smallWindow) org.apache.sshd.core.CoreModuleProperties.WINDOW_SIZE.set(this, 1024L)
             port = 0
             keyPairProvider = SimpleGeneratorHostKeyProvider(hostKey)
             passwordAuthenticator = PasswordAuthenticator { user, password, _ -> user == "pablo" && password == "secret" }
@@ -145,7 +194,9 @@ class MacRemoteTest {
             override fun start(channel: ChannelSession, env: Environment) {
                 thread {
                     val isScript = command.startsWith("/usr/bin/osascript")
+                    if (isScript && stallInput) { stallStarted.countDown(); return@thread }
                     commands += command to (if (isScript) input.readBytes().toString(Charsets.UTF_8) else "")
+                    if (commands.last().second == "stall-output") return@thread
                     Regex("echo '([^']+)' >>").find(command)?.let { authorizedKeys += it.groupValues[1] }
                     if (isScript) output.write("44,false\n".toByteArray())
                     output.flush()

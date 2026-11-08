@@ -54,12 +54,29 @@ class RemoteSession private constructor(private val context: Context) {
         }
     )
 
+    val macMedia = MacMediaController(scope, controller::runMacMediaScript)
+
+    init {
+        scope.launch {
+            var wasConnected = false
+            controller.connectionState.collect { state ->
+                if (selectedDevice.value?.deviceType == DeviceType.MACOS) {
+                    if (state is ConnectionState.Connected) {
+                        if (!wasConnected) macMedia.refreshSelected()
+                    } else macMedia.invalidate()
+                }
+                wasConnected = state is ConnectionState.Connected
+            }
+        }
+    }
+
     fun selectDevice(device: TvDeviceEntity) {
         val old = selectedDevice.value
         if (old?.id != device.id || old.ipAddress != device.ipAddress || old.deviceType != device.deviceType) {
             cancelWake()
             generation.incrementAndGet()
             playing.value = true
+            macMedia.reset()
         }
         controller.setActiveDevice(device)
         selectedDevice.value = device
@@ -68,17 +85,23 @@ class RemoteSession private constructor(private val context: Context) {
     fun clearDevice() {
         cancelWake()
         generation.incrementAndGet()
+        macMedia.reset()
         selectedDevice.value = null
         controller.disconnectCurrent()
     }
 
     fun resumeConnection() {
         selectedDevice.value?.let { controller.resumeDevice(it) }
+        if (selectedDevice.value?.deviceType == DeviceType.MACOS) {
+            macMedia.invalidate()
+            if (controller.connectionState.value is ConnectionState.Connected) macMedia.refreshSelected()
+        }
     }
 
     fun disconnectForBackground() {
         cancelWake()
         generation.incrementAndGet()
+        macMedia.invalidate()
         controller.disconnectCurrent()
     }
 
@@ -89,6 +112,7 @@ class RemoteSession private constructor(private val context: Context) {
         }
         // Do not save taps while disconnected and replay them against a later connection.
         if (controller.connectionState.value !is ConnectionState.Connected) return
+        if (controller.isCurrentDeviceMac() && macMedia.send(key)) return
         if (key == RemoteKey.PLAY_PAUSE) {
             if (controller.isCurrentDeviceMac()) controller.sendKey(key)
             else {

@@ -104,7 +104,7 @@ class QuickRemoteService : Service() {
 
     private fun observeSession() {
         observation = scope.launch {
-            combine(session.selectedDevice, session.controller.connectionState, session.powerStatus) { _, _, _ -> Unit }
+            combine(session.selectedDevice, session.controller.connectionState, session.powerStatus, session.macMedia.state) { _, _, _, _ -> Unit }
                 .collect {
                     val notification = QuickRemoteNotification.build(this@QuickRemoteService, session, manager)
                     if (!manager.isRunning || notification == null) {

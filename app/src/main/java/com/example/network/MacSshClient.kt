@@ -10,6 +10,10 @@ import com.jcraft.jsch.Session
 import com.jcraft.jsch.UIKeyboardInteractive
 import com.jcraft.jsch.UserInfo
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Key-based login saved after the first password login, plus the Mac's pinned host key. */
 data class MacLogin(
@@ -36,7 +40,7 @@ sealed interface MacResult {
  * The password is used once to authorize a key generated on the phone and is never stored.
  * Calls block, so run them off the main thread.
  */
-class MacSshClient(private val store: MacLoginStore?) {
+class MacSshClient(private val store: MacLoginStore?, private val commandTimeoutMs: Int = 6000) {
     private data class Target(val deviceId: Long, val ip: String, val port: Int)
 
     private val lock = Any()
@@ -117,7 +121,7 @@ class MacSshClient(private val store: MacLoginStore?) {
             session ?: return MacResult.Failed("Sin sesión con la Mac.")
         }
         if (!canSend()) return MacResult.Failed("Orden cancelada: cambió el dispositivo.")
-        exec(current, script.command, script.source)
+        exec(current, script.command, script.source, canSend)
     }
 
     private fun openWithSavedLogin(): MacResult {
@@ -159,28 +163,64 @@ class MacSshClient(private val store: MacLoginStore?) {
         closing?.disconnect()
     }
 
-    private fun exec(session: Session, command: String, stdin: String?): MacResult {
+    private fun exec(session: Session, command: String, stdin: String?, canSend: () -> Boolean = { true }): MacResult {
         val channel = try {
             session.openChannel("exec") as ChannelExec
         } catch (e: JSchException) {
             return MacResult.Failed("La sesión con la Mac se cerró: ${e.message}")
         }
+        val deadline = System.nanoTime() + commandTimeoutMs * 1_000_000L
+        val expired = AtomicBoolean(false)
+        val cancelled = AtomicBoolean(false)
+        var watchdog: ScheduledFuture<*>? = null
         return try {
+            // JSch channel writes can wait on the remote window and ignore interruption.
+            // Closing this channel from outside that write also bounds stdin upload.
+            watchdog = commandWatchdog.scheduleWithFixedDelay({
+                if (System.nanoTime() >= deadline) expired.set(true)
+                if (!runCatching(canSend).getOrDefault(false)) cancelled.set(true)
+                if (expired.get() || cancelled.get()) channel.disconnect()
+            }, 10, 10, TimeUnit.MILLISECONDS)
             channel.setCommand(command)
             val out = channel.inputStream
             val err = channel.errStream
             val input = channel.outputStream
-            channel.connect(CONNECT_TIMEOUT_MS)
+            channel.connect(minOf(CONNECT_TIMEOUT_MS, commandTimeoutMs))
+            if (!canSend() || cancelled.get()) return MacResult.Failed("Orden cancelada: cambió el destino.")
+            if (System.nanoTime() >= deadline || expired.get()) return MacResult.Failed("La Mac tardó demasiado en responder. Volvé a intentar.")
             input.use { if (stdin != null) it.write(stdin.toByteArray()) }
-            val stdout = out.readBytes().toString(Charsets.UTF_8).trim()
-            val stderr = err.readBytes().toString(Charsets.UTF_8).trim()
-            val deadline = System.currentTimeMillis() + CONNECT_TIMEOUT_MS
-            while (!channel.isClosed && System.currentTimeMillis() < deadline) Thread.sleep(10)
+            val stdoutBytes = ByteArrayOutputStream()
+            val stderrBytes = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            fun drain(stream: java.io.InputStream, sink: ByteArrayOutputStream) {
+                while (stream.available() > 0) {
+                    val count = stream.read(buffer, 0, minOf(buffer.size, stream.available()))
+                    if (count <= 0) break
+                    sink.write(buffer, 0, count)
+                    check(stdoutBytes.size() + stderrBytes.size() <= 512 * 1024) { "Respuesta demasiado grande." }
+                    check(System.nanoTime() < deadline) { "Se agotó el tiempo de respuesta de la Mac." }
+                }
+            }
+            while (true) {
+                if (!canSend() || Thread.currentThread().isInterrupted) return MacResult.Failed("Orden cancelada: cambió el destino.")
+                if (System.nanoTime() >= deadline) return MacResult.Failed("La Mac tardó demasiado en responder. Volvé a intentar.")
+                drain(out, stdoutBytes)
+                drain(err, stderrBytes)
+                if (channel.isClosed && out.available() == 0 && err.available() == 0) break
+                Thread.sleep(10)
+            }
+            val stdout = stdoutBytes.toString(Charsets.UTF_8.name()).trim()
+            val stderr = stderrBytes.toString(Charsets.UTF_8.name()).trim()
             if (channel.exitStatus == 0) MacResult.Ok(stdout)
             else MacResult.Failed(describeScriptError(stderr.ifBlank { stdout }))
         } catch (e: Exception) {
-            MacResult.Failed("La Mac no respondió: ${e.message}")
+            MacResult.Failed(when {
+                cancelled.get() -> "Orden cancelada: cambió el destino."
+                expired.get() -> "La Mac tardó demasiado en responder. Volvé a intentar."
+                else -> "La Mac no respondió: ${e.message}"
+            })
         } finally {
+            watchdog?.cancel(false)
             channel.disconnect()
         }
     }
@@ -237,6 +277,9 @@ class MacSshClient(private val store: MacLoginStore?) {
     }
 
     companion object {
+        private val commandWatchdog = Executors.newSingleThreadScheduledExecutor { task ->
+            Thread(task, "mac-ssh-command-deadline").apply { isDaemon = true }
+        }
         private const val CONNECT_TIMEOUT_MS = 6000
         private const val KEEPALIVE_MS = 15000
         private const val KEY_COMMENT = "omniremote@android"
