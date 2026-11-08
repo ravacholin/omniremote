@@ -3,29 +3,23 @@
     <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:orientation="horizontal">
         <LinearLayout android:id="@+id/quick_volume_down" android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp" android:gravity="center" android:orientation="vertical" android:contentDescription="@string/quick_volume_down_desc" android:focusable="true" android:importantForAccessibility="yes">
             <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_quick_volume_down" android:importantForAccessibility="no" />
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/quick_vol_down" android:textSize="10sp" android:textColor="#FFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
         </LinearLayout>
         <LinearLayout android:id="@+id/quick_mute" android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp" android:gravity="center" android:orientation="vertical" android:contentDescription="@string/quick_mute_desc" android:focusable="true" android:importantForAccessibility="yes">
             <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_quick_mute" android:importantForAccessibility="no" />
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/quick_mute" android:textSize="10sp" android:textColor="#FFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
         </LinearLayout>
         <LinearLayout android:id="@+id/quick_volume_up" android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp" android:gravity="center" android:orientation="vertical" android:contentDescription="@string/quick_volume_up_desc" android:focusable="true" android:importantForAccessibility="yes">
             <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_quick_volume_up" android:importantForAccessibility="no" />
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/quick_vol_up" android:textSize="10sp" android:textColor="#FFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
         </LinearLayout>
     </LinearLayout>
     <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:orientation="horizontal">
         <LinearLayout android:id="@+id/quick_play_pause" android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp" android:gravity="center" android:orientation="vertical" android:contentDescription="@string/quick_play_pause_desc" android:focusable="true" android:importantForAccessibility="yes">
             <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_quick_play_pause" android:importantForAccessibility="no" />
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/quick_play_pause" android:textSize="10sp" android:textColor="#FFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
         </LinearLayout>
         <LinearLayout android:id="@+id/quick_power" android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp" android:gravity="center" android:orientation="vertical" android:contentDescription="@string/quick_power_desc" android:focusable="true" android:importantForAccessibility="yes">
             <ImageView android:id="@+id/quick_power_icon" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_quick_power" android:importantForAccessibility="no" />
-            <TextView android:id="@+id/quick_power_label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/quick_power" android:textSize="10sp" android:textColor="#FFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
         </LinearLayout>
         <LinearLayout android:id="@+id/quick_close" android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp" android:gravity="center" android:orientation="vertical" android:contentDescription="@string/quick_close_desc" android:focusable="true" android:importantForAccessibility="yes">
             <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_quick_close" android:importantForAccessibility="no" />
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/quick_close" android:textSize="10sp" android:textColor="#FFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>
