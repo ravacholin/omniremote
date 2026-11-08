@@ -140,6 +140,7 @@ fun GridKey(
     testTag: String? = null,
     inverted: Boolean = false,
     repeatable: Boolean = false,
+    enabled: Boolean = true,
     content: @Composable (tint: Color) -> Unit
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -150,15 +151,15 @@ fun GridKey(
         pressed -> Paper
         else -> Void
     }
-    val tint = if (inverted || pressed) Void else Paper
+    val tint = (if (inverted || pressed) Void else Paper).let { if (enabled) it else it.copy(alpha = 0.35f) }
 
     Box(
         modifier = modifier
             .heightIn(min = 48.dp)
             .background(background)
             .then(
-                if (repeatable) Modifier.repeatingClickable(interaction, onClick)
-                else Modifier.clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+                if (repeatable && enabled) Modifier.repeatingClickable(interaction, onClick)
+                else Modifier.clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             )
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
         contentAlignment = Alignment.Center
@@ -177,9 +178,10 @@ fun IconKey(
     testTag: String? = null,
     inverted: Boolean = false,
     iconSize: Dp = 22.dp,
-    repeatable: Boolean = false
+    repeatable: Boolean = false,
+    enabled: Boolean = true
 ) {
-    GridKey(onClick = onClick, modifier = modifier, testTag = testTag, inverted = inverted, repeatable = repeatable) { tint ->
+    GridKey(onClick = onClick, modifier = modifier, testTag = testTag, inverted = inverted, repeatable = repeatable, enabled = enabled) { tint ->
         Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(iconSize))
     }
 }

@@ -32,6 +32,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -193,6 +195,24 @@ class UnifiedTvController(
     }
 
     fun isCurrentDeviceMac(): Boolean = activeDevice?.deviceType == DeviceType.MACOS
+
+    /** Media commands share the authorized connection, with guards checked while waiting too. */
+    suspend fun runMacMediaScript(script: MacScript, canSend: () -> Boolean): MacResult {
+        val device = activeDevice?.takeIf { it.deviceType == DeviceType.MACOS }
+            ?: return MacResult.Failed("No hay ninguna Mac seleccionada.")
+        val expected = commandGeneration.get()
+        val caller = currentCoroutineContext()
+        val result = withContext(Dispatchers.IO) {
+            macClient.run(script) {
+                caller.isActive && canSend() && commandGeneration.get() == expected &&
+                    activeDevice?.id == device.id && activeDevice?.ipAddress == device.ipAddress
+            }
+        }
+        if (caller.isActive && canSend() && commandGeneration.get() == expected && result is MacResult.LoginNeeded) {
+            _connectionState.value = ConnectionState.WaitingAuth(device.name, result.message)
+        }
+        return result
+    }
 
     /** First login to a Mac; the password authorizes a key and is not stored. */
     suspend fun loginMac(username: String, password: String): MacResult {

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -24,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.model.RemoteKey
+import com.example.controller.MacMediaState
 import com.example.network.MacVolume
 import com.example.ui.theme.Ash
 import com.example.ui.theme.Hairline
@@ -38,7 +41,12 @@ fun MacRemotePanel(
     volume: MacVolume?,
     onKeyPress: (RemoteKey) -> Unit,
     onVolumeChange: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    media: MacMediaState = MacMediaState(),
+    onSelectMedia: (String?) -> Unit = {},
+    onRefreshMedia: () -> Unit = {},
+    mediaConnected: Boolean = true,
+    scrollable: Boolean = true
 ) {
     val context = LocalContext.current
     fun press(key: RemoteKey) {
@@ -50,11 +58,11 @@ fun MacRemotePanel(
     val shownLevel = dragLevel ?: volume?.level?.toFloat() ?: 0f
 
     Column(
-        modifier = modifier.testTag("mac_remote_panel"),
+        modifier = modifier.testTag("mac_remote_panel").then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            MonoLabel(if (volume?.muted == true) "Volumen // silencio" else "Volumen")
+            MonoLabel(if (volume?.muted == true) "Volumen de la Mac // silencio" else "Volumen de la Mac")
             Text(
                 text = if (volume == null) "—" else shownLevel.roundToInt().toString(),
                 style = MaterialTheme.typography.displayMedium,
@@ -92,22 +100,24 @@ fun MacRemotePanel(
             IconKey(RemoteIcons.VolumeUp, "Vol +", { press(RemoteKey.VOL_UP) }, cell, "mac_vol_up", repeatable = true)
         }
 
+        MacMediaSelector(media, onSelectMedia, onRefreshMedia, mediaConnected)
+
         Row(
             modifier = Modifier.fillMaxWidth().height(88.dp).hairlineGrid(),
             horizontalArrangement = Arrangement.spacedBy(GridGap)
         ) {
             val cell = Modifier.weight(1f).fillMaxHeight()
-            IconKey(RemoteIcons.Rewind, "Anterior", { press(RemoteKey.REWIND) }, cell, "mac_previous")
-            GridKey(onClick = { press(RemoteKey.PLAY_PAUSE) }, modifier = Modifier.weight(1.4f).fillMaxHeight(), testTag = "mac_play_pause", inverted = true) { tint ->
+            IconKey(RemoteIcons.Rewind, "Anterior", { press(RemoteKey.REWIND) }, cell, "mac_previous", enabled = mediaConnected && media.canSend(RemoteKey.REWIND))
+            GridKey(onClick = { press(RemoteKey.PLAY_PAUSE) }, modifier = Modifier.weight(1.4f).fillMaxHeight(), testTag = "mac_play_pause", inverted = true, enabled = mediaConnected && media.canSend(RemoteKey.PLAY_PAUSE)) { tint ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(RemoteIcons.Play, contentDescription = "Play/Pause", tint = tint, modifier = Modifier.size(26.dp))
                     Spacer(Modifier.size(4.dp))
                     Icon(RemoteIcons.Pause, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp))
                 }
             }
-            IconKey(RemoteIcons.Forward, "Siguiente", { press(RemoteKey.FAST_FORWARD) }, cell, "mac_next")
+            IconKey(RemoteIcons.Forward, "Siguiente", { press(RemoteKey.FAST_FORWARD) }, cell, "mac_next", enabled = mediaConnected && media.canSend(RemoteKey.FAST_FORWARD))
         }
 
-        MonoLabel("Música, Spotify o la app que esté sonando")
+        Text(if (media.selectedId == null) "Automático: Música, Spotify o el reproductor del sistema" else "Los controles no disponibles para esta fuente aparecen deshabilitados.", style = MaterialTheme.typography.bodySmall)
     }
 }

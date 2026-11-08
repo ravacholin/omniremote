@@ -136,6 +136,7 @@ fun MainScreen(
     val showMacConfigDialog by viewModel.showMacConfigDialog.collectAsStateWithLifecycle()
     val macConfigDevice by viewModel.macConfigDevice.collectAsStateWithLifecycle()
     val macVolume by viewModel.macVolume.collectAsStateWithLifecycle()
+    val macMedia by viewModel.macMedia.collectAsStateWithLifecycle()
     val isMacLoginDialogOpen by viewModel.isMacLoginDialogOpen.collectAsStateWithLifecycle()
     val isMacLoginInProgress by viewModel.isMacLoginInProgress.collectAsStateWithLifecycle()
     val macLoginError by viewModel.macLoginError.collectAsStateWithLifecycle()
@@ -353,6 +354,11 @@ fun MainScreen(
                 if (isMac) {
                     MacRemotePanel(
                         volume = macVolume,
+                        media = macMedia,
+                        onSelectMedia = viewModel::selectMacMedia,
+                        onRefreshMedia = viewModel::refreshMacMedia,
+                        mediaConnected = connectionState is ConnectionState.Connected,
+                        scrollable = !isShortScreen,
                         onKeyPress = { key -> viewModel.sendKey(key) },
                         onVolumeChange = { level -> viewModel.setMacVolume(level) },
                         modifier = if (isShortScreen) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().weight(1f)

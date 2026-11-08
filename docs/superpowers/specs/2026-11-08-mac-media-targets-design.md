@@ -1,7 +1,7 @@
 # Selección de reproductor en Mac: informe de viabilidad y propuesta
 
 Fecha: 2026-11-08. Proyecto: OmniRemote.
-Estado: propuesta pendiente del OK del usuario. Este informe no autoriza implementación.
+Estado: aprobado por el usuario el 2026-11-08 («Dale, vamos con tu sugerencia»). Implementación autorizada con este alcance; validación real en Mac pendiente.
 
 ## Conclusión
 

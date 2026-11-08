@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.controller.RemoteSession
 import com.example.data.model.ConnectionState
+import com.example.data.model.DeviceType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -106,6 +107,8 @@ class QuickRemoteManager private constructor(private val context: Context) {
         if (!currentSession) return false
         // Closing affects the mini remote itself, including a just-replaced SystemUI view.
         if (intent.action == "close") return true
+        if (intent.action == "play_pause" && device.deviceType == DeviceType.MACOS &&
+            intent.getLongExtra(MEDIA_REVISION, -1) != session.macMedia.state.value.revision) return false
         return intent.getLongExtra(DEVICE, -1) == device.id &&
             intent.getStringExtra(IP) == device.ipAddress &&
             intent.getLongExtra(GENERATION, -1) == session.targetGeneration
@@ -115,12 +118,13 @@ class QuickRemoteManager private constructor(private val context: Context) {
         val device = session.selectedDevice.value ?: return null
         val current = token ?: return null
         if (!requested || dismissed) return null
+        val mediaRevision = if (action == "play_pause" && device.deviceType == DeviceType.MACOS) session.macMedia.state.value.revision else -1L
         return Intent(context, QuickRemoteService::class.java).setAction(action)
             .setData(Uri.Builder().scheme("omniremote").authority("quick")
                 .appendPath(current).appendPath(session.targetGeneration.toString())
-                .appendPath(device.id.toString()).appendPath(action).build())
+                .appendPath(device.id.toString()).appendPath(action).appendPath(mediaRevision.toString()).build())
             .putExtra(TOKEN, current).putExtra(DEVICE, device.id)
-            .putExtra(IP, device.ipAddress).putExtra(GENERATION, session.targetGeneration)
+            .putExtra(IP, device.ipAddress).putExtra(GENERATION, session.targetGeneration).putExtra(MEDIA_REVISION, mediaRevision)
     }
 
     fun shouldRequestPermission(): Boolean = Build.VERSION.SDK_INT >= 33 &&
@@ -138,6 +142,7 @@ class QuickRemoteManager private constructor(private val context: Context) {
         private const val DEVICE = "device_id"
         private const val IP = "device_ip"
         private const val GENERATION = "target_generation"
+        private const val MEDIA_REVISION = "mac_media_revision"
         @Volatile private var instance: QuickRemoteManager? = null
         fun getInstance(context: Context): QuickRemoteManager = synchronized(this) {
             val app = context.applicationContext
