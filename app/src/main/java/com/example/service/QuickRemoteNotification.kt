@@ -73,7 +73,6 @@ object QuickRemoteNotification {
             if (layout == R.layout.quick_remote_expanded) {
                 setTextViewText(R.id.quick_status, status)
                 if (device.deviceType == DeviceType.MACOS) {
-                    setTextViewText(R.id.quick_power_label, context.getString(R.string.quick_next))
                     setImageViewResource(R.id.quick_power_icon, R.drawable.ic_quick_next)
                     setContentDescription(R.id.quick_power, context.getString(R.string.quick_next))
                 }
