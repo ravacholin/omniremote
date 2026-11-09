@@ -19,6 +19,9 @@ data class MacMediaState(
 ) {
     val selectedSource: MacMediaSource? get() = sources.find { it.id == selectedId }
     val label: String get() = if (selectedId == null) "Automático" else selectedSource?.label ?: "Fuente no disponible"
+    val canReveal: Boolean get() = !busy && !loading && selectedSource?.let {
+        it.verified || it.issue?.code in setOf("CHROME_JAVASCRIPT", "NO_MEDIA")
+    } == true
     fun canSend(key: RemoteKey): Boolean = !busy && (selectedId == null || selectedSource?.supports(key) == true)
 }
 
@@ -46,7 +49,7 @@ class MacMediaController(
         discovery?.cancel(); action?.cancel()
         val old = _state.value
         _state.value = old.copy(loading = false, busy = false, revision = old.revision + 1,
-            sources = old.sources.map { it.copy(verified = false) })
+            sources = old.sources.map { it.copy(verified = false, issue = null) })
     }
 
     fun select(id: String?) {
@@ -105,6 +108,7 @@ class MacMediaController(
 
     /** Called on reconnect/foreground only; it does not enumerate unrelated tabs. */
     fun refreshSelected() {
+        if (_state.value.busy) return
         if (_state.value.selectedId == null) return
         val source = _state.value.selectedSource ?: return
         val expected = epoch.get()
@@ -115,6 +119,40 @@ class MacMediaController(
             val valid = { job.isActive && epoch.get() == expected && _state.value.revision == revision }
             val reply = read(MacMediaScripts.inspect(source), valid)
             if (valid()) applyReply(source, reply)
+        }
+    }
+
+    /** Explicit foreground action: identity only, independent of playback/content tokens. */
+    fun reveal() {
+        val captured = _state.value
+        if (captured.busy || captured.loading) return
+        if (!captured.canReveal) {
+            _state.value = captured.copy(message = if (captured.selectedId == null)
+                "Elegí una fuente para mostrarla en la Mac."
+            else captured.selectedSource?.issue?.message ?: "Fuente no disponible. Actualizá o elegí otra.")
+            return
+        }
+        val source = captured.selectedSource ?: return
+        discovery?.cancel(); scan.incrementAndGet(); action?.cancel()
+        val expected = epoch.get()
+        val revision = captured.revision
+        _state.value = captured.copy(busy = true, message = null)
+        action = scope.launch {
+            val job = currentCoroutineContext().job
+            val valid = { job.isActive && epoch.get() == expected && _state.value.revision == revision }
+            try {
+                val reply = read(MacMediaScripts.reveal(source), valid)
+                if (!valid()) return@launch
+                if (reply.error?.code in setOf("SOURCE_GONE", "CHROME_RESTARTED")) {
+                    applyReply(source, reply)
+                } else {
+                    _state.value = _state.value.copy(message = reply.error?.message ?: if (reply.revealed)
+                        "Mostrando ${source.label} en la Mac."
+                    else "No se pudo confirmar que la fuente se mostrara. Volvé a intentar.")
+                }
+            } finally {
+                if (valid()) _state.value = _state.value.copy(busy = false)
+            }
         }
     }
 

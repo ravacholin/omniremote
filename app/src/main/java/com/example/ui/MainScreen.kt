@@ -392,6 +392,7 @@ fun MainScreen(
                         media = macMedia,
                         onSelectMedia = viewModel::selectMacMedia,
                         onRefreshMedia = viewModel::refreshMacMedia,
+                        onRevealMedia = viewModel::revealMacMedia,
                         mediaConnected = connectionState is ConnectionState.Connected,
                         scrollable = !isShortScreen,
                         onKeyPress = { key -> viewModel.sendKey(key) },

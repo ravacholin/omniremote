@@ -46,7 +46,8 @@ fun MacRemotePanel(
     onSelectMedia: (String?) -> Unit = {},
     onRefreshMedia: () -> Unit = {},
     mediaConnected: Boolean = true,
-    scrollable: Boolean = true
+    scrollable: Boolean = true,
+    onRevealMedia: () -> Unit = {}
 ) {
     val context = LocalContext.current
     fun press(key: RemoteKey) {
@@ -100,7 +101,10 @@ fun MacRemotePanel(
             IconKey(RemoteIcons.VolumeUp, "Vol +", { press(RemoteKey.VOL_UP) }, cell, "mac_vol_up", repeatable = true)
         }
 
-        MacMediaSelector(media, onSelectMedia, onRefreshMedia, mediaConnected)
+        MacMediaSelector(media, onSelectMedia, onRefreshMedia, mediaConnected, onReveal = {
+            HapticUtil.triggerKeyHaptic(context)
+            onRevealMedia()
+        })
 
         Row(
             modifier = Modifier.fillMaxWidth().height(88.dp).hairlineGrid(),

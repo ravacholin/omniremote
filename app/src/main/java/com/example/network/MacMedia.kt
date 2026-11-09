@@ -50,7 +50,8 @@ data class MacMediaReply(
     val source: MacMediaSource? = null,
     val issues: List<MacMediaIssue> = emptyList(),
     val error: MacMediaIssue? = null,
-    val chromeProcessId: String? = null
+    val chromeProcessId: String? = null,
+    val revealed: Boolean = false
 )
 
 object MacMediaProtocol {

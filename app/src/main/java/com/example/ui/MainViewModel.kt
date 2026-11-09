@@ -82,6 +82,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshMacMedia() {
         if (controller.isCurrentDeviceMac() && connectionState.value is ConnectionState.Connected) session.macMedia.refresh()
     }
+    fun revealMacMedia() {
+        if (controller.isCurrentDeviceMac() && connectionState.value is ConnectionState.Connected) session.macMedia.reveal()
+    }
 
     private val diagnosticEnvironment: DiagnosticEnvironment = AndroidDiagnosticEnvironment(application, scanner, tokenStore) { connectionState.value }
     private val _connectionDiagnosis = MutableStateFlow<ConnectionDiagnosisUiState?>(null)

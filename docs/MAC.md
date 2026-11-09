@@ -60,6 +60,23 @@ limit functionality. Command acknowledgement is distinct from observed playback.
 **Web compatibility still requires validation on an actual Mac**; Linux tests
 exercise controlled players and cannot certify the user's Chrome/service version.
 
+## «Mostrame esto»: llevar la fuente al frente
+
+Después de elegir una app o pestaña en **Controlar**, tocá **Mostrame esto**.
+Spotify o Música pasan al frente; en Chrome se selecciona la pestaña exacta en
+su ventana actual, se restaura si está minimizada y se lleva al frente. Mover o
+reordenar pestañas y tener títulos iguales no cambia el destino. El botón no
+envía órdenes de reproducción ni abre una copia del enlace.
+
+En **Automático** hay que elegir una fuente primero. La acción se bloquea durante
+otra orden o actualización y mientras la Mac está desconectada. Si se cerró la
+fuente, cambió de servicio o se reinició Chrome, se informa sin activar otra.
+Mostrar necesita Automatización de macOS, pero no JavaScript por Apple Events;
+por eso puede usarse para una pestaña conocida aunque esa opción esté desactivada
+y sus controles de reproducción estén bloqueados.
+
+La cola de enlaces y los controles de la notificación conservan su comportamiento.
+
 ## What each control does
 
 | Control | Mac command |
@@ -68,6 +85,7 @@ exercise controlled players and cannot certify the user's Chrome/service version
 | Slider | `set volume output volume N` (only the latest drag position is sent) |
 | Mute | toggles `output muted` |
 | Play/pause, previous, next | selected app/tab; in Automatic: playing Spotify/Music, then system media key (Accessibility), then an open player |
+| Mostrame esto | Activates the selected running app, or restores and fronts the exact selected Chrome tab/window |
 | Power (connected) | `pmset displaysleepnow` (display off; the Mac stays awake) |
 
 ## Limits
@@ -115,6 +133,14 @@ No Node dependency is included in the Android app.
 
 On an awake, logged-in Mac, record macOS/Chrome versions and run:
 
+- [ ] Mostrame esto: Spotify/Música con otra app al frente; confirmar que no cambia
+      la reproducción. En Chrome, dos pestañas con igual título en ventanas distintas,
+      pestaña movida/reordenada, ventana minimizada y aplicación oculta.
+- [ ] Mostrar con JavaScript por Apple Events deshabilitado, pista/vídeo cambiado,
+      pestaña cerrada/cambiada de servicio, reinicio de Chrome y Automatización
+      denegada. Confirmar que no abre ni activa otra fuente.
+- [ ] Cambiar selección/Mac o desconectar mientras está pendiente mostrar;
+      confirmar que una orden antigua no se envía después a otra fuente.
 - [ ] Spotify app: play/pause and previous/next while a YouTube tab is also playing.
 - [ ] Music app: play/pause and previous/next without affecting Spotify/Chrome.
 - [ ] YouTube: two equal-titled tabs in different windows, paused media, moving a tab,

@@ -16,7 +16,8 @@ fun MacMediaSelector(
     state: MacMediaState,
     onSelect: (String?) -> Unit,
     onRefresh: () -> Unit,
-    connected: Boolean = true
+    connected: Boolean = true,
+    onReveal: () -> Unit = {}
 ) {
     var open by rememberSaveable { mutableStateOf(false) }
     // Opening and reconnecting while open refresh; there is no background polling.
@@ -29,6 +30,11 @@ fun MacMediaSelector(
             if (source.detail.isNotBlank()) Text(source.detail, style = MaterialTheme.typography.bodySmall, maxLines = 2)
             Text(source.observationLabel, style = MaterialTheme.typography.bodySmall)
         }
+        OutlinedButton(onClick = onReveal, enabled = connected && state.canReveal,
+            modifier = Modifier.fillMaxWidth().testTag("mac_show_source")) {
+            Text("Mostrame esto")
+        }
+        if (state.selectedId == null) Text("Elegí una fuente para mostrarla en la Mac.", style = MaterialTheme.typography.bodySmall)
         if (state.selectedId != null && state.selectedSource == null) Text("Fuente no disponible. Elegí otra o actualizá.", style = MaterialTheme.typography.bodySmall)
         state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         if (state.selectedSource?.service?.isWeb == true) Text("Compatibilidad web pendiente de validar en tu Mac.", style = MaterialTheme.typography.bodySmall)
