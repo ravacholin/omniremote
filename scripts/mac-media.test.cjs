@@ -69,6 +69,65 @@ test('host discovers separate equal-titled tabs and filters unrelated or incogni
   assert.deepEqual(r.sources.map(s=>s.id),['chrome:42:11:YOUTUBE','chrome:42:12:YOUTUBE']);
   assert.equal(r.chromeProcessId,'42'); assert.deepEqual(f.activated,[]);
 });
+test('reveal selects the exact equal-titled tab in its current restored window without web JavaScript',()=>{
+  const f=hostFixture(), source=f.run({op:'discover'}).sources[1];
+  const moved=f.tabs.splice(1,1)[0];
+  moved.execute=()=>{throw Error('reveal must not execute player JavaScript');};
+  const other={id:()=> '14',url:()=> 'https://www.youtube.com/watch?v=other'};
+  const window={id:()=> '9',mode:()=> 'normal',tabs:()=>[other,moved],minimized:true,index:3,activeTabIndex:1};
+  f.windows.push(window);
+  const result=f.run({op:'reveal',source});
+  assert.equal(result.error,undefined);
+  assert.equal(result.revealed,true);
+  assert.equal(window.activeTabIndex,2);
+  assert.equal(window.minimized,false);
+  assert.equal(window.index,1);
+  assert.deepEqual(f.activated,['chrome']);
+});
+test('reveal never activates a closed tab, changed service or restarted browser',()=>{
+  for (const change of [
+    f=>f.tabs.splice(0,1),
+    f=>{f.tabs[0].url=()=> 'https://open.spotify.com/track/a';},
+    f=>f.setPid('77'),
+    f=>{f.windows[1].mode=()=> 'incognito';}
+  ]) {
+    const f=hostFixture(), source=f.run({op:'discover'}).sources[0];
+    change(f);
+    assert.ok(f.run({op:'reveal',source}).error);
+    assert.deepEqual(f.activated,[]);
+  }
+});
+test('reveal reports Automation failure without running playback commands',()=>{
+  const f=hostFixture(), source=f.run({op:'discover'}).sources[0];
+  Object.defineProperty(f.windows[1],'activeTabIndex',{set(){throw Error('not authorized -1743');}});
+  const result=f.run({op:'reveal',source});
+  assert.equal(result.error.code,'AUTOMATION_DENIED');
+  assert.deepEqual(f.activated,[]);
+});
+function nativeHostFixture(service) {
+  const bundle=service==='SPOTIFY'?'com.spotify.client':'com.apple.Music';
+  let pid=42;
+  const activated=[];
+  const app={activate(){activated.push(bundle);}}; // Any player inspection/action would fail.
+  return {activated,setPid(p){pid=p;},run(){
+    return JSON.parse(vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../app/src/main/resources/mac_media_host.js'),'utf8')+'\nrun()',{
+      REQUEST:{op:'reveal',source:{id:'app:'+bundle+':42',service,processId:'42'}}, BROWSER_SOURCE:'',
+      ObjC:{import(){},unwrap:x=>x},
+      $:{NSWorkspace:{sharedWorkspace:{runningApplications:{count:1,objectAtIndex:()=>({bundleIdentifier:bundle,processIdentifier:pid})}}}},
+      Application:b=>{assert.equal(b,bundle);return app;}
+    }));
+  }};
+}
+test('reveal activates only the selected running native app without inspecting its track',()=>{
+  for (const service of ['SPOTIFY','MUSIC']) {
+    const f=nativeHostFixture(service);
+    assert.equal(f.run().revealed,true);
+    assert.equal(f.activated.length,1);
+    f.setPid(99);
+    assert.equal(f.run().error.code,'SOURCE_GONE');
+    assert.equal(f.activated.length,1);
+  }
+});
 test('host targets tab ID after reorder and move without activating Chrome',()=>{
   const f=hostFixture(), source=f.run({op:'discover'}).sources[1];
   const tab=f.tabs.splice(1,1)[0]; f.windows.push({id:()=> '9',mode:()=> 'normal',tabs:()=>[tab]});

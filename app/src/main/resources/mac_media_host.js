@@ -1,4 +1,4 @@
-/* JXA host. Runs in the logged-in user's SSH session, without activating apps. */
+/* JXA host. Only the explicit reveal operation activates apps/windows. */
 ObjC.import('Cocoa');
 function issue(code, message) { return {code:code, message:message}; }
 function processId(bundle) {
@@ -9,12 +9,13 @@ function processId(bundle) {
   }
   return null;
 }
-function failure(e, chrome) {
+function failure(e, chrome, reveal) {
   var text = String(e);
   if (/JavaScript.*(off|disabled|not allowed)|Allow JavaScript|JavaScript.*Apple Events/i.test(text))
     return issue('CHROME_JAVASCRIPT', 'En Chrome activá View > Developer > Allow JavaScript from Apple Events.');
   if (/-1743|not authorized|not permitted/i.test(text))
     return issue('AUTOMATION_DENIED', 'En la Mac permití Automatización para sshd-keygen-wrapper y ' + (chrome ? 'Google Chrome.' : 'el reproductor.'));
+  if (reveal) return issue('REVEAL_FAILED', 'No se pudo mostrar la fuente. Revisá Automatización en la Mac y volvé a intentar.');
   return issue('PLAYER_ERROR', chrome ? 'No se pudo consultar la pestaña. Revisá Automatización y JavaScript por Apple Events en Chrome.' : 'No se pudo consultar el reproductor. Revisá Automatización en la Mac.');
 }
 function classify(url) {
@@ -33,13 +34,14 @@ function chromeTabs(chrome, visit) {
   for (var w=0; w<windows.length; w++) {
     if (windows[w].mode() !== 'normal') continue;
     var tabs=windows[w].tabs();
-    for (var t=0;t<tabs.length;t++) if (visit(tabs[t], String(windows[w].id())) === false) return;
+    for (var t=0;t<tabs.length;t++) if (visit(tabs[t], String(windows[w].id()), windows[w], t+1) === false) return;
   }
 }
-function inspectNative(source, action) {
+function inspectNative(source, action, reveal) {
   var bundle = source.service === 'SPOTIFY' ? 'com.spotify.client' : 'com.apple.Music';
   if (processId(bundle) !== source.processId) return {error:issue('SOURCE_GONE','La app elegida ya no está abierta.')};
   var app=Application(bundle);
+  if (reveal) { app.activate(); return {revealed:true}; }
   function snapshot() {
     var track='', token='';
     try { track=String(app.currentTrack.name()); } catch(e) {}
@@ -84,13 +86,21 @@ function run() {
     }
     var source=REQUEST.source;
     if (!source) return JSON.stringify({error:issue('SOURCE_GONE','No hay fuente elegida.')});
-    if (source.service==='SPOTIFY'||source.service==='MUSIC') return JSON.stringify(inspectNative(source,REQUEST.op==='action'?REQUEST.action:null));
+    if (source.service==='SPOTIFY'||source.service==='MUSIC') return JSON.stringify(inspectNative(source,REQUEST.op==='action'?REQUEST.action:null,REQUEST.op==='reveal'));
     if (source.processId!==chromePid) return JSON.stringify({error:issue(chromePid ? 'CHROME_RESTARTED' : 'SOURCE_GONE','Chrome se cerró o reinició.')});
     var found=null;
-    chromeTabs(Application('com.google.Chrome'),function(tab,windowId) {
-      if (String(tab.id())===source.tabId) {found={tab:tab,windowId:windowId};return false;}
+    var chrome=Application('com.google.Chrome');
+    chromeTabs(chrome,function(tab,windowId,window,tabIndex) {
+      if (String(tab.id())===source.tabId) {found={tab:tab,windowId:windowId,window:window,tabIndex:tabIndex};return false;}
     });
     if (!found || classify(String(found.tab.url()))!==source.service) return JSON.stringify({error:issue('SOURCE_GONE','La pestaña se cerró o cambió de servicio.')});
+    if (REQUEST.op==='reveal') {
+      found.window.activeTabIndex=found.tabIndex;
+      found.window.minimized=false;
+      found.window.index=1;
+      chrome.activate();
+      return JSON.stringify({revealed:true});
+    }
     var request={op:REQUEST.op,service:source.service,action:REQUEST.action,expectedToken:source.token};
     var raw=found.tab.execute({javascript:BROWSER_SOURCE+'\nJSON.stringify(macWebMedia('+JSON.stringify(request)+'))'});
     var result=JSON.parse(String(raw));
@@ -99,5 +109,5 @@ function run() {
     var merged=Object.assign({},source,result,{url:String(found.tab.url()),windowId:found.windowId,issue:null});
     delete merged.present;
     return JSON.stringify({source:merged});
-  } catch(e) { return JSON.stringify({error:failure(e, REQUEST.source && REQUEST.source.service!=='SPOTIFY' && REQUEST.source.service!=='MUSIC')}); }
+  } catch(e) { return JSON.stringify({error:failure(e, REQUEST.source && REQUEST.source.service!=='SPOTIFY' && REQUEST.source.service!=='MUSIC', REQUEST.op==='reveal')}); }
 }

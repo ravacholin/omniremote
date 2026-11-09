@@ -58,4 +58,41 @@ class MacMediaSelectorTest {
         compose.onNodeWithTag("mac_play_pause").performScrollTo().assertIsDisplayed()
     }
 
+    @Test fun `show button invokes its own action without sending playback`() {
+        var reveals=0; var keys=0; var selections=0
+        compose.setContent { MacRemotePanel(volume=null,onKeyPress={keys++},onVolumeChange={},
+            media=MacMediaState(sources=listOf(first),selectedId=first.id),
+            onRevealMedia={reveals++},onSelectMedia={selections++}) }
+        compose.onNodeWithText("Mostrame esto").performClick()
+        assertEquals(1,reveals); assertEquals(0,keys); assertEquals(0,selections)
+    }
+
+    @Test fun `show button blocks automatic disconnected busy loading and missing sources`() {
+        val state=androidx.compose.runtime.mutableStateOf(MacMediaState())
+        val connected=androidx.compose.runtime.mutableStateOf(true)
+        compose.setContent { MacRemotePanel(volume=null,onKeyPress={},onVolumeChange={},
+            media=state.value,mediaConnected=connected.value) }
+        compose.onNodeWithTag("mac_show_source").assertIsNotEnabled()
+        compose.onNodeWithText("Elegí una fuente para mostrarla en la Mac.").assertExists()
+        for (s in listOf(
+            MacMediaState(sources=listOf(first),selectedId=first.id,busy=true),
+            MacMediaState(sources=listOf(first),selectedId=first.id,loading=true),
+            MacMediaState(sources=listOf(first.copy(verified=false,issue=MacMediaIssue("SOURCE_GONE","Cerrada"))),selectedId=first.id),
+            MacMediaState(selectedId=first.id))) {
+            compose.runOnIdle { state.value=s }
+            compose.onNodeWithTag("mac_show_source").assertIsNotEnabled()
+        }
+        compose.runOnIdle { state.value=MacMediaState(sources=listOf(first),selectedId=first.id); connected.value=false }
+        compose.onNodeWithTag("mac_show_source").assertIsNotEnabled()
+        compose.runOnIdle { connected.value=true }
+        compose.onNodeWithTag("mac_show_source").assertIsEnabled()
+    }
+
+    @Test fun `show is available even when Chrome JavaScript blocks playback`() {
+        val blocked=first.copy(verified=false,issue=MacMediaIssue("CHROME_JAVASCRIPT","Habilitá JavaScript"))
+        compose.setContent { MacRemotePanel(volume=null,onKeyPress={},onVolumeChange={},
+            media=MacMediaState(sources=listOf(blocked),selectedId=first.id)) }
+        compose.onNodeWithTag("mac_show_source").assertIsEnabled()
+        compose.onNodeWithTag("mac_play_pause").assertIsNotEnabled()
+    }
 }

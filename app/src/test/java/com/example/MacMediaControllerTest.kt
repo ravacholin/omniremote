@@ -99,4 +99,91 @@ class MacMediaControllerTest {
         assertTrue(c.state.value.revision>oldRevision)
     }
 
+    @Test fun `reveal targets the pinned app without inspecting its changed track or capabilities`() = runTest {
+        val replies=ArrayDeque(listOf(catalog,inspect,MacResult.Ok("""{"revealed":true}""")))
+        val scripts=mutableListOf<String>()
+        val c=MacMediaController(this,{script,_->scripts+=script.source;replies.removeFirst()})
+        c.refresh(); advanceUntilIdle(); c.select("app:com.spotify.client:42")
+        c.reveal(); assertTrue(c.state.value.busy); assertFalse(c.state.value.canReveal)
+        advanceUntilIdle()
+        assertEquals(3,scripts.size)
+        assertTrue(scripts.last().contains("op:\"reveal\""))
+        assertTrue(scripts.last().contains("\"id\":\"app:com.spotify.client:42\""))
+        assertFalse(c.state.value.busy)
+        assertTrue(c.state.value.canReveal)
+        assertTrue(c.state.value.message!!.contains("Mostrando"))
+    }
+
+    @Test fun `automatic and invalidated source cannot reveal a guessed player`() = runTest {
+        var calls=0
+        val c=MacMediaController(this,{_,_->calls++; if(calls==1) catalog else inspect})
+        c.reveal(); advanceUntilIdle(); assertEquals(0,calls)
+        c.refresh(); advanceUntilIdle(); c.select("app:com.spotify.client:42")
+        c.invalidate()
+        assertFalse(c.state.value.canReveal)
+        c.reveal(); advanceUntilIdle(); assertEquals(2,calls)
+    }
+
+    @Test fun `reveal works for a known tab with JavaScript disabled`() = runTest {
+        val tab="""{"id":"chrome:7:9:YOUTUBE","service":"YOUTUBE","processId":"7","tabId":"9","url":"https://www.youtube.com/watch?v=a"}"""
+        val replies=ArrayDeque(listOf(MacResult.Ok("""{"sources":[$tab]}"""),
+            MacResult.Ok("""{"error":{"code":"CHROME_JAVASCRIPT","message":"Enable JavaScript"}}"""),
+            MacResult.Ok("""{"revealed":true}""")))
+        val c=MacMediaController(this,{_,_->replies.removeFirst()})
+        c.refresh(); advanceUntilIdle(); c.select("chrome:7:9:YOUTUBE")
+        assertFalse(c.state.value.canSend(RemoteKey.PLAY_PAUSE))
+        assertTrue(c.state.value.canReveal)
+        c.reveal(); advanceUntilIdle()
+        assertTrue(replies.isEmpty())
+        assertEquals("CHROME_JAVASCRIPT",c.state.value.selectedSource?.issue?.code)
+    }
+
+    @Test fun `changing selection or connection cancels pending reveal and drops its result`() = runTest {
+        for (invalidate in listOf(false,true)) {
+            val gate=CompletableDeferred<MacResult>(); var calls=0; var guard:(()->Boolean)?=null
+            val c=MacMediaController(this,{_,canSend->
+                calls++; when(calls){1->catalog;2->inspect;else->{guard=canSend;gate.await()}}
+            })
+            c.refresh(); advanceUntilIdle(); c.select("app:com.spotify.client:42")
+            c.reveal(); runCurrent()
+            if(invalidate) c.invalidate() else c.select(null)
+            assertFalse(guard!!.invoke())
+            gate.complete(MacResult.Ok("""{"revealed":true}""")); advanceUntilIdle()
+            assertFalse(c.state.value.busy)
+            assertNull(c.state.value.message)
+        }
+    }
+
+    @Test fun `reveal errors preserve playback unless the selected source disappeared`() = runTest {
+        for(code in listOf("REVEAL_FAILED","TRANSPORT","SOURCE_GONE")) {
+            val replies=ArrayDeque(listOf(catalog,inspect,MacResult.Ok("""{"error":{"code":"$code","message":"Cannot show"}}""")))
+            val c=MacMediaController(this,{_,_->replies.removeFirst()})
+            c.refresh(); advanceUntilIdle(); c.select("app:com.spotify.client:42")
+            c.reveal(); advanceUntilIdle()
+            assertEquals("app:com.spotify.client:42",c.state.value.selectedId)
+            assertEquals(code!="SOURCE_GONE",c.state.value.canSend(RemoteKey.PLAY_PAUSE))
+            assertFalse(c.state.value.busy)
+            assertEquals("Cannot show",c.state.value.message)
+        }
+    }
+    @Test fun `pending reveal excludes refresh and other commands without leaving busy stuck`() = runTest {
+        val gate=CompletableDeferred<MacResult>(); var calls=0
+        val c=MacMediaController(this,{_,_->calls++;when(calls){1->catalog;2->inspect;else->gate.await()}})
+        c.refresh(); advanceUntilIdle(); c.select("app:com.spotify.client:42")
+        c.reveal(); runCurrent()
+        c.reveal(); c.refresh(); c.refreshSelected(); c.send(RemoteKey.PLAY_PAUSE); runCurrent()
+        assertEquals(3,calls)
+        gate.complete(MacResult.Ok("""{"revealed":true}""")); advanceUntilIdle()
+        assertFalse(c.state.value.busy)
+        assertTrue(c.state.value.canReveal)
+    }
+
+    @Test fun `reveal cannot report success without acknowledgement`() = runTest {
+        val replies=ArrayDeque(listOf(catalog,inspect,MacResult.Ok("{}")))
+        val c=MacMediaController(this,{_,_->replies.removeFirst()})
+        c.refresh(); advanceUntilIdle(); c.select("app:com.spotify.client:42")
+        c.reveal(); advanceUntilIdle()
+        assertFalse(c.state.value.busy)
+        assertTrue(c.state.value.message!!.contains("confirmar"))
+    }
 }

@@ -17,5 +17,6 @@ object MacMediaScripts {
     }
     val discover: MacScript get() = script("discover")
     fun inspect(source: MacMediaSource): MacScript = script("inspect", source)
+    fun reveal(source: MacMediaSource): MacScript = script("reveal", source)
     fun command(source: MacMediaSource, key: RemoteKey): MacScript = script("action", source, requireNotNull(MacMediaProtocol.action(key)))
 }
