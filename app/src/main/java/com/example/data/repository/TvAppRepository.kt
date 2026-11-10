@@ -65,8 +65,8 @@ class TvAppRepository(private val database: AppDatabase) {
         }
     }
 
-    suspend fun toggleFavorite(id: Long, currentFavorite: Boolean) {
-        dao.updateFavorite(id, !currentFavorite)
+    suspend fun toggleFavorite(id: Long) {
+        dao.toggleFavorite(id)
     }
 
     suspend fun recordLaunch(id: Long) {

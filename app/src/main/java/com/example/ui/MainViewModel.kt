@@ -291,11 +291,12 @@ class MainViewModel @JvmOverloads constructor(
 
     fun toggleFavoriteApp(app: TvAppEntity) {
         viewModelScope.launch(Dispatchers.IO) {
-            appRepository.toggleFavorite(app.id, app.isFavorite)
+            appRepository.toggleFavorite(app.id)
         }
     }
 
     fun launchTvApp(app: TvAppEntity) {
+        if (app.deviceId != _activeDevice.value?.id) return
         controller.launchTvApp(app)
         viewModelScope.launch(Dispatchers.IO) {
             appRepository.recordLaunch(app.id)

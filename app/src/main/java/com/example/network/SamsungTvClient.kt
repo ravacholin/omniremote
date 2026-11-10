@@ -361,6 +361,20 @@ class SamsungTvClient(
     }
 
     @Synchronized
+    fun sendText(text: String): Boolean {
+        if (text.isEmpty() || !isConnected) return false
+        val payload = JSONObject().apply {
+            put("method", "ms.remote.control")
+            put("params", JSONObject().apply {
+                put("Cmd", Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+                put("DataOfCmd", "base64")
+                put("TypeOfRemote", "SendInputString")
+            })
+        }
+        return webSocket?.send(payload.toString()) == true
+    }
+
+    @Synchronized
     private fun sendRawKey(samsungKey: String): Boolean {
         val payload = JSONObject().apply {
             put("method", "ms.remote.control")

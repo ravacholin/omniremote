@@ -532,14 +532,17 @@ class UnifiedTvController(
     fun sendText(text: String) {
         cancelAutomaticNavigation()
         val device = activeDevice ?: return
+        val expectedGeneration = commandGeneration.get()
         scope.launch(Dispatchers.IO) {
+            if (commandGeneration.get() != expectedGeneration) return@launch
             val success = when (device.deviceType) {
                 DeviceType.SAMSUNG_TIZEN -> {
-                    // For Samsung, send keys or websocket text payload
-                    true
+                    synchronized(samsungClient) {
+                        commandGeneration.get() == expectedGeneration && samsungClient.sendText(text)
+                    }
                 }
                 DeviceType.ANDROID_TV -> {
-                    androidClient.sendText(text)
+                    androidClient.sendText(text) { commandGeneration.get() == expectedGeneration }
                 }
                 DeviceType.MACOS -> false
             }
@@ -607,13 +610,15 @@ class UnifiedTvController(
     fun launchApp(shortcut: TvAppShortcut) {
         cancelAutomaticNavigation()
         val device = activeDevice ?: return
+        val expectedGeneration = commandGeneration.get()
         scope.launch(Dispatchers.IO) {
+            if (commandGeneration.get() != expectedGeneration) return@launch
             val success = when (device.deviceType) {
                 DeviceType.SAMSUNG_TIZEN -> {
                     samsungClient.launchApp(device.ipAddress, shortcut).isSuccess
                 }
                 DeviceType.ANDROID_TV -> {
-                    androidClient.launchApp(shortcut)
+                    androidClient.launchApp(shortcut) { commandGeneration.get() == expectedGeneration }
                 }
                 DeviceType.MACOS -> false
             }
@@ -623,6 +628,7 @@ class UnifiedTvController(
 
     fun launchTvApp(app: TvAppEntity) {
         val device = activeDevice ?: return
+        if (app.deviceId != device.id) return
         if (device.deviceType == DeviceType.ANDROID_TV &&
             (app.appIdentifier == AndroidAdbBrightness.DIMMER_PACKAGE ||
                 app.appName.filter { it.isLetterOrDigit() }.startsWith("tvdimmer", ignoreCase = true))) {
@@ -630,7 +636,9 @@ class UnifiedTvController(
             return
         }
         cancelAutomaticNavigation()
+        val expectedGeneration = commandGeneration.get()
         scope.launch(Dispatchers.IO) {
+            if (commandGeneration.get() != expectedGeneration) return@launch
             var launchError: String? = null
             var storeOpened = false
             val success = when (device.deviceType) {
@@ -639,7 +647,8 @@ class UnifiedTvController(
                     launchError = result.exceptionOrNull()?.message
                     result.isSuccess
                 }
-                DeviceType.ANDROID_TV -> androidClient.launchAppByPackage(app.appIdentifier, app.deepLinkUrl) { storeOpened = true }
+                DeviceType.ANDROID_TV -> androidClient.launchAppByPackage(app.appIdentifier, app.deepLinkUrl,
+                    canSend = { commandGeneration.get() == expectedGeneration }) { storeOpened = true }
                 DeviceType.MACOS -> false
             }
             val message = when {
