@@ -567,18 +567,24 @@ class AndroidTvClient(
     suspend fun launchAppByPackage(
         packageName: String,
         deepLinkUrl: String = "",
+        canSend: () -> Boolean = { true },
         onStoreOpened: (() -> Unit)? = null
     ): Boolean = appLaunchMutex.withLock { withContext(Dispatchers.IO) {
+        if (!canSend()) return@withContext false
         if (!packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) return@withContext false
         if (isPaired && (isConnected || initRemoteV2Connection(activeIp)) && negotiatedFeatures and AndroidTvProtocol.APP_LINK_FEATURE != 0) {
             try {
                 for (link in StreamingAppCatalog.androidLaunchLinks(packageName, deepLinkUrl)) {
                     if (!isConnected) return@withContext false
                     val out = remoteOutput ?: return@withContext false
+                    val socket = remoteSocket ?: return@withContext false
                     val pending = PendingAppLaunch(link, CompletableDeferred())
                     pendingAppLaunch = pending
                     val accepted = try {
-                        writeRemotePacket(out, AndroidTvProtocol.buildRemoteAppLinkLaunch(link))
+                        synchronized(writeLock) {
+                            if (!canSend() || remoteSocket !== socket || !isConnected) return@withContext false
+                            writeRemotePacket(out, AndroidTvProtocol.buildRemoteAppLinkLaunch(link))
+                        }
                         // Remote Service returns errors, but has no positive launch acknowledgement.
                         withTimeoutOrNull(900) { pending.accepted.await() } != false
                     } finally { if (pendingAppLaunch === pending) pendingAppLaunch = null }

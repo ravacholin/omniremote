@@ -18,7 +18,7 @@ android {
     targetSdk = 36
     versionCode = 9
     // Keep the diagnostic versionCode so previously working APKs remain installable as fallbacks.
-    versionName = "1.7-wol5-test"
+    versionName = "1.9-flowbox-brightness"
     buildConfigField("long", "SAMSUNG_WAKE_RECONNECT_DELAY_MS", "5000L")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

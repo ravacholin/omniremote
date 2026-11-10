@@ -45,6 +45,27 @@ class UnifiedTvController(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    private val navigationGeneration = AtomicLong()
+    val automaticNavigationGeneration: Long get() = navigationGeneration.get()
+
+    private val dimmerLaunch: AndroidTvDimmerLaunch = AndroidTvDimmerLaunch(scope, { pkg, allowed ->
+        var storeRequested = false
+        val sent = androidClient.launchAppByPackage(pkg,
+            "https://play.google.com/store/apps/details?id=$pkg", canSend = allowed) { storeRequested = true }
+        sent && storeRequested
+    }, { allowed -> androidClient.sendKey(RemoteKey.ENTER, allowed) })
+
+    private val adbBrightness = context?.let { appContext ->
+        AndroidAdbBrightness(scope, com.example.data.local.AdbSettingsStore(appContext), { host, port, pkg ->
+            val identity = withContext(Dispatchers.IO) { com.example.network.AdbIdentity.load(appContext) }
+            com.example.network.AdbTcpClient(identity).launch(host, port, pkg)
+        }) { device, message, success -> addLog(device.name, message, success) }
+    }
+    val adbSetup: StateFlow<AdbSetupState?> = adbBrightness?.setup ?: MutableStateFlow(null)
+    fun submitAdbSetup(port: String) { adbBrightness?.submit(port) }
+    fun dismissAdbSetup() { adbBrightness?.cancel() }
+    fun forgetAdb(deviceId: Long) { adbBrightness?.forget(deviceId) }
+
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
@@ -136,6 +157,7 @@ class UnifiedTvController(
             scope.launch {
                 val dev = eventDevice ?: return@launch
                 if (activeDevice?.id != dev.id || activeDevice?.ipAddress != dev.ipAddress) return@launch
+                if (!connected) cancelAutomaticNavigation()
                 if (connected) {
                     _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
                     resolveDeviceMac(dev)
@@ -147,6 +169,7 @@ class UnifiedTvController(
             }
         },
         onCommandRejected = { message ->
+            scope.launch { cancelAutomaticNavigation() }
             val dev = activeDevice
             if (dev?.deviceType == DeviceType.ANDROID_TV) addLog(dev.name, message, false)
         },
@@ -432,9 +455,10 @@ class UnifiedTvController(
     }
 
     fun disconnectCurrent() {
+        adbBrightness?.cancel()
         commandGeneration.incrementAndGet()
         samsungUiGeneration.incrementAndGet()
-        cancelBluetoothNavigation()
+        cancelAutomaticNavigation()
         connectionJob?.cancel()
         connectionJob = null
         connectRetriesLeft = 0
@@ -449,7 +473,7 @@ class UnifiedTvController(
     }
 
     fun sendKey(key: RemoteKey) {
-        cancelBluetoothNavigation()
+        cancelAutomaticNavigation()
         val device = activeDevice ?: return
         val expectedGeneration = commandGeneration.get()
         _lastDispatchedKey.value = key
@@ -498,7 +522,7 @@ class UnifiedTvController(
     }
 
     fun sendText(text: String) {
-        cancelBluetoothNavigation()
+        cancelAutomaticNavigation()
         val device = activeDevice ?: return
         scope.launch(Dispatchers.IO) {
             val success = when (device.deviceType) {
@@ -515,12 +539,19 @@ class UnifiedTvController(
         }
     }
 
-    private fun cancelBluetoothNavigation() {
+    private fun cancelAutomaticNavigation() {
+        navigationGeneration.incrementAndGet()
+        dimmerLaunch.cancel()
         bluetoothSettingsJob?.cancel()
         bluetoothSettingsJob = null
     }
 
-    fun openBrightness(dimmer: TvAppEntity?) {
+    fun openBrightness(
+        dimmer: TvAppEntity?,
+        configureAdb: Boolean = false,
+        expectedNavigationGeneration: Long = automaticNavigationGeneration
+    ) {
+        if (expectedNavigationGeneration != automaticNavigationGeneration) return
         val device = activeDevice ?: return
         if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
             if (bluetoothSettingsJob?.isActive == true) return
@@ -544,12 +575,29 @@ class UnifiedTvController(
             addLog(device.name, "TVDimmer needs a valid Android package name in Apps.", false)
             return
         }
-        // Use the same checked launch and on-TV Open guidance as the Apps grid.
-        launchTvApp(dimmer)
+        if (!configureAdb && dimmerLaunch.isRunning) return
+        cancelAutomaticNavigation()
+        if (configureAdb) {
+            adbBrightness?.configure(device, packageName)
+            return
+        }
+        adbBrightness?.cancel()
+        if (!androidClient.isConnected) {
+            addLog(device.name, "Conecta el FlowBox antes de abrir TVDimmer.", false)
+            return
+        }
+        val expectedGeneration = commandGeneration.get()
+        dimmerLaunch.open(packageName, {
+            commandGeneration.get() == expectedGeneration && androidClient.isConnected &&
+                activeDevice?.id == device.id && activeDevice?.ipAddress == device.ipAddress
+        }) { sent ->
+            addLog(device.name, if (sent) "TVDimmer: enviada la selección de Abrir."
+                else "No se pudo enviar la apertura de TVDimmer.", sent)
+        }
     }
 
     fun launchApp(shortcut: TvAppShortcut) {
-        cancelBluetoothNavigation()
+        cancelAutomaticNavigation()
         val device = activeDevice ?: return
         scope.launch(Dispatchers.IO) {
             val success = when (device.deviceType) {
@@ -566,8 +614,14 @@ class UnifiedTvController(
     }
 
     fun launchTvApp(app: TvAppEntity) {
-        cancelBluetoothNavigation()
         val device = activeDevice ?: return
+        if (device.deviceType == DeviceType.ANDROID_TV &&
+            (app.appIdentifier == AndroidAdbBrightness.DIMMER_PACKAGE ||
+                app.appName.filter { it.isLetterOrDigit() }.startsWith("tvdimmer", ignoreCase = true))) {
+            if (app.deviceId == device.id) openBrightness(app)
+            return
+        }
+        cancelAutomaticNavigation()
         scope.launch(Dispatchers.IO) {
             var launchError: String? = null
             var storeOpened = false

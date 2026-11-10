@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -108,7 +110,8 @@ fun DeviceManagerDialog(
     onSendWakeOnLan: (TvDeviceEntity) -> Unit,
     onOpenNsdScanScreen: () -> Unit = {},
     onEditMac: (TvDeviceEntity) -> Unit = {},
-    onStartPairing: (() -> Unit)? = null
+    onStartPairing: (() -> Unit)? = null,
+    onConfigureAdb: (TvDeviceEntity) -> Unit = {}
 ) {
     if (!isOpen) return
     val context = LocalContext.current
@@ -300,6 +303,7 @@ fun DeviceManagerDialog(
                                     onDelete = { onDeleteDevice(device) },
                                     onWakeOnLan = { onSendWakeOnLan(device) },
                                     onEditMac = { onEditMac(device) },
+                                    onConfigureAdb = { onConfigureAdb(device) },
                                     onPair = {
                                         onSelectDevice(device)
                                         onDismiss()
@@ -1277,6 +1281,7 @@ fun DeviceManagerDialog(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun TvDeviceCard(
     device: TvDeviceEntity,
     isActive: Boolean,
@@ -1285,7 +1290,8 @@ fun TvDeviceCard(
     onDelete: () -> Unit,
     onWakeOnLan: () -> Unit,
     onEditMac: (TvDeviceEntity) -> Unit = {},
-    onPair: (() -> Unit)? = null
+    onPair: (() -> Unit)? = null,
+    onConfigureAdb: (() -> Unit)? = null
 ) {
     Surface(
         modifier = Modifier
@@ -1411,7 +1417,8 @@ fun TvDeviceCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FlowRow(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!device.isDefault) {
                         Surface(
                             onClick = onSetDefault,
@@ -1477,6 +1484,10 @@ fun TvDeviceCard(
                         }
                     }
 
+                    if (device.deviceType == DeviceType.ANDROID_TV && onConfigureAdb != null) {
+                        androidx.compose.material3.TextButton(onClick = onConfigureAdb,
+                            modifier = Modifier.testTag("adb_device_${device.id}")) { Text("ADB") }
+                    }
                     if (device.deviceType == DeviceType.ANDROID_TV && onPair != null) {
                         Surface(
                             onClick = onPair,

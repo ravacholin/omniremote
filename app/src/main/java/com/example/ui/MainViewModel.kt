@@ -76,6 +76,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val connectionState: StateFlow<ConnectionState> = controller.connectionState
     val recentLogs: StateFlow<List<CommandLog>> = controller.recentLogs
     val lastDispatchedKey: StateFlow<RemoteKey?> = controller.lastDispatchedKey
+    val adbSetup = controller.adbSetup
+    fun submitAdbSetup(port: String) = controller.submitAdbSetup(port)
+    fun dismissAdbSetup() = controller.dismissAdbSetup()
+    fun forgetAdbSetup() { adbSetup.value?.device?.id?.let(controller::forgetAdb) }
+    fun configureBrightnessAdb(device: TvDeviceEntity) {
+        if (device.id in deletedDeviceIds || device.deviceType != DeviceType.ANDROID_TV) return
+        selectDevice(device)
+        setDeviceManagerOpen(false)
+        openBrightness(configureAdb = true)
+    }
     val macVolume: StateFlow<com.example.network.MacVolume?> = controller.macVolume
     val macMedia = session.macMedia.state
     fun selectMacMedia(id: String?) = session.macMedia.select(id)
@@ -321,16 +331,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * - Keeps playback state in sync for PLAY, PAUSE, STOP, and PLAY_PAUSE
      * - Routes POWER through powerToggle (Wake-on-LAN + key dispatch)
      */
-    fun openBrightness() {
+    fun openBrightness(configureAdb: Boolean = false) {
         val device = _activeDevice.value ?: return
+        val navigationGeneration = controller.automaticNavigationGeneration
         viewModelScope.launch {
             val dimmer = if (device.deviceType == DeviceType.ANDROID_TV) {
                 appRepository.getAppsForDevice(device.id).first().firstOrNull { app ->
+                    app.appIdentifier == com.example.controller.AndroidAdbBrightness.DIMMER_PACKAGE ||
                     app.appName.filter { it.isLetterOrDigit() }
                         .startsWith("tvdimmer", ignoreCase = true)
                 }
             } else null
-            if (_activeDevice.value?.id == device.id) controller.openBrightness(dimmer)
+            if (_activeDevice.value?.id == device.id && _activeDevice.value?.ipAddress == device.ipAddress) {
+                controller.openBrightness(dimmer, configureAdb, navigationGeneration)
+            }
         }
     }
 
@@ -580,6 +594,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteDevice(device: TvDeviceEntity) {
+        controller.forgetAdb(device.id)
         val wasActive = _activeDevice.value?.id == device.id
         macLinks.onDeviceDeleted(device.id)
         if (_activeDevice.value?.id == device.id) closeConnectionDiagnosis()
