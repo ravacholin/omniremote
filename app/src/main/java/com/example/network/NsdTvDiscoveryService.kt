@@ -7,6 +7,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.util.Log
 import com.example.data.model.DeviceType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -69,6 +70,7 @@ class NsdTvDiscoveryService(private val context: Context) {
     private val fallbackScanner = TvScanner(context)
     private var subnetScanJob: Job? = null
 
+    @Synchronized
     fun startDiscovery() {
         stopDiscovery()
         _discoveredTvs.value = emptyList()
@@ -102,7 +104,7 @@ class NsdTvDiscoveryService(private val context: Context) {
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                     Log.d("NsdTvDiscoveryService", "NSD Service Found: ${serviceInfo.serviceName} (${serviceInfo.serviceType})")
-                    if (generation == scanGeneration) queueResolve(serviceInfo)
+                    queueResolve(serviceInfo, generation)
                 }
 
                 override fun onServiceLost(serviceInfo: NsdServiceInfo) {
@@ -133,14 +135,17 @@ class NsdTvDiscoveryService(private val context: Context) {
         // Also trigger subnet & SSDP network probe alongside NSD so TVs are found even if router filters mDNS
         subnetScanJob = scope.launch {
             try {
-                val subnetResults = fallbackScanner.scanLocalNetwork(onDeviceFound = { if (generation == scanGeneration) addOrUpdateDiscoveredTv(it) })
-                if (generation == scanGeneration) subnetResults.forEach { addOrUpdateDiscoveredTv(it) }
+                val subnetResults = fallbackScanner.scanLocalNetwork(onDeviceFound = { publishDiscoveredTv(it, generation) })
+                subnetResults.forEach { publishDiscoveredTv(it, generation) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.d("NsdTvDiscoveryService", "Subnet probe complement info: ${e.message}")
             }
         }
     }
 
+    @Synchronized
     fun stopDiscovery() {
         scanGeneration++
         resolveGeneration++
@@ -174,7 +179,9 @@ class NsdTvDiscoveryService(private val context: Context) {
         Log.d("NsdTvDiscoveryService", "NSD discovery stopped. Total TVs found: ${_discoveredTvs.value.size}")
     }
 
-    private fun queueResolve(serviceInfo: NsdServiceInfo) {
+    @Synchronized
+    private fun queueResolve(serviceInfo: NsdServiceInfo, generation: Long) {
+        if (generation != scanGeneration) return
         resolveQueue.add(serviceInfo)
         processNextResolve()
     }
@@ -186,6 +193,7 @@ class NsdTvDiscoveryService(private val context: Context) {
 
         isResolving = true
         val request = ++resolveGeneration
+        val generation = scanGeneration
         val manager = nsdManager ?: run {
             isResolving = false
             return
@@ -195,32 +203,44 @@ class NsdTvDiscoveryService(private val context: Context) {
         resolveTimeoutJob?.cancel()
         resolveTimeoutJob = scope.launch {
             delay(6000)
-            if (isResolving && request == resolveGeneration) {
-                Log.w("NsdTvDiscoveryService", "Resolve timed out for ${nextService.serviceName}")
-                resolveGeneration++
-                isResolving = false
-                processNextResolve()
+            synchronized(this@NsdTvDiscoveryService) {
+                if (isResolving && request == resolveGeneration && generation == scanGeneration) {
+                    Log.w("NsdTvDiscoveryService", "Resolve timed out for ${nextService.serviceName}")
+                    resolveGeneration++
+                    isResolving = false
+                    processNextResolve()
+                }
             }
         }
 
         try {
             manager.resolveService(nextService, object : NsdManager.ResolveListener {
                 override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                    if (request != resolveGeneration) return
-                    Log.w("NsdTvDiscoveryService", "Resolve failed for ${serviceInfo.serviceName}: code $errorCode")
-                    resolveTimeoutJob?.cancel()
-                    isResolving = false
-                    processNextResolve()
+                    synchronized(this@NsdTvDiscoveryService) {
+                        if (request != resolveGeneration || generation != scanGeneration) return
+                        Log.w("NsdTvDiscoveryService", "Resolve failed for ${serviceInfo.serviceName}: code $errorCode")
+                        resolveTimeoutJob?.cancel()
+                        isResolving = false
+                        processNextResolve()
+                    }
                 }
 
                 override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                    if (request != resolveGeneration) return
-                    resolveTimeoutJob?.cancel()
-                    val hostAddr = getHostAddress(serviceInfo)
-                    Log.d("NsdTvDiscoveryService", "Service successfully resolved: ${serviceInfo.serviceName} at $hostAddr:${serviceInfo.port}")
-                    handleResolvedService(serviceInfo)
-                    isResolving = false
-                    processNextResolve()
+                    synchronized(this@NsdTvDiscoveryService) {
+                        if (request != resolveGeneration || generation != scanGeneration) return
+                        resolveTimeoutJob?.cancel()
+                    }
+                    // Classification can probe TCP. Never hold the lifecycle lock while it blocks.
+                    val discovered = try { resolvedDevice(serviceInfo) } catch (e: Exception) {
+                        Log.w("NsdTvDiscoveryService", "Could not classify resolved service", e)
+                        null
+                    }
+                    synchronized(this@NsdTvDiscoveryService) {
+                        if (request != resolveGeneration || generation != scanGeneration) return
+                        discovered?.let { addOrUpdateDiscoveredTv(it) }
+                        isResolving = false
+                        processNextResolve()
+                    }
                 }
             })
         } catch (e: Exception) {
@@ -239,9 +259,9 @@ class NsdTvDiscoveryService(private val context: Context) {
         }
     }
 
-    private fun handleResolvedService(serviceInfo: NsdServiceInfo) {
-        val ip = getHostAddress(serviceInfo) ?: return
-        if (ip.startsWith("127.") || ip == "0.0.0.0") return
+    private fun resolvedDevice(serviceInfo: NsdServiceInfo): DiscoveredTv? {
+        val ip = getHostAddress(serviceInfo) ?: return null
+        if (ip.startsWith("127.") || ip == "0.0.0.0") return null
 
         val sType = serviceInfo.serviceType ?: ""
         val sName = serviceInfo.serviceName ?: "Smart TV"
@@ -304,7 +324,13 @@ class NsdTvDiscoveryService(private val context: Context) {
             modelInfo = modelInfo
         )
 
-        addOrUpdateDiscoveredTv(discovered)
+        return discovered
+    }
+
+    @Synchronized
+    private fun publishDiscoveredTv(tv: DiscoveredTv, generation: Long) {
+        if (generation != scanGeneration) return
+        addOrUpdateDiscoveredTv(tv)
     }
 
     @Synchronized
@@ -312,13 +338,7 @@ class NsdTvDiscoveryService(private val context: Context) {
         val current = _discoveredTvs.value.toMutableList()
         val index = current.indexOfFirst { it.ipAddress == tv.ipAddress }
         if (index >= 0) {
-            val existing = current[index]
-            // A Mac also advertises AirPlay, which on its own would look like a TV.
-            if (existing.deviceType == DeviceType.MACOS && tv.deviceType != DeviceType.MACOS) return
-            val generic = tv.name.contains(tv.ipAddress) || tv.name == "Google TV"
-            val betterName = if (generic) existing.name else tv.name
-            val remotePort = if (existing.port == 6466 || tv.port == 6466) 6466 else tv.port
-            current[index] = tv.copy(name = betterName, port = remotePort)
+            current[index] = current[index].mergeDiscovery(tv)
         } else {
             current.add(tv)
         }

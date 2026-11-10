@@ -8,6 +8,7 @@ import com.example.data.model.CommandLog
 import com.example.data.model.ConnectionState
 import com.example.data.model.RemoteKey
 import com.example.data.model.TvAppShortcut
+import com.example.data.model.hasSameControlEndpoint
 import com.example.data.model.TvDeviceEntity
 import com.example.data.repository.TvDeviceRepository
 import com.example.network.DiscoveredTv
@@ -50,12 +51,14 @@ enum class RemoteMode(val label: String) {
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class MainViewModel(application: Application) : AndroidViewModel(application) {
+class MainViewModel @JvmOverloads constructor(
+    application: Application,
+    private val scanner: TvScanner = TvScanner(application)
+) : AndroidViewModel(application) {
 
     private val database = AppDatabase.getInstance(application)
     private val repository = TvDeviceRepository(database.tvDeviceDao())
     private val appRepository = TvAppRepository(database)
-    private val scanner = TvScanner(application)
     val tokenStore = com.example.data.local.TvTokenStore.getInstance(application)
     private val sleepTimerManager = SleepTimerManager.getInstance(application)
     val sleepTimer = sleepTimerManager.timer
@@ -101,6 +104,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val connectionDiagnosis = _connectionDiagnosis.asStateFlow()
     private var diagnosticJob: Job? = null
 
+    private var macLoginJob: Job? = null
+    private var macLoginGeneration = 0L
+
     private val _isMacLoginDialogOpen = MutableStateFlow(false)
     val isMacLoginDialogOpen: StateFlow<Boolean> = _isMacLoginDialogOpen.asStateFlow()
 
@@ -126,6 +132,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _discoveredTvs = MutableStateFlow<List<DiscoveredTv>>(emptyList())
     val discoveredTvs: StateFlow<List<DiscoveredTv>> = _discoveredTvs.asStateFlow()
+
+    private var networkScanJob: Job? = null
+    private val networkScanLock = Any()
+    private var networkScanGeneration = 0L
 
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
@@ -260,7 +270,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectDevice(device: TvDeviceEntity) {
         // An older device-list emission can finish app initialization after deletion.
         if (device.id in deletedDeviceIds) return
-        if (_activeDevice.value?.id != device.id || _activeDevice.value?.ipAddress != device.ipAddress) closeConnectionDiagnosis()
+        if (!device.hasSameControlEndpoint(_activeDevice.value)) {
+            closeConnectionDiagnosis()
+            closeMacLogin()
+        }
         session.selectDevice(device)
         viewModelScope.launch(Dispatchers.IO) {
             repository.markLastConnected(device.id)
@@ -323,6 +336,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setDeviceManagerOpen(isOpen: Boolean) {
+        if (!isOpen) cancelNetworkScan()
         _isDeviceManagerOpen.value = isOpen
     }
 
@@ -545,24 +559,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeMacLogin() {
+        macLoginGeneration++
+        macLoginJob?.cancel()
+        macLoginJob = null
+        _isMacLoginInProgress.value = false
         _isMacLoginDialogOpen.value = false
         _macLoginError.value = null
     }
 
     fun submitMacLogin(username: String, password: String) {
+        if (_isMacLoginInProgress.value) return
         if (username.isBlank() || password.isEmpty()) {
             _macLoginError.value = "Completá el usuario y la contraseña de la Mac."
             return
         }
         _isMacLoginInProgress.value = true
         _macLoginError.value = null
-        viewModelScope.launch {
-            val result = controller.loginMac(username, password)
-            _isMacLoginInProgress.value = false
-            when (result) {
-                is com.example.network.MacResult.Ok -> _isMacLoginDialogOpen.value = false
-                is com.example.network.MacResult.LoginNeeded -> _macLoginError.value = result.message
-                is com.example.network.MacResult.Failed -> _macLoginError.value = result.message
+        val expected = ++macLoginGeneration
+        macLoginJob = viewModelScope.launch {
+            try {
+                val result = controller.loginMac(username, password)
+                if (expected != macLoginGeneration) return@launch
+                when (result) {
+                    is com.example.network.MacResult.Ok -> _isMacLoginDialogOpen.value = false
+                    is com.example.network.MacResult.LoginNeeded -> _macLoginError.value = result.message
+                    is com.example.network.MacResult.Failed -> _macLoginError.value = result.message
+                }
+            } finally {
+                if (expected == macLoginGeneration) _isMacLoginInProgress.value = false
             }
         }
     }
@@ -600,7 +624,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_activeDevice.value?.id == device.id) closeConnectionDiagnosis()
         deletedDeviceIds += device.id
         // Invalidate unsent Mac links before suspending for the database deletion.
-        if (wasActive && device.deviceType == DeviceType.MACOS) session.clearDevice()
+        if (wasActive && device.deviceType == DeviceType.MACOS) {
+            closeMacLogin()
+            session.clearDevice()
+        }
         sleepTimerManager.cancelForDevice(device.id)
         viewModelScope.launch {
             val remaining = withContext(Dispatchers.IO) {
@@ -626,26 +653,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startNetworkScan(customSubnet: String? = null) {
         if (_isScanning.value) return
+        val expected = synchronized(networkScanLock) { ++networkScanGeneration }
         _isScanning.value = true
         _scanProgress.value = Pair(0, 254)
         val prefix = customSubnet?.trim() ?: localSubnetPrefix
-        _scanStatusMessage.value = "Scanning $prefix* for Samsung and Android TVs..."
-
-        viewModelScope.launch {
-            val results = scanner.scanLocalNetwork(
-                customSubnet = customSubnet,
-                onProgress = { current, total ->
-                    _scanProgress.value = Pair(current, total)
-                }
-            )
-            _discoveredTvs.value = results
-            _isScanning.value = false
-            _scanStatusMessage.value = if (results.isNotEmpty()) {
-                "Found ${results.size} TV(s) on network!"
-            } else {
-                "Scan complete. 0 TVs detected on $prefix*. Make sure TV is turned ON, on the same Wi-Fi, or enter its IP directly."
+        _scanStatusMessage.value = "Buscando Samsung y Android TV en $prefix*…"
+        networkScanJob = viewModelScope.launch {
+            try {
+                val results = scanner.scanLocalNetwork(customSubnet = customSubnet,
+                    onProgress = { current, total ->
+                        synchronized(networkScanLock) {
+                            if (expected == networkScanGeneration) _scanProgress.value = Pair(current, total)
+                        }
+                    })
+                ensureActive()
+                if (expected != networkScanGeneration) return@launch
+                _discoveredTvs.value = results
+                _scanStatusMessage.value = if (results.isNotEmpty()) {
+                    "Se encontraron ${results.size} TV(s)."
+                } else "No se encontraron TVs en $prefix*. Revisá que estén encendidas y en la misma red Wi-Fi."
+            } catch (cancelled: CancellationException) {
+                if (expected == networkScanGeneration) _scanStatusMessage.value = "Búsqueda cancelada."
+                throw cancelled
+            } catch (error: Exception) {
+                if (expected == networkScanGeneration) _scanStatusMessage.value =
+                    if (error is IllegalArgumentException) "Subred inválida. Usá tres números entre 0 y 255, por ejemplo 192.168.1."
+                    else "No se pudo completar la búsqueda. Revisá la conexión y volvé a intentar."
+            } finally {
+                if (expected == networkScanGeneration) _isScanning.value = false
             }
         }
+    }
+
+    private fun cancelNetworkScan() {
+        synchronized(networkScanLock) { networkScanGeneration++ }
+        networkScanJob?.cancel()
+        networkScanJob = null
+        if (_isScanning.value) _scanStatusMessage.value = "Búsqueda cancelada."
+        _isScanning.value = false
     }
 
     fun retryConnection() {
@@ -780,6 +825,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeScanResultsScreen() {
+        cancelNetworkScan()
         _isScanResultsScreenOpen.value = false
         stopNsdDiscovery()
     }
@@ -807,4 +853,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         saveDevice(newDev)
         closeScanResultsScreen()
     }
+    override fun onCleared() {
+        cancelNetworkScan()
+        closeMacLogin()
+        nsdDiscoveryService.stopDiscovery()
+        super.onCleared()
+    }
+
 }

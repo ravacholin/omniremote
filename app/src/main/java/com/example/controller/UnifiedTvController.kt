@@ -8,6 +8,7 @@ import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
 import com.example.data.model.TvAppEntity
 import com.example.data.model.TvAppShortcut
+import com.example.data.model.hasSameControlEndpoint
 import com.example.data.model.TvDeviceEntity
 import com.example.network.AndroidTvClient
 import com.example.network.MacResult
@@ -41,7 +42,8 @@ class UnifiedTvController(
     private val context: Context? = null,
     private val tokenStore: TvTokenStore? = null,
     private val onTokenReceived: ((Long, String) -> Unit)? = null,
-    private val onDeviceMacResolved: ((Long, String) -> Unit)? = null
+    private val onDeviceMacResolved: ((Long, String) -> Unit)? = null,
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -108,7 +110,7 @@ class UnifiedTvController(
             scope.launch {
                 if (eventGeneration != samsungUiGeneration.get()) return@launch
                 val dev = eventDevice ?: return@launch
-                if (activeDevice?.id != dev.id || activeDevice?.ipAddress != dev.ipAddress) return@launch
+                if (!dev.hasSameControlEndpoint(activeDevice)) return@launch
                 if (connected) {
                     _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
                     resolveDeviceMac(dev)
@@ -125,7 +127,7 @@ class UnifiedTvController(
             scope.launch {
                 if (eventGeneration != samsungUiGeneration.get()) return@launch
                 val dev = eventDevice ?: return@launch
-                if (activeDevice?.id != dev.id || activeDevice?.ipAddress != dev.ipAddress) return@launch
+                if (!dev.hasSameControlEndpoint(activeDevice)) return@launch
                 _connectionState.value = ConnectionState.WaitingAuth(
                     dev.name,
                     "Permite OmniRemote en la pantalla de tu Samsung TV con el control original."
@@ -138,13 +140,14 @@ class UnifiedTvController(
     // Held volume keys repeat faster than a Mac round trip; drop repeats while one is running.
     private val macVolumeKeyBusy = AtomicBoolean(false)
     // Slider drags only need the latest level.
-    private val macVolumeRequests = Channel<Int>(Channel.CONFLATED)
+    private data class MacVolumeRequest(val device: TvDeviceEntity, val generation: Long, val level: Int)
+    private val macVolumeRequests = Channel<MacVolumeRequest>(Channel.CONFLATED)
 
     init {
-        scope.launch(Dispatchers.IO) {
-            for (level in macVolumeRequests) {
-                val device = activeDevice?.takeIf { it.deviceType == DeviceType.MACOS } ?: continue
-                runMacScript(device, MacScripts.setVolume(level), reportsVolume = true)
+        scope.launch(ioDispatcher) {
+            for (request in macVolumeRequests) {
+                runMacScript(request.device, MacScripts.setVolume(request.level), reportsVolume = true,
+                    expectedGeneration = request.generation)
             }
         }
     }
@@ -156,8 +159,10 @@ class UnifiedTvController(
             val eventDevice = activeDevice
             scope.launch {
                 val dev = eventDevice ?: return@launch
-                if (activeDevice?.id != dev.id || activeDevice?.ipAddress != dev.ipAddress) return@launch
-                if (!connected) cancelAutomaticNavigation()
+                if (!dev.hasSameControlEndpoint(activeDevice)) return@launch
+                // An initial connection failure must not cancel an offline ADB setup lookup.
+                // A lost live session still invalidates pending navigation and its final key.
+                if (!connected && _connectionState.value is ConnectionState.Connected) cancelAutomaticNavigation()
                 if (connected) {
                     _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
                     resolveDeviceMac(dev)
@@ -228,7 +233,7 @@ class UnifiedTvController(
         val result = withContext(Dispatchers.IO) {
             macClient.run(script) {
                 caller.isActive && canSend() && commandGeneration.get() == expected &&
-                    activeDevice?.id == device.id && activeDevice?.ipAddress == device.ipAddress
+                    device.hasSameControlEndpoint(activeDevice)
             }
         }
         if (caller.isActive && canSend() && commandGeneration.get() == expected && result is MacResult.LoginNeeded) {
@@ -242,9 +247,14 @@ class UnifiedTvController(
         val dev = activeDevice?.takeIf { it.deviceType == DeviceType.MACOS }
             ?: return MacResult.Failed("Seleccioná primero tu Mac.")
         connectionJob?.cancel()
+        val expected = commandGeneration.get()
+        val caller = currentCoroutineContext()
+        val allowed = { caller.isActive && commandGeneration.get() == expected &&
+            dev.hasSameControlEndpoint(activeDevice) }
         val result = withContext(Dispatchers.IO) {
-            macClient.login(dev.id, dev.ipAddress, dev.port, username, password)
+            macClient.login(dev.id, dev.ipAddress, dev.port, username, password, canSend = allowed)
         }
+        if (!allowed()) return MacResult.Failed("Conexión cancelada.")
         handleMacConnectResult(dev, result)
         return result
     }
@@ -260,11 +270,10 @@ class UnifiedTvController(
         val expected = commandGeneration.get()
         val result = withContext(Dispatchers.IO) {
             macClient.run(script) {
-                commandGeneration.get() == expected && activeDevice?.id == deviceId &&
-                    activeDevice?.ipAddress == device.ipAddress && activeDevice?.deviceType == DeviceType.MACOS
+                commandGeneration.get() == expected && device.hasSameControlEndpoint(activeDevice)
             }
         }
-        if (commandGeneration.get() == expected && activeDevice?.id == deviceId) {
+        if (commandGeneration.get() == expected && device.hasSameControlEndpoint(activeDevice)) {
             if (result is MacResult.LoginNeeded) _connectionState.value = ConnectionState.WaitingAuth(device.name, result.message)
             addLog(device.name, if (result is MacResult.Ok) "Enlace abierto en el Mac" else "No se pudo abrir el enlace", result is MacResult.Ok)
         }
@@ -272,13 +281,14 @@ class UnifiedTvController(
     }
 
     fun setMacVolume(level: Int) {
-        if (activeDevice?.deviceType != DeviceType.MACOS) return
-        _macVolume.value = _macVolume.value?.copy(level = level, muted = false)
-        macVolumeRequests.trySend(level)
+        val device = activeDevice?.takeIf { it.deviceType == DeviceType.MACOS } ?: return
+        val bounded = level.coerceIn(0, 100)
+        _macVolume.value = _macVolume.value?.copy(level = bounded, muted = false)
+        macVolumeRequests.trySend(MacVolumeRequest(device, commandGeneration.get(), bounded))
     }
 
     private fun handleMacConnectResult(dev: TvDeviceEntity, result: MacResult) {
-        if (activeDevice?.id != dev.id || activeDevice?.ipAddress != dev.ipAddress) return
+        if (!dev.hasSameControlEndpoint(activeDevice)) return
         when (result) {
             is MacResult.Ok -> {
                 _connectionState.value = ConnectionState.Connected(dev.name, dev.ipAddress)
@@ -295,10 +305,9 @@ class UnifiedTvController(
     private fun runMacScript(device: TvDeviceEntity, script: MacScript, reportsVolume: Boolean,
         expectedGeneration: Long = commandGeneration.get()): Boolean {
         val result = macClient.run(script) {
-            commandGeneration.get() == expectedGeneration && activeDevice?.id == device.id &&
-                activeDevice?.ipAddress == device.ipAddress
+            commandGeneration.get() == expectedGeneration && device.hasSameControlEndpoint(activeDevice)
         }
-        if (activeDevice?.id != device.id) return false
+        if (commandGeneration.get() != expectedGeneration || !device.hasSameControlEndpoint(activeDevice)) return false
         return when (result) {
             is MacResult.Ok -> {
                 if (reportsVolume) MacScripts.parseVolume(result.output)?.let { _macVolume.value = it }
@@ -348,8 +357,7 @@ class UnifiedTvController(
             (effectiveDevice.deviceType == DeviceType.SAMSUNG_TIZEN &&
                 (samsungClient.hasPendingConnection(effectiveDevice.ipAddress) ||
                     state is ConnectionState.Connecting || state is ConnectionState.WaitingAuth))
-        if (activeDevice?.id == effectiveDevice.id && activeDevice?.ipAddress == effectiveDevice.ipAddress &&
-            activeDevice?.deviceType == effectiveDevice.deviceType && preserveSession) {
+        if (effectiveDevice.hasSameControlEndpoint(activeDevice) && preserveSession) {
             activeDevice = effectiveDevice
             return
         }
@@ -399,7 +407,7 @@ class UnifiedTvController(
         connectionJob?.cancel()
         connectionJob = scope.launch {
             delay(wait)
-            if (activeDevice?.id != device.id || activeDevice?.ipAddress != device.ipAddress) return@launch
+            if (!device.hasSameControlEndpoint(activeDevice)) return@launch
             if (_connectionState.value !is ConnectionState.Connecting) return@launch
             startConnection(activeDevice ?: return@launch)
         }
@@ -420,7 +428,7 @@ class UnifiedTvController(
     fun resumeDevice(device: TvDeviceEntity) {
         synchronized(samsungClient) {
             val current = activeDevice
-            if (current?.id == device.id && current.ipAddress == device.ipAddress && current.deviceType == device.deviceType) {
+            if (device.hasSameControlEndpoint(current)) {
                 reconnectIfFailed()
             } else {
                 if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
@@ -589,7 +597,7 @@ class UnifiedTvController(
         val expectedGeneration = commandGeneration.get()
         dimmerLaunch.open(packageName, {
             commandGeneration.get() == expectedGeneration && androidClient.isConnected &&
-                activeDevice?.id == device.id && activeDevice?.ipAddress == device.ipAddress
+                device.hasSameControlEndpoint(activeDevice)
         }) { sent ->
             addLog(device.name, if (sent) "TVDimmer: enviada la selección de Abrir."
                 else "No se pudo enviar la apertura de TVDimmer.", sent)
@@ -688,7 +696,7 @@ class UnifiedTvController(
 
     fun cancelWakeRequest(device: TvDeviceEntity) {
         synchronized(samsungClient) {
-            if (activeDevice?.id == device.id && activeDevice?.ipAddress == device.ipAddress &&
+            if (device.hasSameControlEndpoint(activeDevice) &&
                 samsungClient.cancelWakeConnection()) _connectionState.value = ConnectionState.Disconnected
         }
     }
@@ -697,7 +705,7 @@ class UnifiedTvController(
         if (WakeOnLan.formatMacAddress(device.macAddress) != null) return
         scope.launch(Dispatchers.IO) {
             val mac = WakeOnLan.fetchMacFromTv(device.ipAddress, device.deviceType) ?: return@launch
-            if (activeDevice?.id != device.id || activeDevice?.ipAddress != device.ipAddress) return@launch
+            if (!device.hasSameControlEndpoint(activeDevice)) return@launch
             activeDevice = activeDevice?.copy(macAddress = mac)
             onDeviceMacResolved?.invoke(device.id, mac)
             if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {

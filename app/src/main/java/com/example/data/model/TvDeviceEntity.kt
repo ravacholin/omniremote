@@ -18,3 +18,9 @@ data class TvDeviceEntity(
     val lastConnected: Long = System.currentTimeMillis(),
     val isDemoMode: Boolean = false
 )
+
+/** Saved identity plus the endpoint used by its control protocol, independent of metadata edits. */
+internal fun TvDeviceEntity.hasSameControlEndpoint(other: TvDeviceEntity?): Boolean =
+    other != null && id == other.id && deviceType == other.deviceType && ipAddress == other.ipAddress &&
+        // TV clients use fixed protocol ports; the Mac's user-selected SSH port is authoritative.
+        (deviceType != DeviceType.MACOS || port == other.port)
