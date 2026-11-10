@@ -54,3 +54,11 @@ Validación local: compilación y pruebas JVM/Robolectric, incluida transmisión
 ## Reparación de Brightness, Flow y TVDimmer (v1.3)
 
 Brightness comparte ahora el lanzamiento serializado y la indicación «selecciona Abrir» de Apps. Flow y TVDimmer usan sus fichas oficiales de Google Play sin enviar primero esquemas no verificados. También se corrigen los enlaces antiguos guardados para estas apps. Las pruebas TLS comprueban las URLs de ambas fichas, la indicación de confirmación manual y que RemoteError conserva el mando conectado; EOF real sigue notificando desconexión. No se ha reproducido el cierre de conexión de la captura en un FlowBox físico.
+
+## Apertura directa de TVDimmer (noviembre de 2026)
+
+La sección v1.3 describe el comportamiento anterior de TVDimmer. Ahora Brightness
+y su entrada en Apps usan ADB por TCP con autorización en pantalla y puerto por TV.
+No abren Play Store ni envían Enter automáticamente. Los otros servicios conservan
+su lanzamiento mediante Remote v2. Consulta [la configuración y las limitaciones
+de ADB](BRIGHTNESS.md), incluida la diferencia con la depuración TLS por código.

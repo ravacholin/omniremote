@@ -45,6 +45,17 @@ class UnifiedTvController(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    private val adbBrightness = context?.let { appContext ->
+        AndroidAdbBrightness(scope, com.example.data.local.AdbSettingsStore(appContext), { host, port, pkg ->
+            val identity = withContext(Dispatchers.IO) { com.example.network.AdbIdentity.load(appContext) }
+            com.example.network.AdbTcpClient(identity).launch(host, port, pkg)
+        }) { device, message, success -> addLog(device.name, message, success) }
+    }
+    val adbSetup: StateFlow<AdbSetupState?> = adbBrightness?.setup ?: MutableStateFlow(null)
+    fun submitAdbSetup(port: String) { adbBrightness?.submit(port) }
+    fun dismissAdbSetup() { adbBrightness?.cancel() }
+    fun forgetAdb(deviceId: Long) { adbBrightness?.forget(deviceId) }
+
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
@@ -432,6 +443,7 @@ class UnifiedTvController(
     }
 
     fun disconnectCurrent() {
+        adbBrightness?.cancel()
         commandGeneration.incrementAndGet()
         samsungUiGeneration.incrementAndGet()
         cancelBluetoothNavigation()
@@ -520,7 +532,7 @@ class UnifiedTvController(
         bluetoothSettingsJob = null
     }
 
-    fun openBrightness(dimmer: TvAppEntity?) {
+    fun openBrightness(dimmer: TvAppEntity?, configureAdb: Boolean = false) {
         val device = activeDevice ?: return
         if (device.deviceType == DeviceType.SAMSUNG_TIZEN) {
             if (bluetoothSettingsJob?.isActive == true) return
@@ -544,8 +556,9 @@ class UnifiedTvController(
             addLog(device.name, "TVDimmer needs a valid Android package name in Apps.", false)
             return
         }
-        // Use the same checked launch and on-TV Open guidance as the Apps grid.
-        launchTvApp(dimmer)
+        cancelBluetoothNavigation()
+        if (configureAdb) adbBrightness?.configure(device, packageName)
+        else adbBrightness?.open(device, packageName)
     }
 
     fun launchApp(shortcut: TvAppShortcut) {
@@ -568,6 +581,12 @@ class UnifiedTvController(
     fun launchTvApp(app: TvAppEntity) {
         cancelBluetoothNavigation()
         val device = activeDevice ?: return
+        if (device.deviceType == DeviceType.ANDROID_TV &&
+            (app.appIdentifier == AndroidAdbBrightness.DIMMER_PACKAGE ||
+                app.appName.filter { it.isLetterOrDigit() }.startsWith("tvdimmer", ignoreCase = true))) {
+            if (app.deviceId == device.id) openBrightness(app)
+            return
+        }
         scope.launch(Dispatchers.IO) {
             var launchError: String? = null
             var storeOpened = false

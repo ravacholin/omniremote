@@ -114,6 +114,13 @@ fun MainScreen(
     val activeTab by viewModel.activeTab.collectAsStateWithLifecycle()
     val isDeviceManagerOpen by viewModel.isDeviceManagerOpen.collectAsStateWithLifecycle()
     val recentLogs by viewModel.recentLogs.collectAsStateWithLifecycle()
+    val adbSetup by viewModel.adbSetup.collectAsStateWithLifecycle()
+    adbSetup?.let { state ->
+        com.example.ui.components.AndroidAdbSetupDialog(
+            state = state, onSubmit = viewModel::submitAdbSetup,
+            onDismiss = viewModel::dismissAdbSetup, onForget = viewModel::forgetAdbSetup
+        )
+    }
     val discoveredTvs by viewModel.discoveredTvs.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
 
@@ -550,7 +557,8 @@ fun MainScreen(
         },
         onStartPairing = {
             viewModel.startAndroidTvPairing()
-        }
+        },
+        onConfigureAdb = viewModel::configureBrightnessAdb
     )
 
     // Google TV / Android TV Mutual TLS Pairing Dialog
