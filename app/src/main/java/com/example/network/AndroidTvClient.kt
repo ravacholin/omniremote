@@ -523,12 +523,14 @@ class AndroidTvClient(
         }
     }
 
-    suspend fun sendText(text: String): Boolean = withContext(Dispatchers.IO) {
-        if (text.isEmpty() || activeIp.isBlank() || !isPaired) return@withContext false
+    suspend fun sendText(text: String, canSend: () -> Boolean = { true }): Boolean = withContext(Dispatchers.IO) {
+        if (!canSend() || text.isEmpty() || activeIp.isBlank() || !isPaired) return@withContext false
         if (!isConnected && !initRemoteV2Connection(activeIp)) return@withContext false
+        val socket = remoteSocket ?: return@withContext false
         try {
             synchronized(writeLock) {
-                if (!isConnected || negotiatedFeatures and AndroidTvProtocol.FEATURE_IME == 0) {
+                if (!canSend() || remoteSocket !== socket || !isConnected ||
+                    negotiatedFeatures and AndroidTvProtocol.FEATURE_IME == 0) {
                     return@withContext false
                 }
                 val out = remoteOutput ?: return@withContext false
@@ -537,31 +539,34 @@ class AndroidTvClient(
             }
             true
         } catch (e: Exception) {
-            closeRemoteSocket()
-            onConnectionChanged?.invoke(false, "No se pudo enviar el texto. Vuelve a conectar la TV.")
+            closeRemoteSocket(socket, "No se pudo enviar el texto. Vuelve a conectar la TV.")
+            currentCoroutineContext().ensureActive()
             false
         }
     }
 
     /** Sends an app-link request over the authenticated Remote v2 session. */
-    suspend fun launchAppLink(appLink: String): Boolean = withContext(Dispatchers.IO) {
-        if (appLink.isBlank() || activeIp.isBlank() || !isPaired) return@withContext false
+    suspend fun launchAppLink(appLink: String, canSend: () -> Boolean = { true }): Boolean = withContext(Dispatchers.IO) {
+        if (!canSend() || appLink.isBlank() || activeIp.isBlank() || !isPaired) return@withContext false
         if (!isConnected && !initRemoteV2Connection(activeIp)) return@withContext false
         if (negotiatedFeatures and AndroidTvProtocol.APP_LINK_FEATURE == 0) return@withContext false
+        val socket = remoteSocket ?: return@withContext false
         try {
-            val out = remoteOutput ?: return@withContext false
-            writeRemotePacket(out, AndroidTvProtocol.buildRemoteAppLinkLaunch(appLink))
+            synchronized(writeLock) {
+                if (!canSend() || remoteSocket !== socket || !isConnected) return@withContext false
+                val out = remoteOutput ?: return@withContext false
+                writeRemotePacket(out, AndroidTvProtocol.buildRemoteAppLinkLaunch(appLink))
+            }
             true
         } catch (e: Exception) {
-            closeRemoteSocket()
+            closeRemoteSocket(socket, "Could not send the app launch request. Reconnect the TV.")
             currentCoroutineContext().ensureActive()
-            onConnectionChanged?.invoke(false, "Could not send the app launch request. Reconnect the TV.")
             false
         }
     }
 
-    suspend fun launchApp(shortcut: TvAppShortcut): Boolean {
-        return launchAppByPackage(shortcut.androidPackageName)
+    suspend fun launchApp(shortcut: TvAppShortcut, canSend: () -> Boolean = { true }): Boolean {
+        return launchAppByPackage(shortcut.androidPackageName, canSend = canSend)
     }
 
     suspend fun launchAppByPackage(
@@ -603,7 +608,7 @@ class AndroidTvClient(
             }
         }
         val targetIp = activeIp.trim()
-        if (targetIp.isBlank()) return@withContext false
+        if (!canSend() || targetIp.isBlank()) return@withContext false
         var launched = false
 
         // 1. Google Cast / DIAL Protocol
@@ -619,6 +624,7 @@ class AndroidTvClient(
 
         if (dialAppName != null) {
             try {
+                if (!canSend() || activeIp.trim() != targetIp) return@withContext false
                 val req = Request.Builder()
                     .url("http://$targetIp:8008/apps/$dialAppName")
                     .post("".toRequestBody(null))
