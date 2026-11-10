@@ -4,6 +4,9 @@ import android.content.Context
 import android.net.wifi.WifiManager
 import android.util.Log
 import com.example.data.model.DeviceType
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -33,7 +36,7 @@ data class DiscoveredTv(
     val macAddress: String = ""
 )
 
-class TvScanner(
+open class TvScanner(
     private val context: Context,
     private val portProbe: ((String, Int, Int) -> Boolean)? = null
 ) {
@@ -81,31 +84,40 @@ class TvScanner(
         }
     }
 
-    suspend fun scanLocalNetwork(
+    open suspend fun scanLocalNetwork(
         customSubnet: String? = null,
         onProgress: ((Int, Int) -> Unit)? = null,
         onDeviceFound: ((DiscoveredTv) -> Unit)? = null
     ): List<DiscoveredTv> = withContext(Dispatchers.IO) {
+        val customPrefix = customSubnet?.let { raw ->
+            val parts = raw.trim().removeSuffix(".").split(".")
+            require(parts.size == 3 && parts.all { part ->
+                part.isNotEmpty() && part.all { it in '0'..'9' } && part.toIntOrNull() in 0..255
+            }) { "Invalid IPv4 subnet" }
+            parts.joinToString(".") { it.toInt().toString() } + "."
+        }
+        currentCoroutineContext().ensureActive()
         val discoveredMap = java.util.concurrent.ConcurrentHashMap<String, DiscoveredTv>()
 
         // 1. SSDP / UPnP Multicast Search
         try {
             performSsdpDiscovery(discoveredMap, onDeviceFound)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Log.w("TvScanner", "SSDP discovery error: ${e.message}")
         }
 
         // 2. Active Subnet TCP Sweep on TV Ports (8001, 8002, 8008, 5555, 6466)
-        val prefix = customSubnet?.trim()?.let {
-            if (it.endsWith(".")) it else "$it."
-        } ?: getSubnetPrefix(getLocalIpAddress() ?: return@withContext discoveredMap.values.toList())
+        currentCoroutineContext().ensureActive()
+        val prefix = customPrefix ?: getSubnetPrefix(getLocalIpAddress() ?: return@withContext discoveredMap.values.toList())
 
         performSubnetSweep(prefix, discoveredMap, onProgress, onDeviceFound)
 
         discoveredMap.values.toList()
     }
 
-    private fun performSsdpDiscovery(discoveredMap: MutableMap<String, DiscoveredTv>, onDeviceFound: ((DiscoveredTv) -> Unit)?) {
+    private suspend fun performSsdpDiscovery(discoveredMap: MutableMap<String, DiscoveredTv>, onDeviceFound: ((DiscoveredTv) -> Unit)?) {
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         val multicastLock = wifiManager?.createMulticastLock("OmniRemoteMulticast")
         multicastLock?.setReferenceCounted(true)
@@ -136,6 +148,7 @@ class TvScanner(
             val startTime = System.currentTimeMillis()
 
             while (System.currentTimeMillis() - startTime < 2000) {
+                currentCoroutineContext().ensureActive()
                 try {
                     val receivePacket = DatagramPacket(receiveBuf, receiveBuf.size)
                     socket.receive(receivePacket)
@@ -170,10 +183,14 @@ class TvScanner(
                         }
                     }
                     discoveredMap[ip]?.let { onDeviceFound?.invoke(it) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     break
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Log.d("TvScanner", "SSDP socket exception: ${e.message}")
         } finally {
@@ -194,14 +211,21 @@ class TvScanner(
 
         val jobs = (1..254).map { i ->
             async(Dispatchers.IO) {
+                val scanContext = currentCoroutineContext()
+                scanContext.ensureActive()
                 val ip = "$subnetPrefix$i"
                 semaphore.withPermit {
-                    val tv = probeDevice(ip)
+                    val tv = probeDevice(ip) { scanContext.ensureActive() }
+                    scanContext.ensureActive()
                     if (tv != null) {
-                        synchronized(discoveredMap) { discoveredMap[ip] = tv }
-                        onDeviceFound?.invoke(tv)
+                        val merged = synchronized(discoveredMap) {
+                            discoveredMap[ip]?.mergeDiscovery(tv)?.also { discoveredMap[ip] = it }
+                                ?: tv.also { discoveredMap[ip] = it }
+                        }
+                        onDeviceFound?.invoke(merged)
                     }
                 }
+                scanContext.ensureActive()
                 synchronized(this@TvScanner) {
                     completed++
                     onProgress?.invoke(completed, total)
@@ -211,10 +235,14 @@ class TvScanner(
         jobs.awaitAll()
     }
 
-    internal fun probeDevice(ip: String): DiscoveredTv? {
+    internal fun probeDevice(ip: String, checkActive: () -> Unit = {}): DiscoveredTv? {
+        fun portOpen(port: Int, timeout: Int): Boolean {
+            checkActive()
+            return isPortOpen(ip, port, timeout).also { checkActive() }
+        }
         // Remote Service is authoritative, even if Cast or OEM HTTP services are absent.
         // Some boxes expose only the pairing service before their first authorization.
-        if (isPortOpen(ip, 6466, 650) || isPortOpen(ip, 6467, 650)) {
+        if (portOpen(6466, 650) || portOpen(6467, 650)) {
             // Keep hardware metadata for safe recovery after DHCP address changes.
             fetchCastDeviceInfo(ip)?.let { return it.copy(port = 6466) }
             return DiscoveredTv(
@@ -223,10 +251,10 @@ class TvScanner(
                 modelInfo = "Android TV Remote Service • Compatible con FlowBox"
             )
         }
-        if (isPortOpen(ip, 8001, 350) || isPortOpen(ip, 8002, 350)) {
+        if (portOpen(8001, 350) || portOpen(8002, 350)) {
             fetchSamsungDeviceInfo(ip)?.let { return it }
         }
-        if (isPortOpen(ip, 8008, 350)) {
+        if (portOpen(8008, 350)) {
             fetchCastDeviceInfo(ip)?.let { return it }
         }
         // A web server or ADB port alone does not identify a controllable television.

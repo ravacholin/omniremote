@@ -75,6 +75,43 @@ class MacRemoteTest {
         } finally { server.stop() }
     }
 
+    @Test fun `disconnect during authorization cannot restore a deleted Macs credentials`() {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val server = FakeMac(Files.createTempDirectory("mac-login-cancel").resolve("host.ser"),
+            beforeAuthorize = { entered.countDown(); release.await(5, java.util.concurrent.TimeUnit.SECONDS) })
+        val store = MemoryStore()
+        val client = MacSshClient(store)
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            val pending = executor.submit<MacResult> { client.login(1, "127.0.0.1", server.port, "pablo", "secret") }
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            client.disconnect()
+            store.clearMacLogin(1)
+            release.countDown()
+            assertTrue(pending.get(5, java.util.concurrent.TimeUnit.SECONDS) is MacResult.Failed)
+            assertTrue("Deleted credentials must stay deleted", store.getMacLogin(1) == null)
+            assertFalse(client.isConnected)
+        } finally { release.countDown(); client.disconnect(); executor.shutdownNow(); server.stop() }
+    }
+
+    @Test fun `credential storage failure closes the provisional SSH session and returns a failure`() {
+        val server = FakeMac(Files.createTempDirectory("mac-login-disk").resolve("host.ser"))
+        val client = MacSshClient(object : MacLoginStore {
+            override fun getMacLogin(deviceId: Long): MacLogin? = null
+            override fun saveMacLogin(deviceId: Long, login: MacLogin) { error("disk unavailable") }
+            override fun clearMacLogin(deviceId: Long) = Unit
+        })
+        try {
+            val result = client.login(1, "127.0.0.1", server.port, "pablo", "secret")
+            assertTrue(result.toString(), result is MacResult.Failed)
+            assertFalse(client.isConnected)
+            val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
+            while (server.activeSessionCount > 0 && System.nanoTime() < deadline) Thread.sleep(5)
+            assertEquals("The unretained SSH session must be closed", 0, server.activeSessionCount)
+        } finally { client.disconnect(); server.stop() }
+    }
+
     @Test fun `volume and media keys map to osascript and other keys are unsupported`() {
         assertEquals(MacScript.Language.APPLESCRIPT, MacScripts.forKey(RemoteKey.VOL_UP)!!.language)
         assertTrue(MacScripts.forKey(RemoteKey.VOL_UP)!!.source.contains("(v + ${MacScripts.VOLUME_STEP})"))
@@ -162,7 +199,8 @@ class MacRemoteTest {
 
     /** SSH server standing in for macOS Remote Login; osascript always reports "44,false". */
     internal class FakeMac(hostKey: Path, acceptKeysFrom: MemoryStore? = null, smallWindow: Boolean = false,
-        private val scriptReply: (String) -> String = { "44,false" }) {
+        private val scriptReply: (String) -> String = { "44,false" },
+        private val beforeAuthorize: () -> Unit = {}) {
         @Volatile var stallInput = false
         val stallStarted = java.util.concurrent.CountDownLatch(1)
         val authorizedKeys = CopyOnWriteArrayList<String>()
@@ -180,6 +218,7 @@ class MacRemoteTest {
             start()
         }
         val port: Int get() = server.port
+        val activeSessionCount: Int get() = server.activeSessions.size
 
         fun stop() = server.stop(true)
 
@@ -195,6 +234,7 @@ class MacRemoteTest {
             override fun start(channel: ChannelSession, env: Environment) {
                 thread {
                     val isScript = command.startsWith("/usr/bin/osascript")
+                    if (!isScript) beforeAuthorize()
                     if (isScript && stallInput) { stallStarted.countDown(); return@thread }
                     commands += command to (if (isScript) input.readBytes().toString(Charsets.UTF_8) else "")
                     if (commands.last().second == "stall-output") return@thread

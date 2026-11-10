@@ -7,6 +7,7 @@ import com.example.data.local.TvTokenStore
 import com.example.data.model.ConnectionState
 import com.example.data.model.DeviceType
 import com.example.data.model.RemoteKey
+import com.example.data.model.hasSameControlEndpoint
 import com.example.data.model.TvDeviceEntity
 import com.example.data.repository.TvDeviceRepository
 import com.example.network.TvScanner
@@ -73,7 +74,7 @@ class RemoteSession private constructor(private val context: Context) {
 
     fun selectDevice(device: TvDeviceEntity) {
         val old = selectedDevice.value
-        if (old?.id != device.id || old.ipAddress != device.ipAddress || old.deviceType != device.deviceType) {
+        if (!device.hasSameControlEndpoint(old)) {
             cancelWake()
             generation.incrementAndGet()
             playing.value = true

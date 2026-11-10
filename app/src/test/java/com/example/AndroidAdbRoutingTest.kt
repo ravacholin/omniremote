@@ -46,6 +46,32 @@ class AndroidAdbRoutingTest {
         controller.disconnectCurrent()
     }
 
+    @Test fun `initial connection failure does not cancel explicit ADB setup during app lookup`() {
+        val controller = UnifiedTvController(context)
+        try {
+            controller.javaClass.getDeclaredField("activeDevice").apply { isAccessible = true; set(controller, tv) }
+            @Suppress("UNCHECKED_CAST")
+            val state = controller.javaClass.getDeclaredField("_connectionState").let {
+                it.isAccessible = true; it.get(controller) as kotlinx.coroutines.flow.MutableStateFlow<com.example.data.model.ConnectionState>
+            }
+            state.value = com.example.data.model.ConnectionState.Connecting(tv.name, tv.ipAddress)
+            val beforeLookup = controller.automaticNavigationGeneration
+            val client = controller.javaClass.getDeclaredField("androidClient").let { it.isAccessible = true; it.get(controller) }
+            @Suppress("UNCHECKED_CAST")
+            val connectionChanged = client.javaClass.getDeclaredField("onConnectionChanged").let {
+                it.isAccessible = true; it.get(client) as (Boolean, String?) -> Unit
+            }
+            connectionChanged(false, "Remote service unavailable")
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            controller.openBrightness(app, configureAdb = true, expectedNavigationGeneration = beforeLookup)
+            assertEquals("Offline setup must remain available", app.appIdentifier, controller.adbSetup.value?.packageName)
+        } finally {
+            controller.disconnectCurrent()
+            (controller.javaClass.getDeclaredField("scope").let { it.isAccessible = true; it.get(controller) } as kotlinx.coroutines.CoroutineScope)
+                .coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        }
+    }
+
     @Test fun `an app saved for a different TV cannot start ADB on current TV`() {
         val controller = UnifiedTvController(context)
         UnifiedTvController::class.java.getDeclaredField("activeDevice").apply { isAccessible = true }.set(controller, tv)

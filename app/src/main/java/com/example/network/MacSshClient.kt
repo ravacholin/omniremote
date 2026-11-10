@@ -44,6 +44,8 @@ class MacSshClient(private val store: MacLoginStore?, private val commandTimeout
     private data class Target(val deviceId: Long, val ip: String, val port: Int)
 
     private val lock = Any()
+    // Never held across network I/O; deletion waits only for final credential publication.
+    private val stateLock = Any()
     @Volatile private var session: Session? = null
     @Volatile private var target: Target? = null
     // Bumped by disconnect() so a login still in flight for the previous Mac is dropped.
@@ -51,65 +53,77 @@ class MacSshClient(private val store: MacLoginStore?, private val commandTimeout
 
     val isConnected: Boolean get() = session?.isConnected == true
 
-    fun connect(deviceId: Long, ip: String, port: Int): MacResult = synchronized(lock) {
-        closeSession()
-        target = Target(deviceId, ip, port)
-        openWithSavedLogin()
+    fun connect(deviceId: Long, ip: String, port: Int): MacResult {
+        val requestedIn = generation
+        return synchronized(lock) {
+            synchronized(stateLock) {
+                if (requestedIn != generation) return MacResult.Failed("Conexión cancelada.")
+                closeSession()
+                target = Target(deviceId, ip, port)
+            }
+            openWithSavedLogin()
+        }
     }
 
     /** Does not wait for a command in flight; that command's session is closed under it. */
-    fun disconnect() {
+    fun disconnect() = synchronized(stateLock) {
         generation++
         target = null
         closeSession()
     }
 
     /** First-time login: authorizes a new key on the Mac, then keeps the session open. */
-    fun login(deviceId: Long, ip: String, port: Int, username: String, password: String): MacResult = synchronized(lock) {
-        closeSession()
-        target = Target(deviceId, ip, port)
+    fun login(deviceId: Long, ip: String, port: Int, username: String, password: String,
+        canSend: () -> Boolean = { true }): MacResult {
         val startedIn = generation
-        val user = username.trim()
-        val hostKeys = PinnedHostKey(expected = null)
-        val newSession = try {
-            JSch().apply { hostKeyRepository = hostKeys }.getSession(user, ip, port).apply {
-                setPassword(password)
-                userInfo = PasswordUserInfo(password)
-                setConfig("PreferredAuthentications", "keyboard-interactive,password")
-                configure()
-                connect(CONNECT_TIMEOUT_MS)
+        return synchronized(lock) {
+            val allowed = { startedIn == generation && canSend() && !Thread.currentThread().isInterrupted }
+            synchronized(stateLock) {
+                if (!allowed()) return MacResult.Failed("Conexión cancelada.")
+                closeSession()
+                target = Target(deviceId, ip, port)
             }
-        } catch (e: JSchException) {
-            return describe(e, passwordLogin = true)
+            val hostKeys = PinnedHostKey(expected = null)
+            var provisional: Session? = null
+            var retained = false
+            try {
+                val user = username.trim()
+                val opened = JSch().apply { hostKeyRepository = hostKeys }.getSession(user, ip, port)
+                provisional = opened
+                opened.apply {
+                    setPassword(password)
+                    userInfo = PasswordUserInfo(password)
+                    setConfig("PreferredAuthentications", "keyboard-interactive,password")
+                    configure()
+                    connect(CONNECT_TIMEOUT_MS)
+                }
+                if (!allowed()) return MacResult.Failed("Conexión cancelada.")
+                val generated = KeyPair.genKeyPair(JSch(), KeyPair.ECDSA, 256)
+                val (privateKey, publicKey) = try {
+                    ByteArrayOutputStream().also { generated.writePrivateKey(it) }.toString(Charsets.UTF_8.name()) to
+                        ByteArrayOutputStream().also { generated.writePublicKey(it, KEY_COMMENT) }
+                            .toString(Charsets.UTF_8.name()).trim()
+                } finally { generated.dispose() }
+                val authorize = exec(opened, authorizeKeyCommand(publicKey), stdin = null, canSend = allowed)
+                if (authorize !is MacResult.Ok) return authorize
+                val hostKey = hostKeys.seen ?: return MacResult.Failed("La Mac no presentó una clave de host.")
+                // disconnect() completes before device deletion clears stored credentials. A login
+                // cannot pass its guard and save after that clear, even while disk writes block.
+                synchronized(stateLock) {
+                    if (!allowed()) return MacResult.Failed("Conexión cancelada.")
+                    store?.saveMacLogin(deviceId, MacLogin(user, privateKey, publicKey, hostKey))
+                    session = opened
+                    retained = true
+                }
+                MacResult.Ok("")
+            } catch (e: JSchException) {
+                describe(e, passwordLogin = true)
+            } catch (_: Exception) {
+                MacResult.Failed("No se pudo completar o guardar el inicio de sesión con la Mac. Volvé a intentar.")
+            } finally {
+                if (!retained) provisional?.disconnect()
+            }
         }
-
-        val generated = try {
-            KeyPair.genKeyPair(JSch(), KeyPair.ECDSA, 256)
-        } catch (e: JSchException) {
-            newSession.disconnect()
-            return MacResult.Failed("No se pudo generar la clave: ${e.message}")
-        }
-        val privateKey = ByteArrayOutputStream().also { generated.writePrivateKey(it) }.toString(Charsets.UTF_8.name())
-        val publicKey = ByteArrayOutputStream().also { generated.writePublicKey(it, KEY_COMMENT) }
-            .toString(Charsets.UTF_8.name()).trim()
-        generated.dispose()
-
-        val authorize = exec(newSession, authorizeKeyCommand(publicKey), stdin = null)
-        if (authorize !is MacResult.Ok) {
-            newSession.disconnect()
-            return authorize
-        }
-        val hostKey = hostKeys.seen ?: run {
-            newSession.disconnect()
-            return MacResult.Failed("La Mac no presentó una clave de host.")
-        }
-        store?.saveMacLogin(deviceId, MacLogin(user, privateKey, publicKey, hostKey))
-        if (startedIn != generation) {
-            newSession.disconnect()
-            return MacResult.Failed("Conexión cancelada.")
-        }
-        session = newSession
-        MacResult.Ok("")
     }
 
     fun run(script: MacScript, canSend: () -> Boolean = { true }): MacResult = synchronized(lock) {
@@ -125,28 +139,35 @@ class MacSshClient(private val store: MacLoginStore?, private val commandTimeout
     }
 
     private fun openWithSavedLogin(): MacResult {
-        val t = target ?: return MacResult.Failed("No hay ninguna Mac seleccionada.")
-        val startedIn = generation
+        val (t, startedIn) = synchronized(stateLock) {
+            (target ?: return MacResult.Failed("No hay ninguna Mac seleccionada.")) to generation
+        }
         val login = store?.getMacLogin(t.deviceId)
             ?: return MacResult.LoginNeeded("Iniciá sesión con tu usuario de la Mac para autorizar OmniRemote.")
+        var provisional: Session? = null
+        var retained = false
         return try {
             val jsch = JSch().apply {
                 hostKeyRepository = PinnedHostKey(expected = login.hostKey)
                 addIdentity(KEY_COMMENT, login.privateKey.toByteArray(), login.publicKey.toByteArray(), null)
             }
-            val opened = jsch.getSession(login.username, t.ip, t.port).apply {
+            val opened = jsch.getSession(login.username, t.ip, t.port)
+            provisional = opened
+            opened.apply {
                 setConfig("PreferredAuthentications", "publickey")
                 configure()
                 connect(CONNECT_TIMEOUT_MS)
             }
-            if (startedIn != generation) {
-                opened.disconnect()
-                return MacResult.Failed("Conexión cancelada.")
+            synchronized(stateLock) {
+                if (startedIn != generation) return MacResult.Failed("Conexión cancelada.")
+                session = opened
+                retained = true
             }
-            session = opened
             MacResult.Ok("")
         } catch (e: JSchException) {
             describe(e, passwordLogin = false)
+        } finally {
+            if (!retained) provisional?.disconnect()
         }
     }
 
