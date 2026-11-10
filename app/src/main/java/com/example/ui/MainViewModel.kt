@@ -333,6 +333,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun openBrightness(configureAdb: Boolean = false) {
         val device = _activeDevice.value ?: return
+        val navigationGeneration = controller.automaticNavigationGeneration
         viewModelScope.launch {
             val dimmer = if (device.deviceType == DeviceType.ANDROID_TV) {
                 appRepository.getAppsForDevice(device.id).first().firstOrNull { app ->
@@ -342,7 +343,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } else null
             if (_activeDevice.value?.id == device.id && _activeDevice.value?.ipAddress == device.ipAddress) {
-                controller.openBrightness(dimmer, configureAdb)
+                controller.openBrightness(dimmer, configureAdb, navigationGeneration)
             }
         }
     }

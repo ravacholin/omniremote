@@ -178,6 +178,9 @@ class AndroidTvSessionTest {
             assertTrue(client.isConnected)
             assertTrue(store.isAndroidTvPaired("127.0.0.1"))
             assertTrue(client.sendKey(RemoteKey.HOME))
+            var guardChecks = 0
+            assertFalse(client.launchAppByPackage("com.tribalapps.tvdimmer", canSend = { ++guardChecks == 1 }))
+            assertEquals("Recheck cancellation inside the socket write lock", 2, guardChecks)
             var dimmerStoreOpened = false
             assertTrue(client.launchAppByPackage("com.tribalapps.tvdimmer") { dimmerStoreOpened = true })
             assertTrue("TvDimmer must report that Open needs selecting on the TV", dimmerStoreOpened)

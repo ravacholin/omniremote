@@ -62,3 +62,10 @@ y su entrada en Apps usan ADB por TCP con autorización en pantalla y puerto por
 No abren Play Store ni envían Enter automáticamente. Los otros servicios conservan
 su lanzamiento mediante Remote v2. Consulta [la configuración y las limitaciones
 de ADB](BRIGHTNESS.md), incluida la diferencia con la depuración TLS por código.
+
+## FlowBox sin opciones de desarrollador (1.9)
+
+El usuario confirmó en su FlowBox que la ficha de TVDimmer selecciona Abrir y un
+OK desde OmniRemote abre la app. Brightness y la entrada TVDimmer de Apps automatizan
+esa secuencia por Remote v2, con dos segundos de espera y un solo OK cancelable.
+ADB queda como opción avanzada explícita. Ver [Brightness](BRIGHTNESS.md).
