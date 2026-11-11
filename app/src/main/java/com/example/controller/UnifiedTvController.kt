@@ -192,8 +192,8 @@ class UnifiedTvController(
 
     fun startAndroidTvPairing(onShowPinDialog: () -> Unit, onResult: (Boolean, String?) -> Unit) {
         val dev = activeDevice
-        if (dev == null) {
-            onResult(false, "No hay ningún dispositivo seleccionado para vincular.")
+        if (dev == null || dev.deviceType != DeviceType.ANDROID_TV) {
+            onResult(false, "Selecciona un Google TV / Android TV para vincular.")
             return
         }
         val connection = connectionJob
