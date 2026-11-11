@@ -41,6 +41,9 @@ interface TvAppDao {
     @Query("UPDATE tv_apps SET isFavorite = :isFavorite WHERE id = :id")
     suspend fun updateFavorite(id: Long, isFavorite: Boolean)
 
+    @Query("UPDATE tv_apps SET isFavorite = NOT isFavorite WHERE id = :id")
+    suspend fun toggleFavorite(id: Long)
+
     @Query("UPDATE tv_apps SET launchCount = launchCount + 1, lastLaunched = :timestamp WHERE id = :id")
     suspend fun recordLaunch(id: Long, timestamp: Long)
 

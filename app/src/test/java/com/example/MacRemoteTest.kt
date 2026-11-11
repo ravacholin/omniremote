@@ -29,6 +29,56 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
 class MacRemoteTest {
+    @Test fun `disconnect invalidates a password login already waiting for the operation lock`() {
+        val server = FakeMac(Files.createTempDirectory("mac-login-queued").resolve("host.ser"))
+        val store = MemoryStore()
+        val client = MacSshClient(store)
+        val lock = MacSshClient::class.java.getDeclaredField("lock").apply { isAccessible = true }.get(client)
+        val worker = java.util.concurrent.atomic.AtomicReference<Thread>()
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            val pending: java.util.concurrent.Future<MacResult>
+            synchronized(lock) {
+                pending = executor.submit<MacResult> {
+                    worker.set(Thread.currentThread())
+                    client.login(1, "127.0.0.1", server.port, "pablo", "secret")
+                }
+                val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(3)
+                while (worker.get()?.state != Thread.State.BLOCKED) {
+                    check(System.nanoTime() < deadline) { "Login did not reach the operation lock" }
+                    Thread.sleep(1)
+                }
+                client.disconnect()
+                store.clearMacLogin(1)
+            }
+            assertTrue(pending.get(5, java.util.concurrent.TimeUnit.SECONDS) is MacResult.Failed)
+            assertNull(store.getMacLogin(1))
+            assertTrue("A cancelled queued login must not authorize a new key", server.authorizedKeys.isEmpty())
+        } finally { client.disconnect(); executor.shutdownNow(); server.stop() }
+    }
+
+    @Test fun `disconnect during password authorization does not restore saved credentials`() {
+        val authorizing = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val server = FakeMac(Files.createTempDirectory("mac-login-cancel").resolve("host.ser"), beforeAuthorize = {
+            authorizing.countDown()
+            check(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        })
+        val store = MemoryStore()
+        val client = MacSshClient(store)
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            val pending = executor.submit<MacResult> { client.login(1, "127.0.0.1", server.port, "pablo", "secret") }
+            assertTrue(authorizing.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            client.disconnect()
+            store.clearMacLogin(1) // Deleting the device also removes its saved login.
+            release.countDown()
+            assertTrue(pending.get(5, java.util.concurrent.TimeUnit.SECONDS) is MacResult.Failed)
+            assertNull("A cancelled login must not recreate deleted authorization", store.getMacLogin(1))
+            assertFalse(client.isConnected)
+        } finally { release.countDown(); client.disconnect(); executor.shutdownNow(); server.stop() }
+    }
+
     @Test fun `stalled stdin upload is bounded without closing the shared SSH session`() {
         val server = FakeMac(Files.createTempDirectory("mac-ssh-write").resolve("host.ser"), smallWindow = true)
         val client = MacSshClient(MemoryStore(), commandTimeoutMs = 250)
