@@ -37,7 +37,6 @@ class AndroidTvTextTest {
         val release = CountDownLatch(1)
         var connection: SSLSocket? = null
         val task = executor.submit {
-            server.accept().close() // Reachability probe.
             (server.accept() as SSLSocket).use { socket ->
                 socket.soTimeout = 5000
                 connection = socket

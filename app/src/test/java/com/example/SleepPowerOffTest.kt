@@ -50,7 +50,6 @@ class SleepPowerOffTest {
         }
         val executor = Executors.newSingleThreadExecutor()
         val packet = executor.submit<ByteArray> {
-            server.accept().close() // TCP reachability probe.
             (server.accept() as SSLSocket).use { socket ->
                 socket.soTimeout = 10000
                 val input = socket.inputStream
@@ -111,7 +110,6 @@ class SleepPowerOffTest {
         }
         val executor = Executors.newSingleThreadExecutor()
         val received = executor.submit<ByteArray?> {
-            server.accept().close()
             (server.accept() as SSLSocket).use { socket ->
                 socket.soTimeout = 10000
                 val input = socket.inputStream
@@ -155,7 +153,6 @@ class SleepPowerOffTest {
         }
         val executor = Executors.newSingleThreadExecutor()
         val received = executor.submit<ByteArray?> {
-            server.accept().close()
             (server.accept() as SSLSocket).use { socket ->
                 socket.soTimeout = 10000
                 val input = socket.inputStream
@@ -247,7 +244,6 @@ class SleepPowerOffTest {
         }
         val executor = Executors.newSingleThreadExecutor()
         val received = executor.submit<ByteArray?> {
-            server.accept().close()
             (server.accept() as SSLSocket).use { socket ->
                 socket.soTimeout = 5000
                 try {
@@ -322,7 +318,6 @@ class SleepPowerOffTest {
             val connected = CountDownLatch(1)
             val resume = CountDownLatch(1)
             val packet = executor.submit<ByteArray?> {
-                server.accept().close()
                 (server.accept() as SSLSocket).use { socket ->
                     socket.soTimeout = 10000
                     val input = socket.inputStream

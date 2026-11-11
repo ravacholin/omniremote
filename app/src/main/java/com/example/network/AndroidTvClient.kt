@@ -16,9 +16,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -27,8 +24,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.InputStream
 import java.io.OutputStream
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLSocket
@@ -111,31 +106,14 @@ class AndroidTvClient(
         activeDeviceId = deviceId?.takeIf { it > 0 }
         if (activeIp.isBlank()) return@withContext false
         activePort = remotePort
-        val ports = coroutineScope {
-            listOf(remotePort, pairingPort).map { p -> async { p to isPortOpen(activeIp, p, 2000) } }.awaitAll()
-        }.filter { it.second }.map { it.first }
         currentCoroutineContext().ensureActive()
-        supportsRemoteV2 = ports.isNotEmpty()
+        supportsRemoteV2 = false
         isPaired = tokenStore?.isAndroidTvPaired(activeIp) ?: false
-        if (!supportsRemoteV2) {
-            onConnectionChanged?.invoke(false,
-                "No se encontró Android TV Remote Service en $activeIp. En el FlowBox, comprueba que esté encendido y conectado a la misma red, y que Android TV Remote Service esté habilitado y actualizado.")
-            return@withContext false
-        }
+        // TLS and RemoteStart already establish reachability and readiness. Probing
+        // both ports first adds a full pairing-port timeout to an available remote.
         // An IP change does not revoke the saved mutual TLS identity.
         // Try authentication before requiring the user to pair again.
         initRemoteV2Connection(activeIp)
-    }
-
-    private fun isPortOpen(ip: String, port: Int, timeoutMs: Int): Boolean {
-        return try {
-            localNetwork.socketFactory.createSocket().use { socket ->
-                socket.connect(InetSocketAddress(ip, port), timeoutMs)
-                true
-            }
-        } catch (_: Exception) {
-            false
-        }
     }
 
     /**
@@ -152,6 +130,7 @@ class AndroidTvClient(
                 closeRemoteSocket()
                 val sslContext = AndroidTvCertificateManager.getOrCreateSslContext(context)
                 val socket = localNetwork.tlsSocket(sslContext, ip, remotePort, 3000)
+                supportsRemoteV2 = true
                 remoteSocket = socket // Also close sockets whose TLS handshake is still pending.
                 socket.tcpNoDelay = true
                 socket.soTimeout = 8000
@@ -248,7 +227,10 @@ class AndroidTvClient(
                 closeRemoteSocket()
                 currentCoroutineContext().ensureActive()
                 Log.w(tag, "Remote v2 connection failed: ${e.message}")
-                onConnectionChanged?.invoke(false, "No se pudo iniciar el control remoto: ${e.message}")
+                val message = if (e is java.net.ConnectException || e is java.net.SocketTimeoutException) {
+                    "No se pudo conectar con Android TV Remote Service en $ip. Comprueba que la TV esté encendida, en la misma red y con el servicio habilitado. ${e.message}"
+                } else "No se pudo iniciar el control remoto: ${e.message}"
+                onConnectionChanged?.invoke(false, message)
                 if (e is javax.net.ssl.SSLHandshakeException) onPairingPromptNeeded?.invoke(ip)
                 false
             }
