@@ -85,8 +85,6 @@ class AndroidTvSessionTest {
         val failure = AtomicReference<Throwable?>()
         val worker = thread(isDaemon = true) {
             try {
-                // connect() first checks reachability with a plain TCP probe.
-                server.accept().close()
                 (server.accept() as SSLSocket).use { socket ->
                     socket.soTimeout = 5000
                     socket.startHandshake()

@@ -51,7 +51,6 @@ class AndroidTvRapidInputTest {
         }, remotePort = server.localPort, pairingPort = 1)
         val acceptor = executor.submit {
             try {
-                server.accept().close() // connect() reachability probe
                 while (!server.isClosed) {
                     val socket = server.accept() as SSLSocket
                     val session = sessions.incrementAndGet()

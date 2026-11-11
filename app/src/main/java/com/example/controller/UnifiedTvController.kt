@@ -201,10 +201,17 @@ class UnifiedTvController(
         connection?.cancel()
         previousPairing?.cancel()
         androidClient.cancelPairing()
+        _connectionState.value = ConnectionState.WaitingAuth(dev.name, "Solicitando el código de vinculación en la TV...")
+        val generation = commandGeneration.get()
         pairingJob = scope.launch {
             previousPairing?.join()
             connection?.join()
-            androidClient.startPairing(dev.ipAddress, onShowPinDialog, onResult)
+            androidClient.startPairing(dev.ipAddress, onShowPinDialog) { success, error ->
+                if (generation == commandGeneration.get() && dev.hasSameControlEndpoint(activeDevice)) {
+                    if (!success) _connectionState.value = ConnectionState.Error(error ?: "No se pudo iniciar la vinculación.")
+                    onResult(success, error)
+                }
+            }
         }
     }
 
@@ -354,9 +361,10 @@ class UnifiedTvController(
 
         val state = _connectionState.value
         val preserveSession = state is ConnectionState.Connected ||
-            (effectiveDevice.deviceType == DeviceType.SAMSUNG_TIZEN &&
-                (samsungClient.hasPendingConnection(effectiveDevice.ipAddress) ||
-                    state is ConnectionState.Connecting || state is ConnectionState.WaitingAuth))
+            (effectiveDevice.deviceType != DeviceType.MACOS &&
+                (state is ConnectionState.Connecting || state is ConnectionState.WaitingAuth ||
+                    (effectiveDevice.deviceType == DeviceType.SAMSUNG_TIZEN &&
+                        samsungClient.hasPendingConnection(effectiveDevice.ipAddress))))
         if (effectiveDevice.hasSameControlEndpoint(activeDevice) && preserveSession) {
             activeDevice = effectiveDevice
             return
@@ -449,9 +457,10 @@ class UnifiedTvController(
     private fun reconnectLocked() {
         activeDevice?.let { dev ->
             val state = _connectionState.value
-            if (dev.deviceType == DeviceType.SAMSUNG_TIZEN &&
-                (samsungClient.hasPendingConnection(dev.ipAddress) ||
-                    state is ConnectionState.Connecting || state is ConnectionState.WaitingAuth)) return
+            if (dev.deviceType != DeviceType.MACOS &&
+                (state is ConnectionState.Connecting || state is ConnectionState.WaitingAuth ||
+                    (dev.deviceType == DeviceType.SAMSUNG_TIZEN &&
+                        samsungClient.hasPendingConnection(dev.ipAddress)))) return
             disconnectCurrent()
             setActiveDevice(dev)
         }
@@ -459,7 +468,12 @@ class UnifiedTvController(
 
     fun cancelAndroidTvPairing() {
         pairingJob?.cancel()
+        pairingJob = null
         androidClient.cancelPairing()
+        if (activeDevice?.deviceType == DeviceType.ANDROID_TV && !androidClient.isConnected &&
+            _connectionState.value is ConnectionState.WaitingAuth) {
+            _connectionState.value = ConnectionState.Disconnected
+        }
     }
 
     fun disconnectCurrent() {
