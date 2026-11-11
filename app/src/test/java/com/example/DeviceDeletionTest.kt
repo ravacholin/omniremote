@@ -62,10 +62,23 @@ class DeviceDeletionTest {
     }
 
     @Test fun `deleting an active Mac cancels its target before database deletion can finish`() = runBlocking {
+        assertImmediateDeletion(DeviceType.MACOS)
+    }
+
+    @Test fun `deleting an active Android TV cancels pairing before database deletion can finish`() = runBlocking {
+        assertImmediateDeletion(DeviceType.ANDROID_TV)
+    }
+
+    @Test fun `deleting an active Samsung cancels its target before database deletion can finish`() = runBlocking {
+        assertImmediateDeletion(DeviceType.SAMSUNG_TIZEN)
+    }
+
+    private suspend fun assertImmediateDeletion(type: DeviceType) {
         val db = AppDatabase.getInstance(application)
-        val id = db.tvDeviceDao().insert(device().copy(deviceType = DeviceType.MACOS, port = 22))
+        val id = db.tvDeviceDao().insert(device().copy(deviceType = type, port = if (type == DeviceType.MACOS) 22 else 6466))
         val mac = db.tvDeviceDao().getDeviceById(id)!!
         model.selectDevice(mac)
+        if (type == DeviceType.ANDROID_TV) model.startAndroidTvPairing()
         val session = com.example.controller.RemoteSession.getInstance(application)
         val generation = session.targetGeneration
         val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
@@ -79,6 +92,7 @@ class DeviceDeletionTest {
             assertNull("The deleted target must be deselected before waiting for Room", model.activeDevice.value)
             assertTrue(session.targetGeneration > generation)
             assertEquals(ConnectionState.Disconnected, model.connectionState.value)
+            assertFalse(model.isAndroidTvPairingDialogOpen.value)
         } finally { release.complete(Unit); transaction.join() }
     }
 

@@ -177,6 +177,7 @@ class MainViewModel @JvmOverloads constructor(
     private val _powerOnStatusMessage = session.powerStatus
     val powerOnStatusMessage: StateFlow<String?> = _powerOnStatusMessage.asStateFlow()
 
+    private var macConfigGeneration = 0L
     private val _showMacConfigDialog = MutableStateFlow(false)
     val showMacConfigDialog: StateFlow<Boolean> = _showMacConfigDialog.asStateFlow()
 
@@ -273,6 +274,7 @@ class MainViewModel @JvmOverloads constructor(
         if (!device.hasSameControlEndpoint(_activeDevice.value)) {
             closeConnectionDiagnosis()
             closeMacLogin()
+            closeAndroidTvPairingDialog()
         }
         session.selectDevice(device)
         viewModelScope.launch(Dispatchers.IO) {
@@ -436,25 +438,39 @@ class MainViewModel @JvmOverloads constructor(
     fun powerOnTv() = session.powerOnTv { openMacConfigDialog(it) }
 
     fun openMacConfigDialog(device: TvDeviceEntity) {
+        macConfigGeneration++
         _macConfigDevice.value = device
         _showMacConfigDialog.value = true
     }
 
     fun closeMacConfigDialog() {
+        macConfigGeneration++
         _showMacConfigDialog.value = false
         _macConfigDevice.value = null
     }
 
     fun updateDeviceMac(device: TvDeviceEntity, newMac: String, andPowerOn: Boolean = true) {
         val cleanMac = com.example.network.WakeOnLan.formatMacAddress(newMac) ?: return
+        if (device.id in deletedDeviceIds) return
+        val expectedGeneration = session.targetGeneration
+        val expectedDialog = macConfigGeneration
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repository.updateDeviceMac(device.id, cleanMac) }
-            _activeDevice.value?.takeIf { it.id == device.id && it.ipAddress == device.ipAddress }?.let {
-                session.selectDevice(it.copy(macAddress = cleanMac))
+            if (device.id in deletedDeviceIds) return@launch
+            val sameSelection = session.targetGeneration == expectedGeneration
+            val selected = _activeDevice.value
+            if (sameSelection && selected != null && device.hasSameControlEndpoint(selected)) {
+                session.selectDevice(selected.copy(macAddress = cleanMac))
             }
+            // A save can finish after this dialog was closed or reopened for the same TV.
+            if (macConfigGeneration != expectedDialog ||
+                !device.hasSameControlEndpoint(_macConfigDevice.value)) return@launch
             closeMacConfigDialog()
+            // A -> B -> A must not revive an earlier wake request.
+            if (!sameSelection) return@launch
             if (andPowerOn) {
-                powerOnTv()
+                if (device.hasSameControlEndpoint(_activeDevice.value)) powerOnTv()
+                else sendWakeOnLan(device.copy(macAddress = cleanMac))
             }
         }
     }
@@ -493,8 +509,9 @@ class MainViewModel @JvmOverloads constructor(
     private var pairingSubmitJob: kotlinx.coroutines.Job? = null
 
     fun startAndroidTvPairing() {
-        pairingSubmitJob?.cancel()
         val dev = _activeDevice.value
+        if (dev != null && (dev.deviceType != DeviceType.ANDROID_TV || dev.id in deletedDeviceIds)) return
+        pairingSubmitJob?.cancel()
         if (dev == null) {
             _pairingErrorMessage.value = "Selecciona primero tu Google TV para vincular."
             _isAndroidTvPairingDialogOpen.value = true
@@ -624,9 +641,10 @@ class MainViewModel @JvmOverloads constructor(
         macLinks.onDeviceDeleted(device.id)
         if (_activeDevice.value?.id == device.id) closeConnectionDiagnosis()
         deletedDeviceIds += device.id
-        // Invalidate unsent Mac links before suspending for the database deletion.
-        if (wasActive && device.deviceType == DeviceType.MACOS) {
+        // Invalidate every transport before suspending for the database deletion.
+        if (wasActive) {
             closeMacLogin()
+            closeAndroidTvPairingDialog()
             session.clearDevice()
         }
         sleepTimerManager.cancelForDevice(device.id)
