@@ -11,6 +11,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -46,7 +49,14 @@ class AndroidTvClient(
     private data class PendingPowerOff(val socket: SSLSocket, val confirmed: CompletableDeferred<Boolean>)
     @Volatile private var pendingPowerOff: PendingPowerOff? = null
     @Volatile private var remotePowerOn: Boolean? = null
+    private val remoteVolume = MutableStateFlow<AndroidTvVolume?>(null)
     private val writeLock = Any()
+    internal fun supportsFeature(feature: Int): Boolean? = synchronized(writeLock) {
+        (negotiatedFeatures and feature != 0).takeIf { isConnected }
+    }
+    internal fun observedPower(): Boolean? = synchronized(writeLock) {
+        remotePowerOn.takeIf { isConnected && negotiatedFeatures and AndroidTvProtocol.FEATURE_POWER != 0 }
+    }
     private var pairingIp: String = ""
     private var activeDeviceId: Long? = null
     private val tag = "AndroidTvClient"
@@ -167,6 +177,12 @@ class AndroidTvClient(
                                     pendingPowerOff?.takeIf { it.socket === socket }?.confirmed?.complete(true)
                                 }
                             }
+                        }
+                    }
+                    if (features and AndroidTvProtocol.FEATURE_VOLUME != 0 && AndroidTvProtocol.hasField(packet, 50)) {
+                        val volume = AndroidTvProtocol.readVolumeReport(packet)
+                        synchronized(writeLock) {
+                            if (remoteSocket === socket) remoteVolume.value = volume
                         }
                     }
                     AndroidTvProtocol.buildRemoteResponse(packet, features)?.let { writeRemotePacket(out, it) }
@@ -410,6 +426,7 @@ class AndroidTvClient(
             pendingAppLaunch?.accepted?.complete(false)
             pendingPowerOff?.confirmed?.complete(false)
             remotePowerOn = null
+            remoteVolume.value = null
             remoteOutput = null
             remoteInput = null
             negotiatedFeatures = 0
@@ -468,6 +485,22 @@ class AndroidTvClient(
         }
     }
 
+    internal suspend fun volumeReport(): AndroidTvVolume? {
+        if (supportsFeature(AndroidTvProtocol.FEATURE_VOLUME) != true) return null
+        return withTimeoutOrNull(1_200) { remoteVolume.filterNotNull().first() }
+    }
+
+    internal suspend fun adjustVolume(percent: Int?, muted: Boolean?, canSend: () -> Boolean): AndroidTvVolumeControl.Result {
+        val socket = remoteSocket ?: return AndroidTvVolumeControl.Result(false, null)
+        val initial = volumeReport() ?: return AndroidTvVolumeControl.Result(false, null)
+        return AndroidTvVolumeControl.adjust(initial, percent, muted) { before, key ->
+            val sent = sendKey(key) {
+                canSend() && isConnected && remoteSocket === socket && remoteVolume.value == before
+            }
+            if (!sent) null else withTimeoutOrNull(1_200) { remoteVolume.first { it != before } }
+        }
+    }
+
     /**
      * Use the same POWER key as the working remote button, only from a known on state.
      * Some HDMI players ignore SLEEP (223). Never toggle an already sleeping device or
@@ -484,7 +517,7 @@ class AndroidTvClient(
                 synchronized(writeLock) {
                     commandContext.ensureActive()
                     if (!canSend() || remoteSocket !== socket || !isConnected ||
-                        negotiatedFeatures and 32 == 0) return@withContext false
+                        negotiatedFeatures and AndroidTvProtocol.FEATURE_POWER == 0) return@withContext false
                     when (remotePowerOn) {
                         false -> return@withContext true
                         null -> return@withContext false

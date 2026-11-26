@@ -14,6 +14,11 @@ class TvAppRepository(private val database: AppDatabase) {
     private val dao = database.tvAppDao()
     private val catalogMutex = Mutex()
 
+    suspend fun listRegistered(deviceId: Long, afterId: Long, limit: Int) = dao.listRegistered(deviceId, afterId, limit)
+
+    suspend fun getRegisteredApp(deviceId: Long, appId: Long) =
+        dao.getAppById(appId)?.takeIf { it.deviceId == deviceId }
+
     fun getAppsForDevice(deviceId: Long): Flow<List<TvAppEntity>> =
         dao.getAppsForDevice(deviceId)
 

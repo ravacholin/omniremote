@@ -59,10 +59,18 @@ class UnifiedTvController(
 
     private val adbBrightness = context?.let { appContext ->
         AndroidAdbBrightness(scope, com.example.data.local.AdbSettingsStore(appContext), { host, port, pkg ->
-            val identity = withContext(Dispatchers.IO) { com.example.network.AdbIdentity.load(appContext) }
-            com.example.network.AdbTcpClient(identity).launch(host, port, pkg)
+            launchAdbDimmer(host, port, pkg)
         }) { device, message, success -> addLog(device.name, message, success) }
     }
+    internal suspend fun launchAdbDimmer(host: String, port: Int, pkg: String, allowSetup: Boolean = true) {
+        val appContext = checkNotNull(context)
+        val identity = withContext(Dispatchers.IO) { com.example.network.AdbIdentity.load(appContext) }
+        com.example.network.AdbTcpClient(identity).launch(host, port, pkg, allowSetup)
+    }
+
+    internal fun forSavedTarget(device: TvDeviceEntity) =
+        TargetRemoteConnection(checkNotNull(context), checkNotNull(tokenStore), device)
+
     val adbSetup: StateFlow<AdbSetupState?> = adbBrightness?.setup ?: MutableStateFlow(null)
     fun submitAdbSetup(port: String) { adbBrightness?.submit(port) }
     fun dismissAdbSetup() { adbBrightness?.cancel() }

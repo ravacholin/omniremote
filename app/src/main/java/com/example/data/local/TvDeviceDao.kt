@@ -17,6 +17,9 @@ interface TvDeviceDao {
     @Query("SELECT * FROM tv_devices ORDER BY isDefault DESC, lastConnected DESC")
     fun getAllDevices(): Flow<List<TvDeviceEntity>>
 
+    @Query("SELECT * FROM tv_devices WHERE id > :afterId AND isDemoMode = 0 ORDER BY id LIMIT :limit")
+    suspend fun listRegistered(afterId: Long, limit: Int): List<TvDeviceEntity>
+
     @Query("SELECT * FROM tv_devices WHERE id = :id LIMIT 1")
     suspend fun getDeviceById(id: Long): TvDeviceEntity?
 

@@ -25,7 +25,9 @@ import java.util.concurrent.atomic.AtomicLong
 /** One authorized transport shared by every screen and the notification service. */
 class RemoteSession private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val repository = TvDeviceRepository(AppDatabase.getInstance(context).tvDeviceDao())
+    private val database = AppDatabase.getInstance(context)
+    internal val repository = TvDeviceRepository(database.tvDeviceDao())
+    internal val apps = com.example.data.repository.TvAppRepository(database)
     val macLinks = com.example.share.MacLinkQueue(AppDatabase.getInstance(context).macLinkDao())
     val tokenStore = TvTokenStore.getInstance(context)
     internal val selectedDevice = MutableStateFlow<TvDeviceEntity?>(null)
@@ -141,6 +143,9 @@ class RemoteSession private constructor(private val context: Context) {
         }
     }
 
+    internal suspend fun wakeTarget(device: TvDeviceEntity) =
+        WakeOnLan.powerOnTv(device, TvScanner(context).getSubnetPrefix(), context)
+
     fun powerOnTv(onMissingMac: ((TvDeviceEntity) -> Unit)? = null) {
         if (wakeJob?.isActive == true) return
         val device = selectedDevice.value ?: return
@@ -148,7 +153,7 @@ class RemoteSession private constructor(private val context: Context) {
         val samsungProbe = controller.prepareWakeRequest(device)
         wakeJob = scope.launch {
             powerStatus.value = "Enviando ráfaga Wake-on-LAN a ${device.name}..."
-            val result = WakeOnLan.powerOnTv(device, TvScanner(context).getSubnetPrefix(), context)
+            val result = wakeTarget(device)
             if (generation.get() != expected) return@launch
             if (result.resolvedMac != null && device.macAddress.isBlank()) {
                 withContext(Dispatchers.IO) { repository.updateDeviceMac(device.id, result.resolvedMac) }

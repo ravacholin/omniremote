@@ -17,6 +17,9 @@ interface TvAppDao {
     @Query("SELECT * FROM tv_apps WHERE deviceId = :deviceId AND isFavorite = 1 ORDER BY sortOrder ASC, appName ASC")
     fun getFavoriteAppsForDevice(deviceId: Long): Flow<List<TvAppEntity>>
 
+    @Query("SELECT * FROM tv_apps WHERE deviceId = :deviceId AND id > :afterId ORDER BY id LIMIT :limit")
+    suspend fun listRegistered(deviceId: Long, afterId: Long, limit: Int): List<TvAppEntity>
+
     @Query("SELECT * FROM tv_apps WHERE id = :id LIMIT 1")
     suspend fun getAppById(id: Long): TvAppEntity?
 

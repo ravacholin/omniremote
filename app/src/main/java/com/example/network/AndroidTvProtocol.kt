@@ -19,8 +19,10 @@ object AndroidTvProtocol {
     const val PORT_REMOTE = 6466
     const val APP_LINK_FEATURE = 512
     const val FEATURE_IME = 4
+    const val FEATURE_POWER = 32
+    const val FEATURE_VOLUME = 64
     // Ping, keys, text input, power, volume and app links. Voice is not implemented.
-    const val REMOTE_FEATURES = 1 or 2 or FEATURE_IME or 32 or 64 or APP_LINK_FEATURE
+    const val REMOTE_FEATURES = 1 or 2 or FEATURE_IME or FEATURE_POWER or FEATURE_VOLUME or APP_LINK_FEATURE
 
     // RemoteDirection (port 6466)
     const val REMOTE_DIRECTION_UNKNOWN = 0
@@ -330,6 +332,20 @@ object AndroidTvProtocol {
         return ByteArrayOutputStream().apply {
             writeFieldBytes(this, 21, batch.toByteArray())
         }.toByteArray()
+    }
+
+    // RemoteSetVolumeLevel in remotemessage.proto. Zero and false use proto3 defaults.
+    internal fun readVolumeReport(packet: ByteArray): AndroidTvVolume? {
+        return try {
+            val report = getFieldBytes(packet, 50) ?: return null
+            val max = getFieldVarint(report, 6)?.takeIf { it > 0 } ?: return null
+            val level = getFieldVarint(report, 7) ?: if (hasField(report, 7)) return null else 0
+            val muted = getFieldVarint(report, 8) ?: if (hasField(report, 8)) return null else 0
+            if (level !in 0..max) return null
+            AndroidTvVolume(max, level, muted != 0)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
     }
 
     fun buildRemoteResponse(packet: ByteArray, features: Int = REMOTE_FEATURES): ByteArray? = when {

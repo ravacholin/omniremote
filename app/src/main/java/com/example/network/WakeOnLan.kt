@@ -6,7 +6,9 @@ import android.util.Log
 import com.example.data.model.DeviceType
 import com.example.data.model.TvDeviceEntity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -399,6 +401,7 @@ object WakeOnLan {
             )
         }
 
+        currentCoroutineContext().ensureActive()
         // 3. Transmit Wake-on-LAN & Wake-on-WLAN Burst
         val sent = sendMagicPacketBurst(
             macAddress = effectiveMac,
@@ -416,6 +419,7 @@ object WakeOnLan {
         // 4. Brand-Specific Network Power Vectors
         when (device.deviceType) {
             DeviceType.SAMSUNG_TIZEN -> {
+                currentCoroutineContext().ensureActive()
                 // Samsung Tizen: Wake ping to HTTP API
                 try {
                     val req = Request.Builder()
@@ -426,6 +430,7 @@ object WakeOnLan {
                     triggeredProtocols.add("Samsung Wake HTTP Ping")
                 } catch (_: Exception) {}
 
+                currentCoroutineContext().ensureActive()
                 // Samsung Tizen: Wake probe on port 8002
                 try {
                     Socket().use { s ->
@@ -436,6 +441,7 @@ object WakeOnLan {
             }
 
             DeviceType.ANDROID_TV -> {
+                currentCoroutineContext().ensureActive()
                 // Android TV / Google TV: Google Cast Wake-on-Cast
                 try {
                     val req = Request.Builder()
@@ -446,6 +452,7 @@ object WakeOnLan {
                     triggeredProtocols.add("Google Cast Wake-on-Cast (Port 8008)")
                 } catch (_: Exception) {}
 
+                currentCoroutineContext().ensureActive()
                 // Sony BRAVIA IRCC Wakeup
                 try {
                     val soapBody = """

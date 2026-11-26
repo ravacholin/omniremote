@@ -13,7 +13,7 @@ class AdbException(message: String, cause: Throwable? = null) : Exception(messag
 
 /** Classic authenticated adbd TCP, not Android 11+ wireless TLS/code pairing. */
 class AdbTcpClient(private val identity: AdbIdentity, private val timeoutMs: Long = 25_000) {
-    suspend fun launch(host: String, port: Int, packageName: String) {
+    suspend fun launch(host: String, port: Int, packageName: String, allowSetup: Boolean = true) {
         require(port in 1..65535) { "Puerto ADB inválido" }
         require(packageName.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) { "Paquete Android inválido" }
         require(host.isNotBlank()) { "Dirección de TV vacía" }
@@ -29,7 +29,7 @@ class AdbTcpClient(private val identity: AdbIdentity, private val timeoutMs: Lon
                         withContext(Dispatchers.IO) {
                             socket.connect(InetSocketAddress(host, port), 5000)
                             socket.soTimeout = 20_000
-                            session(socket, packageName)
+                            session(socket, packageName, allowSetup)
                         }
                     } finally {
                         socket.close()
@@ -50,7 +50,7 @@ class AdbTcpClient(private val identity: AdbIdentity, private val timeoutMs: Lon
         }
     }
 
-    private suspend fun session(socket: Socket, packageName: String) {
+    private suspend fun session(socket: Socket, packageName: String, allowSetup: Boolean) {
         val input = DataInputStream(socket.getInputStream())
         val output = socket.getOutputStream()
         // Advertise the original version: checksums required, 4 KiB maximum, legacy shell.
@@ -71,7 +71,7 @@ class AdbTcpClient(private val identity: AdbIdentity, private val timeoutMs: Lon
                     if (packet.a != 1 || packet.body.size != 20) throw AdbException("Desafío de autorización ADB inválido")
                     if (!sentSignature) {
                         send(output, "AUTH", 2, 0, identity.signToken(packet.body)); sentSignature = true
-                    } else if (!sentKey) {
+                    } else if (allowSetup && !sentKey) {
                         send(output, "AUTH", 3, 0, identity.publicKeyPayload()); sentKey = true
                     } else throw AdbException("La TV rechazó ADB. Acepta la autorización de OmniRemote en pantalla.")
                 }

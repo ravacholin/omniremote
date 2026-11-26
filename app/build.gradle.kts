@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Locale
 
 plugins {
   alias(libs.plugins.android.application)
@@ -16,9 +17,17 @@ android {
     applicationId = "com.aistudio.omnitvremote.qvrtm"
     minSdk = 24
     targetSdk = 36
-    versionCode = 9
-    // Keep the diagnostic versionCode so previously working APKs remain installable as fallbacks.
-    versionName = "1.9-flowbox-brightness"
+    versionCode = 10
+    versionName = "2.0-external-control"
+    val instoPackage = "com.aistudio.pingassist.qvrtkm"
+    val instoCert = providers.gradleProperty("instoCertificateSha256").orElse("").get()
+        .replace(":", "").uppercase(Locale.ROOT)
+    require(instoCert.isEmpty() || instoCert.matches(Regex("[0-9A-F]{64}"))) {
+      "instoCertificateSha256 must be the SHA-256 fingerprint of Insto's signing certificate"
+    }
+    manifestPlaceholders["instoPackageVisibility"] = instoPackage
+    buildConfigField("String", "INSTO_PACKAGE", "\"$instoPackage\"")
+    buildConfigField("String", "INSTO_CERTIFICATE_SHA256", "\"$instoCert\"")
     buildConfigField("long", "SAMSUNG_WAKE_RECONNECT_DELAY_MS", "5000L")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -62,6 +71,7 @@ android {
     targetCompatibility = JavaVersion.VERSION_11
   }
   buildFeatures {
+    aidl = true
     compose = true
     buildConfig = true
   }
