@@ -408,9 +408,14 @@ class SamsungTvClient(
         return launchAppById(ipAddress, shortcut.samsungAppId)
     }
 
-    suspend fun launchAppById(ipAddress: String, appId: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun launchAppById(
+        ipAddress: String,
+        appId: String,
+        external: Boolean = false,
+        canSend: () -> Boolean = { true }
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            require(ipAddress == currentIp && isConnected) { "Conecta primero el televisor." }
+            require(canSend() && ipAddress == currentIp && isConnected) { "Conecta primero el televisor." }
             val generation = connectionGeneration.get()
             val definition = StreamingAppCatalog.apps.firstOrNull { it.samsungId == appId }
             val name = if (appId.startsWith("name:")) appId.removePrefix("name:") else definition?.name
@@ -435,17 +440,22 @@ class SamsungTvClient(
             // silently ignore ed.apps.launch, so try the HTTP application API first.
             val request = Request.Builder().url("http://$ipAddress:8001/api/v2/applications/${target.id}")
                 .post("".toRequestBody(null)).build()
+            var mayFallback = !external
             val httpFailure = try {
-                okHttpClient.newBuilder().readTimeout(4, TimeUnit.SECONDS).callTimeout(6, TimeUnit.SECONDS).build()
+                check(canSend())
+                okHttpClient.newBuilder().retryOnConnectionFailure(!external).readTimeout(4, TimeUnit.SECONDS).callTimeout(6, TimeUnit.SECONDS).build()
                     .newCall(request).execute().use { response ->
                         check(generation == connectionGeneration.get() && currentIp == ipAddress && isConnected) { "La conexión con la TV cambió." }
                         if (response.isSuccessful) return@withContext Result.success(Unit)
+                        // A missing/unsupported endpoint permits the other protocol. A timeout
+                        // or ambiguous server error must not send another external launch.
+                        mayFallback = !external || response.code in setOf(404, 405, 501)
                         IllegalStateException("La TV rechazó abrir la app (HTTP ${response.code}).")
                     }
             } catch (e: IOException) { e }
             // Retain the type-specific protocol for TVs without the HTTP app API.
             check(generation == connectionGeneration.get() && currentIp == ipAddress && isConnected) { "La conexión con la TV cambió." }
-            if (webSocket?.send(SamsungAppProtocol.launch(target)) == true) Result.success(Unit)
+            if (mayFallback && canSend() && webSocket?.send(SamsungAppProtocol.launch(target)) == true) Result.success(Unit)
             else Result.failure(httpFailure)
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { Result.failure(e) }

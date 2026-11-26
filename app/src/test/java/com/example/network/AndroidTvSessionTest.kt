@@ -41,6 +41,46 @@ class AndroidTvSessionTest {
         soTimeout = 10000
     }
 
+    @Test fun `absolute volume and mute use live reports on the authenticated socket`(): Unit = runBlocking {
+        val remoteServer = server()
+        val executor = Executors.newSingleThreadExecutor()
+        val client = AndroidTvClient(context, TvTokenStore.getInstance(context), remotePort = remoteServer.localPort)
+        val serverTask = executor.submit {
+            (remoteServer.accept() as SSLSocket).use { socket ->
+                socket.soTimeout = 5_000
+                val input = socket.inputStream
+                val output = socket.outputStream
+                AndroidTvProtocol.writePacket(output, bytes(1, byteArrayOf(8, 66))) // keys + volume
+                assertTrue(AndroidTvProtocol.hasField(AndroidTvProtocol.readPacket(input), 1))
+                AndroidTvProtocol.writePacket(output, bytes(40, byteArrayOf(8, 1)))
+                AndroidTvProtocol.writePacket(output, bytes(50, byteArrayOf(48, 15, 56, 5)))
+                assertArrayEquals(AndroidTvProtocol.buildRemoteKeyInject(RemoteKey.VOL_UP.androidKeyCode),
+                    AndroidTvProtocol.readPacket(input))
+                AndroidTvProtocol.writePacket(output, bytes(50, byteArrayOf(48, 15, 56, 6)))
+                assertArrayEquals(AndroidTvProtocol.buildRemoteKeyInject(RemoteKey.MUTE.androidKeyCode),
+                    AndroidTvProtocol.readPacket(input))
+                AndroidTvProtocol.writePacket(output, bytes(50, byteArrayOf(48, 15, 56, 6, 64, 1)))
+                // The client closes successfully without retrying either command.
+                assertEquals(-1, input.read())
+            }
+        }
+        try {
+            assertTrue(client.connect("127.0.0.1"))
+            assertEquals(AndroidTvVolume(15, 5, false), client.volumeReport())
+            assertNull(client.observedPower()) // readiness without the negotiated power feature
+            assertEquals(AndroidTvVolumeControl.Result(true, AndroidTvVolume(15, 6, false)),
+                client.adjustVolume(40, null) { true })
+            assertEquals(AndroidTvVolumeControl.Result(true, AndroidTvVolume(15, 6, true)),
+                client.adjustVolume(null, true) { true })
+            client.disconnect()
+            serverTask.get(5, TimeUnit.SECONDS)
+        } finally {
+            client.disconnect()
+            remoteServer.close()
+            executor.shutdownNow()
+        }
+    }
+
     @Test fun `successful PIN pairing allows the remote port to register its own server identity`() = runBlocking {
         val store = TvTokenStore.getInstance(context)
         val deviceId = 986L

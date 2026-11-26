@@ -16,6 +16,8 @@ class TvDeviceRepository(private val dao: TvDeviceDao) {
         // No auto-injection of fake/mock devices
     }
 
+    suspend fun listRegistered(afterId: Long, limit: Int) = dao.listRegistered(afterId, limit)
+
     suspend fun getDeviceById(id: Long): TvDeviceEntity? = dao.getDeviceById(id)
 
     suspend fun getDeviceByIp(ipAddress: String): TvDeviceEntity? = dao.getDeviceByIp(ipAddress.trim())

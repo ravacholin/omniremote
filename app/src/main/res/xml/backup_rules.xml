@@ -7,6 +7,7 @@
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="sleep_timer.xml" />
+    <exclude domain="sharedpref" path="external_executions.xml" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

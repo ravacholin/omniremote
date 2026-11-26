@@ -53,6 +53,11 @@ return ((output volume of s) as text) & "," & ((output muted of s) as text)"""
         "set volume output volume ${level.coerceIn(0, 100)}\nset volume output muted false$REPORT_VOLUME"
     )
 
+    internal fun setMute(muted: Boolean) = MacScript(
+        MacScript.Language.APPLESCRIPT,
+        "set volume output muted $muted$REPORT_VOLUME"
+    )
+
     private fun stepVolume(delta: Int) = MacScript(
         MacScript.Language.APPLESCRIPT,
         """
@@ -78,15 +83,19 @@ set volume output muted false$REPORT_VOLUME""".trimStart()
         PREVIOUS("previous track", 18)
     }
 
-    fun forKey(key: RemoteKey): MacScript? = when (key) {
+    fun forKey(key: RemoteKey): MacScript? = forKey(key, singleAction = false)
+
+    internal fun forExternalKey(key: RemoteKey): MacScript? = forKey(key, singleAction = true)
+
+    private fun forKey(key: RemoteKey, singleAction: Boolean): MacScript? = when (key) {
         RemoteKey.VOL_UP -> stepVolume(VOLUME_STEP)
         RemoteKey.VOL_DOWN -> stepVolume(-VOLUME_STEP)
         RemoteKey.MUTE -> toggleMute
-        RemoteKey.PLAY_PAUSE -> media(Media.PLAY_PAUSE)
-        RemoteKey.PLAY -> media(Media.PLAY)
-        RemoteKey.PAUSE, RemoteKey.STOP -> media(Media.PAUSE)
-        RemoteKey.FAST_FORWARD -> media(Media.NEXT)
-        RemoteKey.REWIND -> media(Media.PREVIOUS)
+        RemoteKey.PLAY_PAUSE -> media(Media.PLAY_PAUSE, singleAction)
+        RemoteKey.PLAY -> media(Media.PLAY, singleAction)
+        RemoteKey.PAUSE, RemoteKey.STOP -> media(Media.PAUSE, singleAction)
+        RemoteKey.FAST_FORWARD -> media(Media.NEXT, singleAction)
+        RemoteKey.REWIND -> media(Media.PREVIOUS, singleAction)
         RemoteKey.POWER, RemoteKey.POWER_OFF -> displaySleep
         else -> null
     }
@@ -112,7 +121,7 @@ set volume output muted false$REPORT_VOLUME""".trimStart()
 
     // The media key only works when "sshd-keygen-wrapper" has Accessibility access; without it
     // macOS drops the event silently, so check trust first and fall back to an open player.
-    private fun media(action: Media) = MacScript(
+    private fun media(action: Media, singleAction: Boolean) = MacScript(
         MacScript.Language.JAVASCRIPT,
         """
 ObjC.import('Cocoa');
@@ -136,6 +145,7 @@ function mediaKey(code) {
 }
 function run() {
   var players = ['Spotify', 'Music'].map(player).filter(function (p) { return p; });
+  ${if (singleAction) externalMediaDispatch(action) else """
   for (var i = 0; i < players.length; i++) {
     try {
       if (players[i].playerState() === 'playing') { players[i].${jxaVerb(action.playerCommand)}(); return players[i].name(); }
@@ -143,9 +153,23 @@ function run() {
   }
   if (trusted()) { mediaKey(${action.nxKey}); return 'media-key'; }
   if (players.length > 0) { players[0].${jxaVerb(action.playerCommand)}(); return players[0].name(); }
-  return 'no-player';
+  return 'no-player';""".trimIndent()}
 }""".trimStart()
     )
+
+    private fun externalMediaDispatch(action: Media): String {
+        val explicitPlayback = action == Media.PLAY || action == Media.PAUSE
+        return """
+  var selected = players.find(function (app) {
+    try { return app.playerState() === 'playing'; } catch (e) { return false; }
+  });
+  ${if (explicitPlayback) "" else "if (!selected && trusted()) { mediaKey(${action.nxKey}); return 'media-key'; }"}
+  selected = selected || players[0];
+  if (!selected) return 'no-player';
+  selected.${jxaVerb(action.playerCommand)}();
+  return 'dispatched';
+""".trimIndent()
+    }
 
     /** JXA names AppleScript commands in camelCase: "next track" -> nextTrack. */
     private fun jxaVerb(command: String): String = command.split(" ").let { words ->

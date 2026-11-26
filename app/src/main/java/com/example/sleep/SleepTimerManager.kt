@@ -128,6 +128,9 @@ class SleepTimerManager(context: Context) {
         if (_timer.value?.deviceId == id || execution?.deviceId == id) cancel()
     }
 
+    @Synchronized
+    internal fun occupiedByDevice(): Long? = _timer.value?.deviceId ?: execution?.deviceId
+
     /** Claims an expired generation exactly once. Old, early and duplicate deliveries do nothing. */
     @Synchronized
     fun consumeDue(token: String): SleepTimerState? {
