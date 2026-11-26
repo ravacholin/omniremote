@@ -19,6 +19,21 @@ import org.robolectric.shadows.ShadowAlarmManager
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class RemoteTargetsTest {
+    @Test fun savedSamsungWithoutLocalAuthorizationCannotSendKeys() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val session = RemoteSession.getInstance(context)
+        val deviceId = session.repository.saveDevice(TvDeviceEntity(name = "Samsung", room = "Living",
+            deviceType = DeviceType.SAMSUNG_TIZEN, ipAddress = "192.0.2.3"))
+        val device = checkNotNull(session.repository.getDeviceById(deviceId))
+        try {
+            val targets = RemoteTargets(context, session)
+            val request = RemoteRequest.parse(1, deviceId, "KEY", """{"key":"VOL_UP"}""")
+            assertEquals("DEVICE_AUTHORIZATION_REQUIRED", targets.dispatch(request) { true }.code)
+        } finally {
+            session.repository.deleteDevice(device)
+        }
+    }
+
     @Test fun savedIdsAreScopedAndSchedulingAnotherTvPreservesSelection() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
