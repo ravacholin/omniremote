@@ -12,6 +12,17 @@ Cada llamada Binder, incluso el descubrimiento de versión, verifica el UID real
 
 Las respuestas contienen identificadores locales y datos descriptivos. Las credenciales de Samsung, Android TV, ADB y SSH se usan dentro de OmniRemote. La interfaz también omite IPs, direcciones MAC, rutas de red y enlaces privados de las aplicaciones.
 
+### Firma de distribución de OmniRemote
+
+El workflow manual **Android release firmado** se ejecuta desde `main`.
+Usa los secretos del repositorio `OMNIREMOTE_RELEASE_KEYSTORE_B64` y
+`OMNIREMOTE_RELEASE_KEYSTORE_PASSWORD`. Verifica el certificado del keystore
+antes de compilar y la firma del APK antes de publicar `omniremote-release-apk`.
+
+La huella SHA-256 del certificado de OmniRemote es
+`4D:52:45:A4:37:73:19:4D:8A:03:41:F3:D1:6F:AE:61:EA:76:58:CE:D0:D6:7C:2F:EC:E4:92:D3:2A:A7:D7:49`. OmniRemote usa su propia clave de distribución
+y verifica a Insto con la huella de `instoCertificateSha256`.
+
 ## Instalación y enlace
 
 En el manifiesto de **Insto** declará la visibilidad de OmniRemote:

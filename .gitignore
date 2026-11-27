@@ -16,3 +16,8 @@
 local.properties
 .env
 debug.keystore
+
+# Local release signing material
+*.jks
+*.p12
+*.keystore
