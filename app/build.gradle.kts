@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.omnitvremote.qvrtm"
     minSdk = 24
     targetSdk = 36
-    versionCode = 10
-    versionName = "2.0-external-control"
+    versionCode = 11
+    versionName = "2.0.0"
     val instoPackage = "com.aistudio.pingassist.qvrtkm"
     val instoCert = providers.gradleProperty("instoCertificateSha256").orElse("").get()
         .replace(":", "").uppercase(Locale.ROOT)
