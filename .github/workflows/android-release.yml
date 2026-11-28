@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      EXPECTED_CERT_SHA256: 4d5245a43773194d8a0341f3d16fae61ea7658ced0d67c2fece492d32aa7d749
+      EXPECTED_CERT_SHA256: ed79a1a3dd6b8be123889b95aa90b6ed48c540ed9c1d8794364968d2311fb010
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -51,7 +51,7 @@ jobs:
           certificate=$(keytool -exportcert -alias upload -keystore "$KEYSTORE_PATH" -storepass:env STORE_PASSWORD |
             sha256sum | cut -d ' ' -f 1)
           if [[ "$certificate" != "$EXPECTED_CERT_SHA256" ]]; then
-            echo "::error::El certificado del keystore no coincide con la firma de distribución de Insto."
+            echo "::error::El certificado del keystore no coincide con la firma de distribución de Omniremote."
             exit 1
           fi
           gradle --no-daemon --no-configuration-cache assembleRelease
