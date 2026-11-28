@@ -57,6 +57,14 @@ class AndroidTvClient(
     internal fun observedPower(): Boolean? = synchronized(writeLock) {
         remotePowerOn.takeIf { isConnected && negotiatedFeatures and AndroidTvProtocol.FEATURE_POWER != 0 }
     }
+
+    internal fun canPowerOff(): Boolean = synchronized(writeLock) { isConnected && powerReport() != null }
+
+    // Some boxes omit FEATURE_POWER but still send an explicit RemoteStart.started=true.
+    // An empty RemoteStart from those boxes is insufficient to establish standby.
+    private fun powerReport(): Boolean? = remotePowerOn.takeIf {
+        it == true || negotiatedFeatures and AndroidTvProtocol.FEATURE_POWER != 0
+    }
     private var pairingIp: String = ""
     private var activeDeviceId: Long? = null
     private val tag = "AndroidTvClient"
@@ -256,6 +264,9 @@ class AndroidTvClient(
     private fun writeRemotePacket(out: OutputStream, payload: ByteArray) = synchronized(writeLock) {
         AndroidTvProtocol.writePacket(out, payload)
     }
+
+    private fun writeKey(out: OutputStream, key: RemoteKey) =
+        writeRemotePacket(out, AndroidTvProtocol.buildRemoteKeyInject(key.androidKeyCode))
 
     /**
      * Initiates Google TV Pairing handshake on port 6467.
@@ -475,7 +486,7 @@ class AndroidTvClient(
             synchronized(writeLock) {
                 if (!canSend() || remoteSocket !== socket || !isConnected) return@withContext false
                 // A short press is one atomic frame; concurrent taps cannot interleave packets.
-                writeRemotePacket(out, AndroidTvProtocol.buildRemoteKeyInject(key.androidKeyCode))
+                writeKey(out, key)
             }
             true
         } catch (e: Exception) {
@@ -516,16 +527,15 @@ class AndroidTvClient(
             try {
                 synchronized(writeLock) {
                     commandContext.ensureActive()
-                    if (!canSend() || remoteSocket !== socket || !isConnected ||
-                        negotiatedFeatures and AndroidTvProtocol.FEATURE_POWER == 0) return@withContext false
-                    when (remotePowerOn) {
+                    if (!canSend() || remoteSocket !== socket || !isConnected) return@withContext false
+                    when (powerReport()) {
                         false -> return@withContext true
                         null -> return@withContext false
                         true -> Unit
                     }
                     val out = remoteOutput ?: return@withContext false
                     pendingPowerOff = pending
-                    writeRemotePacket(out, AndroidTvProtocol.buildRemoteKeyInject(RemoteKey.POWER.androidKeyCode))
+                    writeKey(out, RemoteKey.POWER)
                 }
                 withTimeoutOrNull(5_000) { pending.confirmed.await() } == true
             } catch (error: Exception) {

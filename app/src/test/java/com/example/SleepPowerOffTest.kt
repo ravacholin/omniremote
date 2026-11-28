@@ -42,7 +42,11 @@ class SleepPowerOffTest {
         }
     }
 
-    private suspend fun checkSavedPortPowerOff(savedPort: Int) {
+    @Test fun `saved Android TV sends the remote power button when its start report says it is on`() = runBlocking {
+        checkSavedPortPowerOff(savedPort = 8009, features = byteArrayOf(8, 3))
+    }
+
+    private suspend fun checkSavedPortPowerOff(savedPort: Int, features: ByteArray = byteArrayOf(8, 0xE3.toByte(), 4)) {
         val server = (AndroidTvCertificateManager.getOrCreateSslContext(context).serverSocketFactory
             .createServerSocket(6466, 10, InetAddress.getByName("127.0.0.1")) as SSLServerSocket).apply {
             needClientAuth = true
@@ -54,9 +58,9 @@ class SleepPowerOffTest {
                 socket.soTimeout = 10000
                 val input = socket.inputStream
                 val output = socket.outputStream
-                AndroidTvProtocol.writePacket(output, bytes(1, byteArrayOf(8, 0xE3.toByte(), 4)))
+                AndroidTvProtocol.writePacket(output, bytes(1, features))
                 assertTrue(AndroidTvProtocol.hasField(AndroidTvProtocol.readPacket(input), 1))
-                AndroidTvProtocol.writePacket(output, bytes(2, byteArrayOf(8, 0xE3.toByte(), 4)))
+                AndroidTvProtocol.writePacket(output, bytes(2, features))
                 assertTrue(AndroidTvProtocol.hasField(AndroidTvProtocol.readPacket(input), 2))
                 AndroidTvProtocol.writePacket(output, bytes(40, byteArrayOf(8, 1)))
                 val key = AndroidTvProtocol.readPacket(input)
@@ -98,7 +102,7 @@ class SleepPowerOffTest {
     }
 
     @Test fun `missing power status capability prevents a blind toggle`() = runBlocking {
-        checkPowerResult(initiallyOn = true, response = null, expectedSuccess = false, expectedKey = null,
+        checkPowerResult(initiallyOn = false, response = null, expectedSuccess = false, expectedKey = null,
             features = 3)
     }
 

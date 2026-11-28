@@ -2,12 +2,15 @@ package com.example.network
 
 import androidx.test.core.app.ApplicationProvider
 import android.content.Context
+import android.net.Network
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowNetwork
 import java.io.ByteArrayInputStream
 
 @RunWith(RobolectricTestRunner::class)
@@ -65,6 +68,19 @@ class AndroidTvRegressionTest {
     }
     @Test
     fun scannerUsesWifiLinkAddressEvenWithoutInternetValidation() {
+        val (context) = contextWithWifi()
+        assertEquals("192.168.0.16", TvScanner(context).getLocalIpAddress())
+    }
+
+    @Test
+    fun wakeBurstRequiresTheLanSocketWhenWifiIsAvailable() = runBlocking {
+        val (context, wifi) = contextWithWifi()
+        val boundSockets = shadowOf(wifi).boundSocketCount()
+        WakeOnLan.sendMagicPacketBurst("02:11:22:33:44:55", "127.0.0.1", context = context, count = 1, intervalMs = 0)
+        assertEquals(boundSockets + 1, shadowOf(wifi).boundSocketCount())
+    }
+
+    private fun contextWithWifi(): Pair<Context, Network> {
         val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
         val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         val shadow = org.robolectric.Shadows.shadowOf(cm)
@@ -85,7 +101,7 @@ class AndroidTvRegressionTest {
             org.robolectric.util.ReflectionHelpers.callInstanceMethod<Boolean>(this, "addLinkAddress",
                 org.robolectric.util.ReflectionHelpers.ClassParameter.from(android.net.LinkAddress::class.java, address))
         })
-        assertEquals("192.168.0.16", TvScanner(context).getLocalIpAddress())
+        return context to wifi
     }
 
 }

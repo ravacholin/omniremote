@@ -322,6 +322,7 @@ object WakeOnLan {
 
         val ports = listOf(9, 7)
         var packetsSent = 0
+        val network = TvLocalNetwork(context).current()
 
         // Retain multicast reception while performing the wake operation.
         val wifiManager = context?.applicationContext?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -338,6 +339,7 @@ object WakeOnLan {
             repeat(count) {
                 try {
                     DatagramSocket().use { socket ->
+                        network?.bindSocket(socket)
                         socket.broadcast = true
                         for (addr in targetAddresses) {
                             for (port in ports) {
@@ -417,6 +419,8 @@ object WakeOnLan {
         }
 
         // 4. Brand-Specific Network Power Vectors
+        val localNetwork = TvLocalNetwork(context)
+        val wakeHttpClient = fastHttpClient.newBuilder().socketFactory(localNetwork.socketFactory).build()
         when (device.deviceType) {
             DeviceType.SAMSUNG_TIZEN -> {
                 currentCoroutineContext().ensureActive()
@@ -426,14 +430,14 @@ object WakeOnLan {
                         .url("http://${device.ipAddress}:8001/api/v2/")
                         .get()
                         .build()
-                    fastHttpClient.newCall(req).execute().close()
+                    wakeHttpClient.newCall(req).execute().close()
                     triggeredProtocols.add("Samsung Wake HTTP Ping")
                 } catch (_: Exception) {}
 
                 currentCoroutineContext().ensureActive()
                 // Samsung Tizen: Wake probe on port 8002
                 try {
-                    Socket().use { s ->
+                    localNetwork.socketFactory.createSocket().use { s ->
                         s.connect(InetSocketAddress(device.ipAddress, 8002), 400)
                     }
                     triggeredProtocols.add("Samsung Port 8002 Probe")
@@ -448,7 +452,7 @@ object WakeOnLan {
                         .url("http://${device.ipAddress}:8008/setup/eureka_info")
                         .get()
                         .build()
-                    fastHttpClient.newCall(req).execute().close()
+                    wakeHttpClient.newCall(req).execute().close()
                     triggeredProtocols.add("Google Cast Wake-on-Cast (Port 8008)")
                 } catch (_: Exception) {}
 
@@ -471,7 +475,7 @@ object WakeOnLan {
                         .addHeader("X-Auth-PSK", "0000")
                         .post(soapBody.toRequestBody("text/xml; charset=UTF-8".toMediaType()))
                         .build()
-                    fastHttpClient.newCall(req).execute().close()
+                    wakeHttpClient.newCall(req).execute().close()
                     triggeredProtocols.add("Sony BRAVIA IRCC Wake")
                 } catch (_: Exception) {}
             }
