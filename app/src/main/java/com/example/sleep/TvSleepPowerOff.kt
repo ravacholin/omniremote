@@ -48,8 +48,9 @@ class TvSleepPowerOff(private val context: Context) {
                                 !isSavedTarget() -> Outcome.TARGET_CHANGED
                                 !canSend() -> Outcome.UNCERTAIN
                                 device.deviceType == DeviceType.ANDROID_TV -> when {
-                                    target.android.observedPower() == false -> Outcome.VERIFIED
-                                    target.android.supportsFeature(AndroidTvProtocol.FEATURE_POWER) == false -> Outcome.UNSUPPORTED
+                                    target.android.observedPower() == null &&
+                                        target.android.supportsFeature(AndroidTvProtocol.FEATURE_POWER) == false &&
+                                        !target.android.canPowerOff() -> Outcome.UNSUPPORTED
                                     target.android.powerOff(canSend) -> Outcome.VERIFIED
                                     else -> Outcome.UNCERTAIN
                                 }
